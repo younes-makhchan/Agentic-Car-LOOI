@@ -12,13 +12,13 @@
 
 // Placeholder motor pins for the current L298N test setup.
 // Update these if your wiring changes.
-constexpr uint8_t LEFT_IN1 = 26;
-constexpr uint8_t LEFT_IN2 = 27;
-constexpr uint8_t LEFT_EN = 25;
+constexpr uint8_t LEFT_IN1 = 22;
+constexpr uint8_t LEFT_IN2 = 21;
+constexpr uint8_t LEFT_EN = 5;
 
-constexpr uint8_t RIGHT_IN1 = 14;
-constexpr uint8_t RIGHT_IN2 = 12;
-constexpr uint8_t RIGHT_EN = 13;
+constexpr uint8_t RIGHT_IN1 = 19;
+constexpr uint8_t RIGHT_IN2 = 18;
+constexpr uint8_t RIGHT_EN = 23;
 
 // Flip one of these if a motor side spins the wrong way.
 constexpr bool LEFT_INVERT = false;
@@ -30,16 +30,20 @@ constexpr bool RIGHT_INVERT = false;
 // - ESP32 GND and L298N GND must be tied together.
 // - Do not power the motor driver or motors from the ESP32 5V pin.
 
-constexpr uint8_t LEFT_PWM_CHANNEL = 0;
-constexpr uint8_t RIGHT_PWM_CHANNEL = 1;
 constexpr uint32_t PWM_FREQUENCY_HZ = 1000;
 constexpr uint8_t PWM_RESOLUTION_BITS = 8;
 constexpr uint16_t PWM_MAX_DUTY = (1u << PWM_RESOLUTION_BITS) - 1u;
 
 constexpr uint32_t SERIAL_BAUD = 115200;
 
-constexpr char AP_SSID[] = "LOOI_BODY";
-constexpr char AP_PASSWORD[] = "looi123456";
+// Step 12 setup: station mode puts the phone, laptop server, and ESP32 on the
+// same Wi-Fi network. Edit these two values before uploading.
+constexpr char WIFI_SSID[] = "YOUR_HOME_WIFI_NAME";
+constexpr char WIFI_PASSWORD[] = "YOUR_HOME_WIFI_PASSWORD";
+
+// Fallback AP starts only if the ESP32 cannot join your home Wi-Fi.
+constexpr char FALLBACK_AP_SSID[] = "LOOI_BODY";
+constexpr char FALLBACK_AP_PASSWORD[] = "looi123456";
 const IPAddress AP_IP(192, 168, 4, 1);
 const IPAddress AP_GATEWAY(192, 168, 4, 1);
 const IPAddress AP_SUBNET(255, 255, 255, 0);
@@ -57,6 +61,7 @@ constexpr uint32_t MAX_RAMP_MS = 500;
 constexpr uint32_t MOTOR_UPDATE_INTERVAL_MS = 20;
 
 constexpr uint32_t TELEMETRY_INTERVAL_MS = 1000;
+constexpr uint32_t WIFI_CONNECT_TIMEOUT_MS = 15000;
 constexpr uint8_t MAX_TRACKED_CLIENTS = 10;
 constexpr size_t JSON_DOC_SIZE = 1024;
 
@@ -116,8 +121,8 @@ void setDrive(float linear, float angular, uint32_t durationMs, uint32_t rampMs,
               const char *label);
 void updateRampedMotion(bool force = false);
 void applyMotorSpeeds(float leftSpeed, float rightSpeed);
-void setMotorSide(uint8_t in1Pin, uint8_t in2Pin, uint8_t pwmChannel,
-                  float speed, bool invert);
+void setMotorSide(uint8_t in1Pin, uint8_t in2Pin, uint8_t enablePin, float speed,
+                  bool invert);
 void stopMotors(const char *reason);
 void addConfig(JsonObject target);
 void addConfigWarnings(JsonArray warnings, const char *field, double requested,
@@ -195,38 +200,67 @@ void setupPins() {
   pinMode(RIGHT_IN1, OUTPUT);
   pinMode(RIGHT_IN2, OUTPUT);
 
-  ledcSetup(LEFT_PWM_CHANNEL, PWM_FREQUENCY_HZ, PWM_RESOLUTION_BITS);
-  ledcSetup(RIGHT_PWM_CHANNEL, PWM_FREQUENCY_HZ, PWM_RESOLUTION_BITS);
-  ledcAttachPin(LEFT_EN, LEFT_PWM_CHANNEL);
-  ledcAttachPin(RIGHT_EN, RIGHT_PWM_CHANNEL);
+  if (!ledcAttach(LEFT_EN, PWM_FREQUENCY_HZ, PWM_RESOLUTION_BITS)) {
+    Serial.println("[BOOT] Failed to attach left PWM pin");
+  }
+
+  if (!ledcAttach(RIGHT_EN, PWM_FREQUENCY_HZ, PWM_RESOLUTION_BITS)) {
+    Serial.println("[BOOT] Failed to attach right PWM pin");
+  }
 
   digitalWrite(LEFT_IN1, LOW);
   digitalWrite(LEFT_IN2, LOW);
   digitalWrite(RIGHT_IN1, LOW);
   digitalWrite(RIGHT_IN2, LOW);
-  ledcWrite(LEFT_PWM_CHANNEL, 0);
-  ledcWrite(RIGHT_PWM_CHANNEL, 0);
+  ledcWrite(LEFT_EN, 0);
+  ledcWrite(RIGHT_EN, 0);
 
   Serial.println("[BOOT] Motor pins configured");
 }
 
 void setupWifi() {
-  WiFi.mode(WIFI_AP);
+  WiFi.mode(WIFI_STA);
   WiFi.setSleep(false);
+
+  Serial.printf("[WIFI] Connecting to %s\n", WIFI_SSID);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+
+  const uint32_t startedAt = millis();
+  while (WiFi.status() != WL_CONNECTED &&
+         millis() - startedAt < WIFI_CONNECT_TIMEOUT_MS) {
+    delay(250);
+    Serial.print(".");
+  }
+  Serial.println();
+
+  if (WiFi.status() == WL_CONNECTED) {
+    const String localIp = WiFi.localIP().toString();
+    Serial.println("[WIFI] Connected to home Wi-Fi");
+    Serial.printf("[WIFI] SSID: %s\n", WIFI_SSID);
+    Serial.printf("[WIFI] IP: %s\n", localIp.c_str());
+    Serial.printf("[WIFI] WebSocket URL: ws://%s:%u\n", localIp.c_str(),
+                  WS_PORT);
+    return;
+  }
+
+  Serial.println("[WIFI] Home Wi-Fi failed, starting fallback access point");
+  WiFi.disconnect(true);
+  delay(250);
+  WiFi.mode(WIFI_AP);
 
   if (!WiFi.softAPConfig(AP_IP, AP_GATEWAY, AP_SUBNET)) {
     Serial.println("[WIFI] Failed to apply AP IP config, continuing");
   }
 
-  if (!WiFi.softAP(AP_SSID, AP_PASSWORD)) {
-    Serial.println("[WIFI] Failed to start Wi-Fi access point");
+  if (!WiFi.softAP(FALLBACK_AP_SSID, FALLBACK_AP_PASSWORD)) {
+    Serial.println("[WIFI] Failed to start fallback Wi-Fi access point");
     return;
   }
 
   const String apIp = WiFi.softAPIP().toString();
-  Serial.println("[WIFI] AP started");
-  Serial.printf("[WIFI] SSID: %s\n", AP_SSID);
-  Serial.printf("[WIFI] Password: %s\n", AP_PASSWORD);
+  Serial.println("[WIFI] Fallback AP started");
+  Serial.printf("[WIFI] SSID: %s\n", FALLBACK_AP_SSID);
+  Serial.printf("[WIFI] Password: %s\n", FALLBACK_AP_PASSWORD);
   Serial.printf("[WIFI] AP IP: %s\n", apIp.c_str());
   Serial.printf("[WIFI] WebSocket URL: ws://%s:%u\n", apIp.c_str(), WS_PORT);
 }
@@ -559,6 +593,10 @@ void sendTelemetry() {
 
   doc["type"] = "telemetry";
   doc["uptime_ms"] = now;
+  doc["wifi_mode"] = WiFi.getMode() == WIFI_AP ? "fallback_ap" : "station";
+  doc["ip"] =
+      WiFi.getMode() == WIFI_AP ? WiFi.softAPIP().toString()
+                                : WiFi.localIP().toString();
   doc["ap_ip"] = WiFi.softAPIP().toString();
   doc["rssi"] = WiFi.RSSI();
   doc["clients"] = connectedClientCount;
@@ -743,14 +781,12 @@ void applyMotorSpeeds(float leftSpeed, float rightSpeed) {
   currentLeftSpeed = applyDeadband(clampSpeed(leftSpeed));
   currentRightSpeed = applyDeadband(clampSpeed(rightSpeed));
 
-  setMotorSide(LEFT_IN1, LEFT_IN2, LEFT_PWM_CHANNEL, currentLeftSpeed,
-               LEFT_INVERT);
-  setMotorSide(RIGHT_IN1, RIGHT_IN2, RIGHT_PWM_CHANNEL, currentRightSpeed,
-               RIGHT_INVERT);
+  setMotorSide(LEFT_IN1, LEFT_IN2, LEFT_EN, currentLeftSpeed, LEFT_INVERT);
+  setMotorSide(RIGHT_IN1, RIGHT_IN2, RIGHT_EN, currentRightSpeed, RIGHT_INVERT);
 }
 
-void setMotorSide(uint8_t in1Pin, uint8_t in2Pin, uint8_t pwmChannel,
-                  float speed, bool invert) {
+void setMotorSide(uint8_t in1Pin, uint8_t in2Pin, uint8_t enablePin, float speed,
+                  bool invert) {
   const float effectiveSpeed = invert ? -speed : speed;
   uint32_t duty = static_cast<uint32_t>(
       roundf(fabsf(effectiveSpeed) * static_cast<float>(PWM_MAX_DUTY)));
@@ -758,7 +794,7 @@ void setMotorSide(uint8_t in1Pin, uint8_t in2Pin, uint8_t pwmChannel,
   if (fabsf(effectiveSpeed) < 0.0001f) {
     digitalWrite(in1Pin, LOW);
     digitalWrite(in2Pin, LOW);
-    ledcWrite(pwmChannel, 0);
+    ledcWrite(enablePin, 0);
     return;
   }
 
@@ -774,7 +810,7 @@ void setMotorSide(uint8_t in1Pin, uint8_t in2Pin, uint8_t pwmChannel,
     digitalWrite(in2Pin, HIGH);
   }
 
-  ledcWrite(pwmChannel, duty);
+  ledcWrite(enablePin, duty);
 }
 
 void stopMotors(const char *reason) {

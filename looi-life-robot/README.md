@@ -91,9 +91,18 @@ platformio --version
 
 If `platformio` is missing, install PlatformIO first. You can use the VS Code PlatformIO extension or PlatformIO Core.
 
-### 2. Upload ESP32 Firmware
+### 2. Configure And Upload ESP32 Firmware
 
-Connect the ESP32 to your computer with USB.
+Edit `src/main.cpp` before uploading:
+
+```cpp
+constexpr char WIFI_SSID[] = "YOUR_HOME_WIFI_NAME";
+constexpr char WIFI_PASSWORD[] = "YOUR_HOME_WIFI_PASSWORD";
+```
+
+Use the same Wi-Fi network that your laptop and phone use.
+
+Connect the ESP32 to your computer with USB, then upload:
 
 ```bash
 cd looi-life-robot
@@ -106,11 +115,21 @@ After upload, open serial monitor if you want to confirm boot:
 platformio device monitor
 ```
 
-The ESP32 should create this Wi-Fi network:
+The ESP32 should print something like:
+
+```text
+[WIFI] Connected to home Wi-Fi
+[WIFI] IP: 192.168.1.73
+[WIFI] WebSocket URL: ws://192.168.1.73:81
+```
+
+Copy that WebSocket URL. You will paste it into the browser UI.
+
+If home Wi-Fi fails, the ESP32 starts fallback AP mode:
 
 - SSID: `LOOI_BODY`
 - Password: `looi123456`
-- WebSocket URL: `ws://192.168.4.1:81`
+- Fallback WebSocket URL: `ws://192.168.4.1:81`
 
 ### 3. Start The Browser Server
 
@@ -143,35 +162,49 @@ In the UI:
 
 Only after simulator works, test real motors.
 
-### 5. Connect To ESP32 Body
+### 5. Connect Phone And ESP32 On The Same Network
 
-Important network note:
+After station-mode firmware upload, all three devices should be on your home Wi-Fi:
 
-- The current ESP32 firmware creates its own Wi-Fi AP named `LOOI_BODY`.
-- The browser device must be able to reach `ws://192.168.4.1:81`.
-- If your phone connects to `LOOI_BODY`, it may lose normal internet.
-- KimiClaw Cloud still needs the Node server reachable through a public HTTPS URL.
+```text
+Phone browser -> home Wi-Fi
+Laptop server -> home Wi-Fi
+ESP32 body -> home Wi-Fi
+```
 
-For first real motor test, the simplest path is:
+Find your laptop IP address on the home Wi-Fi.
 
-1. Use your computer browser.
-2. Connect the computer Wi-Fi to `LOOI_BODY`.
-3. Open `http://localhost:3000`.
-4. Set ESP32 URL to `ws://192.168.4.1:81`.
-5. Press `Connect ESP32`.
-6. Lift the wheels off the ground.
-7. Press `Emergency Stop` first.
-8. Try tiny manual movement.
+On macOS, usually:
 
-For phone-as-face testing:
+```bash
+ipconfig getifaddr en0
+```
 
-1. Open the UI on the phone from a reachable server URL.
-2. Keep the UI page loaded.
-3. Connect the phone Wi-Fi to `LOOI_BODY`.
-4. Use ESP32 URL `ws://192.168.4.1:81`.
-5. Press `Connect ESP32`.
+If that returns empty, try:
 
-If the phone cannot load the UI while connected to `LOOI_BODY`, load the page before switching Wi-Fi, or serve the UI from a device/network the phone can still reach. For a cleaner future setup, change ESP32 firmware later to join your home Wi-Fi instead of AP mode.
+```bash
+ipconfig getifaddr en1
+```
+
+On the phone, open:
+
+```text
+http://YOUR_LAPTOP_IP:3000
+```
+
+Example:
+
+```text
+http://192.168.1.50:3000
+```
+
+In the UI:
+
+1. Set ESP32 URL to the URL printed by Serial Monitor, for example `ws://192.168.1.73:81`.
+2. Press `Connect ESP32`.
+3. Lift the wheels off the ground.
+4. Press `Emergency Stop` first.
+5. Try tiny manual movement.
 
 ### 6. Body Calibration
 
@@ -322,13 +355,14 @@ platformio run --target upload
 
 ## ESP32 Body Firmware
 
-The ESP32 body firmware is a local motor controller only. It creates its own Wi-Fi access point and accepts short, clamped motion commands over WebSocket.
+The ESP32 body firmware is a local motor controller only. In the current setup it joins your home Wi-Fi and accepts short, clamped motion commands over WebSocket.
 
 Wi-Fi:
-- SSID: `LOOI_BODY`
-- Password: `looi123456`
-- Default AP IP: `192.168.4.1`
-- WebSocket URL: `ws://192.168.4.1:81`
+- Edit `WIFI_SSID` and `WIFI_PASSWORD` in `src/main.cpp`.
+- Read the assigned ESP32 IP from Serial Monitor.
+- WebSocket URL format: `ws://ESP32_IP:81`
+- If home Wi-Fi fails, fallback AP starts as `LOOI_BODY` / `looi123456`.
+- Fallback AP WebSocket URL: `ws://192.168.4.1:81`
 
 JSON motion command:
 
@@ -363,8 +397,8 @@ Pin table:
 
 | Side | IN1 | IN2 | EN/PWM | Invert Flag |
 | --- | --- | --- | --- | --- |
-| Left | 26 | 27 | 25 | `LEFT_INVERT` |
-| Right | 14 | 12 | 13 | `RIGHT_INVERT` |
+| Left | 22 | 21 | 5 | `LEFT_INVERT` |
+| Right | 19 | 18 | 23 | `RIGHT_INVERT` |
 
 Hardware reminders:
 - Test with the wheels lifted off the ground first.
@@ -378,9 +412,9 @@ Hardware reminders:
 Browser-to-ESP32 body test:
 1. Upload the ESP32 firmware.
 2. Power the ESP32 and motor driver.
-3. Connect your phone or laptop Wi-Fi to `LOOI_BODY`.
-4. Open the web UI.
-5. Set the WebSocket URL to `ws://192.168.4.1:81`.
+3. Keep phone, laptop, and ESP32 on the same home Wi-Fi.
+4. Open the web UI from the phone with `http://YOUR_LAPTOP_IP:3000`.
+5. Set the WebSocket URL to the ESP32 URL printed in Serial Monitor, for example `ws://192.168.1.73:81`.
 6. Lift the wheels off the ground.
 7. Press `Connect ESP32`.
 8. Confirm telemetry appears.
@@ -388,9 +422,10 @@ Browser-to-ESP32 body test:
 10. Press `Emergency Stop` and verify the motors stop.
 
 Troubleshooting:
-- If the browser cannot connect, make sure the phone or laptop is on the `LOOI_BODY` Wi-Fi network.
-- Check that the WebSocket URL is `ws://192.168.4.1:81`.
-- Check the ESP32 Serial Monitor for AP and WebSocket logs.
+- If the browser cannot connect, make sure phone, laptop, and ESP32 are on the same Wi-Fi network.
+- Check that the WebSocket URL matches the IP printed by ESP32 Serial Monitor.
+- Check the ESP32 Serial Monitor for Wi-Fi and WebSocket logs.
+- If home Wi-Fi fails, the fallback AP is `LOOI_BODY` and fallback URL is `ws://192.168.4.1:81`.
 - Some browsers may block mixed content if the UI is served over HTTPS. For this step, use `http://localhost:3000` or another non-HTTPS local setup.
 - If the motors move the wrong direction, edit `LEFT_INVERT` or `RIGHT_INVERT` in `src/main.cpp`.
 - If motor speed does not change, remove the `ENA` and `ENB` jumpers on the L298N and connect the enable pins to the ESP32 PWM pins.
@@ -438,11 +473,11 @@ cd server-ui
 npm run smoke:sim
 ```
 
-When using the real ESP32, disable Simulator Mode and connect to `ws://192.168.4.1:81`.
+When using the real ESP32, disable Simulator Mode and connect to the ESP32 WebSocket URL printed in Serial Monitor, for example `ws://192.168.1.73:81`.
 
 ## Step 6: KimiClaw Cloud Robot Bridge
 
-KimiClaw Cloud runs outside the robot's local network. It cannot reach `localhost`, the ESP32 private Wi-Fi network, or `ws://192.168.4.1:81` directly. Instead, KimiClaw Cloud calls a public HTTPS Robot Bridge URL. The server only queues high-level actions, and the phone browser polls that queue and receives actions locally.
+KimiClaw Cloud runs outside the robot's local network. It cannot reach `localhost` or the ESP32 WebSocket directly. Instead, KimiClaw Cloud calls a public HTTPS Robot Bridge URL. The server only queues high-level actions, and the phone browser polls that queue and receives actions locally.
 
 Step 6 only proved the cloud-to-browser queue path. At that stage, claimed actions were logged in the browser and marked received without physical execution. Step 7 below connects approved actions to `ToolExecutor` and the Life Engine.
 
