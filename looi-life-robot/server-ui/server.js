@@ -575,6 +575,10 @@ function verifyRobotBridgeAuth(req) {
     return true;
   }
 
+  if (process.env.ROBOT_BRIDGE_ALLOW_UNAUTH_LAN === "true" && isPrivateLanRequest(req)) {
+    return true;
+  }
+
   if (requireHttpsForExternal && !localRequest && !isHttpsRequest(req)) {
     return false;
   }
@@ -638,6 +642,27 @@ function isLocalRequest(req) {
     host === "localhost" ||
     host === "127.0.0.1"
   );
+}
+
+function isPrivateLanRequest(req) {
+  const ip = getClientIp(req);
+
+  return (
+    ip.startsWith("10.") ||
+    ip.startsWith("192.168.") ||
+    /^172\.(1[6-9]|2\d|3[0-1])\./.test(ip)
+  );
+}
+
+function getClientIp(req) {
+  const forwardedFor = String(req.get("x-forwarded-for") ?? "")
+    .split(",")[0]
+    .trim();
+  const rawIp = forwardedFor || req.ip || req.socket?.remoteAddress || "";
+
+  return String(rawIp)
+    .replace(/^::ffff:/, "")
+    .replace(/^\[|\]$/g, "");
 }
 
 function isHttpsRequest(req) {

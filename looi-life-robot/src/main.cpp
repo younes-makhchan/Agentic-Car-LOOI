@@ -22,7 +22,7 @@ constexpr uint8_t RIGHT_EN = 23;
 
 // Flip one of these if a motor side spins the wrong way.
 constexpr bool LEFT_INVERT = false;
-constexpr bool RIGHT_INVERT = false;
+constexpr bool RIGHT_INVERT = true;
 
 // L298N notes:
 // - Remove the ENA/ENB jumpers if you want ESP32 PWM speed control.
