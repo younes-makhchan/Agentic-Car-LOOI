@@ -1,0 +1,24 @@
+{
+  "name": "looi-life-robot-server-ui",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "smoke:sim": "node scripts/smoke-simulator.mjs",
+    "smoke:bridge": "node scripts/smoke-robot-bridge.mjs",
+    "smoke:tools": "node scripts/smoke-tool-executor.mjs",
+    "smoke:runtime": "node scripts/smoke-runtime-feedback.mjs",
+    "smoke:events": "node scripts/smoke-event-inbox.mjs",
+    "smoke:voice": "node scripts/smoke-voice.mjs",
+    "smoke:camera": "node scripts/smoke-camera.mjs",
+    "smoke:calibration": "node scripts/smoke-calibration.mjs",
+    "smoke:personality": "node scripts/smoke-memory-personality.mjs"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.2"
+  }
+}

@@ -1,0 +1,857 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>LOOI Life Robot</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="face-panel">
+        <div class="face-frame">
+          <canvas id="faceCanvas"></canvas>
+        </div>
+      </section>
+
+      <section class="control-panel">
+        <header class="panel-card title-card">
+          <p class="eyebrow">Phone-Bodied Life Robot</p>
+          <h1>LOOI Life Robot</h1>
+          <p class="subtitle">
+            Step 12 personality, memory, voice, camera, KimiClaw bridge, and safe local body
+            runtime. Safety: lift the wheels before the first movement test.
+          </p>
+        </header>
+
+        <section class="panel-card">
+          <h2>Status</h2>
+          <div class="status-grid">
+            <div class="status-row">
+              <span>ESP32 connection</span>
+              <strong id="esp32Status">disconnected</strong>
+            </div>
+            <div class="status-row">
+              <span>mood</span>
+              <strong id="moodValue">neutral</strong>
+            </div>
+            <div class="status-row">
+              <span>energy</span>
+              <strong id="energyValue">0.75</strong>
+            </div>
+            <div class="status-row">
+              <span>boredom</span>
+              <strong id="boredomValue">0.20</strong>
+            </div>
+            <div class="status-row">
+              <span>fear</span>
+              <strong id="fearValue">0.00</strong>
+            </div>
+            <div class="status-row">
+              <span>curiosity</span>
+              <strong id="curiosityValue">0.60</strong>
+            </div>
+            <div class="status-row">
+              <span>current behavior</span>
+              <strong id="currentBehavior">soft_idle</strong>
+            </div>
+            <div class="status-row">
+              <span>attention target</span>
+              <strong id="attentionTarget">none</strong>
+            </div>
+            <div class="status-row">
+              <span>obstacle</span>
+              <strong id="obstacleState">false</strong>
+            </div>
+            <div class="status-row">
+              <span>listening</span>
+              <strong id="listeningState">false</strong>
+            </div>
+            <div class="status-row">
+              <span>speaking</span>
+              <strong id="speakingState">false</strong>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel-card">
+          <h2>Life Engine</h2>
+          <p class="panel-note">
+            Local instincts only: mood, attention, drives, face, and safe body language.
+            No Kimi or AI API calls yet.
+          </p>
+          <div class="button-grid">
+            <button id="lifeEngineToggle" class="primary-button" type="button">
+              Pause Life Engine
+            </button>
+            <button id="simulateAttentionButton" type="button">
+              Simulate User Attention
+            </button>
+            <button id="simulateObstacleButton" type="button">
+              Simulate Obstacle
+            </button>
+            <button id="simulateBoredomButton" type="button">
+              Simulate Boredom
+            </button>
+            <button id="simulateLowEnergyButton" type="button">
+              Simulate Low Energy
+            </button>
+          </div>
+        </section>
+
+        <section class="panel-card personality-card">
+          <h2>Personality / Memory</h2>
+          <p class="panel-note">
+            Personality changes local body behavior and gives KimiClaw context.
+            Memory helps the robot remember phrases, preferences, and shared moments.
+          </p>
+          <div class="input-stack">
+            <label class="field-label" for="personalityNameInput">Robot name</label>
+            <input id="personalityNameInput" type="text" maxlength="40" value="LOOI" />
+            <label class="field-label" for="personalityIdentityInput">Identity</label>
+            <input
+              id="personalityIdentityInput"
+              type="text"
+              maxlength="120"
+              value="small phone-bodied companion robot"
+            />
+            <label class="field-label" for="personalityPronounsInput">Pronouns</label>
+            <input id="personalityPronounsInput" type="text" maxlength="30" value="she/her" />
+          </div>
+          <div class="personality-grid">
+            <label class="slider-field" for="traitCuriosity">
+              <span>Curiosity</span>
+              <input id="traitCuriosity" type="range" min="0" max="1" step="0.05" value="0.75" />
+            </label>
+            <label class="slider-field" for="traitGentleness">
+              <span>Gentleness</span>
+              <input id="traitGentleness" type="range" min="0" max="1" step="0.05" value="0.85" />
+            </label>
+            <label class="slider-field" for="traitPlayfulness">
+              <span>Playfulness</span>
+              <input id="traitPlayfulness" type="range" min="0" max="1" step="0.05" value="0.55" />
+            </label>
+            <label class="slider-field" for="traitShyness">
+              <span>Shyness</span>
+              <input id="traitShyness" type="range" min="0" max="1" step="0.05" value="0.35" />
+            </label>
+            <label class="slider-field" for="traitAffection">
+              <span>Affection</span>
+              <input id="traitAffection" type="range" min="0" max="1" step="0.05" value="0.65" />
+            </label>
+            <label class="slider-field" for="traitIndependence">
+              <span>Independence</span>
+              <input id="traitIndependence" type="range" min="0" max="1" step="0.05" value="0.45" />
+            </label>
+            <label class="slider-field" for="traitTalkativeness">
+              <span>Talkativeness</span>
+              <input id="traitTalkativeness" type="range" min="0" max="1" step="0.05" value="0.35" />
+            </label>
+            <label class="slider-field" for="traitCaution">
+              <span>Caution</span>
+              <input id="traitCaution" type="range" min="0" max="1" step="0.05" value="0.70" />
+            </label>
+            <label class="slider-field" for="behaviorMovementSoftness">
+              <span>Movement softness</span>
+              <input id="behaviorMovementSoftness" type="range" min="0" max="1" step="0.05" value="0.8" />
+            </label>
+            <label class="slider-field" for="behaviorReactionSpeed">
+              <span>Reaction speed</span>
+              <input id="behaviorReactionSpeed" type="range" min="0" max="1" step="0.05" value="0.75" />
+            </label>
+            <label class="slider-field" for="behaviorIdleActivity">
+              <span>Idle activity</span>
+              <input id="behaviorIdleActivity" type="range" min="0" max="1" step="0.05" value="0.35" />
+            </label>
+            <label class="slider-field" for="behaviorEmotionalExpressiveness">
+              <span>Emotional expressiveness</span>
+              <input id="behaviorEmotionalExpressiveness" type="range" min="0" max="1" step="0.05" value="0.65" />
+            </label>
+            <label class="slider-field" for="behaviorHesitation">
+              <span>Hesitation</span>
+              <input id="behaviorHesitation" type="range" min="0" max="1" step="0.05" value="0.35" />
+            </label>
+            <label class="slider-field" for="behaviorPersonalSpaceRespect">
+              <span>Personal space respect</span>
+              <input id="behaviorPersonalSpaceRespect" type="range" min="0" max="1" step="0.05" value="0.8" />
+            </label>
+          </div>
+          <div class="button-grid">
+            <button id="savePersonalityButton" class="primary-button" type="button">
+              Save Personality
+            </button>
+            <button id="resetPersonalityButton" type="button">Reset Personality</button>
+            <button id="exportPersonalityButton" type="button">Export Personality</button>
+            <button id="importPersonalityButton" type="button">Import Personality</button>
+          </div>
+          <div class="input-stack">
+            <label class="field-label" for="memoryTextInput">Memory text</label>
+            <textarea id="memoryTextInput" rows="3" maxlength="2000"></textarea>
+            <label class="field-label" for="memoryTypeSelect">Memory type</label>
+            <select id="memoryTypeSelect">
+              <option value="long_term">long_term</option>
+              <option value="daily">daily</option>
+              <option value="personality_note">personality_note</option>
+            </select>
+          </div>
+          <div class="button-grid">
+            <button id="saveMemoryButton" class="primary-button" type="button">
+              Save Memory
+            </button>
+            <button id="refreshMemoryButton" type="button">Refresh Memory</button>
+          </div>
+          <pre id="memoryDisplay" class="memory-display">No memory loaded yet.</pre>
+          <div class="input-stack">
+            <label class="field-label" for="learnedPhraseInput">Phrase</label>
+            <input id="learnedPhraseInput" type="text" maxlength="160" placeholder="give me room" />
+            <label class="field-label" for="learnedMeaningInput">Meaning</label>
+            <input id="learnedMeaningInput" type="text" maxlength="240" placeholder="increase distance from user" />
+            <label class="field-label" for="learnedActionSelect">Action</label>
+            <select id="learnedActionSelect">
+              <option value="retreat">retreat</option>
+              <option value="approach_user">approach_user</option>
+              <option value="curious_scan">curious_scan</option>
+              <option value="excited_wiggle">excited_wiggle</option>
+              <option value="stop">stop</option>
+              <option value="speak">speak</option>
+              <option value="express">express</option>
+              <option value="observe_scene">observe_scene</option>
+            </select>
+            <label class="field-label" for="learnedArgsInput">Args JSON</label>
+            <textarea id="learnedArgsInput" rows="3">{"style":"gentle","distance":"short"}</textarea>
+            <label class="field-label" for="learnedConfidenceSelect">Confidence</label>
+            <select id="learnedConfidenceSelect">
+              <option value="medium">medium</option>
+              <option value="low">low</option>
+              <option value="high">high</option>
+            </select>
+          </div>
+          <div class="button-grid">
+            <button id="saveLearnedPhraseButton" class="primary-button" type="button">
+              Save Learned Phrase
+            </button>
+            <button id="refreshLearnedPhrasesButton" type="button">
+              Refresh Learned Phrases
+            </button>
+          </div>
+          <div id="learnedPhraseList" class="learned-phrase-list">
+            No learned phrases loaded yet.
+          </div>
+          <div class="status-grid">
+            <div class="status-row">
+              <span>Life Events</span>
+              <strong id="lifeEventsState">disabled</strong>
+            </div>
+            <div class="status-row">
+              <span>Last life event</span>
+              <strong id="lastLifeEventDisplay">--</strong>
+            </div>
+          </div>
+          <label class="checkbox-field">
+            <input id="lifeEventsToggle" type="checkbox" />
+            <span>Enable Life Events</span>
+          </label>
+        </section>
+
+        <section class="panel-card simulator-card">
+          <h2>Simulator</h2>
+          <div class="status-grid">
+            <div class="status-row">
+              <span>Simulator Mode</span>
+              <strong id="simulatorState">off</strong>
+            </div>
+          </div>
+          <p id="simulatorNote" class="simulator-note">
+            Simulator inactive. Real ESP32 commands use the WebSocket body controller.
+          </p>
+          <div class="button-grid button-grid--single">
+            <button id="simulatorToggle" type="button">Enable Simulator Mode</button>
+          </div>
+        </section>
+
+        <section class="panel-card calibration-card">
+          <h2>Body Tuning / Calibration</h2>
+          <p class="safety-note">
+            Lift wheels before calibration tests. Emergency Stop always works.
+          </p>
+          <div class="status-grid">
+            <div class="status-row">
+              <span>Calibration Test</span>
+              <strong id="calibrationArmState" class="calibration-state--disarmed">
+                DISARMED - test movement blocked
+              </strong>
+            </div>
+          </div>
+          <div class="button-grid button-grid--single">
+            <button id="calibrationArmButton" class="warning-button" type="button">
+              Arm Calibration Test
+            </button>
+          </div>
+          <div class="calibration-grid">
+            <label class="slider-field" for="calibrationMaxSpeed">
+              <span>Max speed</span>
+              <input id="calibrationMaxSpeed" type="range" min="0.05" max="0.40" step="0.01" value="0.40" />
+            </label>
+            <label class="slider-field" for="calibrationGentleSpeed">
+              <span>Gentle speed</span>
+              <input id="calibrationGentleSpeed" type="range" min="0.05" max="0.40" step="0.01" value="0.18" />
+            </label>
+            <label class="slider-field" for="calibrationTurnSpeed">
+              <span>Turn speed</span>
+              <input id="calibrationTurnSpeed" type="range" min="0.05" max="0.40" step="0.01" value="0.18" />
+            </label>
+            <label class="slider-field" for="calibrationWiggleSpeed">
+              <span>Wiggle speed</span>
+              <input id="calibrationWiggleSpeed" type="range" min="0.05" max="0.40" step="0.01" value="0.20" />
+            </label>
+            <label class="slider-field" for="calibrationRampMs">
+              <span>Ramp ms</span>
+              <input id="calibrationRampMs" type="range" min="0" max="500" step="10" value="150" />
+            </label>
+            <label class="slider-field" for="calibrationLeftTrim">
+              <span>Left trim</span>
+              <input id="calibrationLeftTrim" type="range" min="0.5" max="1.3" step="0.01" value="1.0" />
+            </label>
+            <label class="slider-field" for="calibrationRightTrim">
+              <span>Right trim</span>
+              <input id="calibrationRightTrim" type="range" min="0.5" max="1.3" step="0.01" value="1.0" />
+            </label>
+            <label class="slider-field" for="calibrationDeadband">
+              <span>Deadband</span>
+              <input id="calibrationDeadband" type="range" min="0" max="0.12" step="0.005" value="0.03" />
+            </label>
+            <label class="slider-field" for="calibrationMinPwm">
+              <span>Min PWM</span>
+              <input id="calibrationMinPwm" type="range" min="0" max="90" step="1" value="0" />
+            </label>
+            <label class="slider-field" for="calibrationMotionIntensityScale">
+              <span>Motion intensity scale</span>
+              <input id="calibrationMotionIntensityScale" type="range" min="0.2" max="1.2" step="0.05" value="1" />
+            </label>
+          </div>
+          <label class="checkbox-field">
+            <input id="calibrationIdleMotionEnabled" type="checkbox" checked />
+            <span>Idle motion enabled</span>
+          </label>
+          <div class="button-grid button-grid--triple">
+            <button id="applyCalibrationButton" class="primary-button" type="button">
+              Apply to Robot
+            </button>
+            <button id="saveCalibrationButton" type="button">
+              Save Calibration
+            </button>
+            <button id="resetCalibrationButton" type="button">
+              Reset Calibration
+            </button>
+            <button id="requestRobotConfigButton" type="button">
+              Request Robot Config
+            </button>
+            <button id="calibrationTestStopButton" class="danger-button" type="button">
+              Test Stop
+            </button>
+          </div>
+          <div class="button-grid">
+            <button id="calibrationTestForwardButton" type="button">
+              Test Forward Tiny
+            </button>
+            <button id="calibrationTestBackwardButton" type="button">
+              Test Backward Tiny
+            </button>
+            <button id="calibrationTestRotateLeftButton" type="button">
+              Test Rotate Left Tiny
+            </button>
+            <button id="calibrationTestRotateRightButton" type="button">
+              Test Rotate Right Tiny
+            </button>
+            <button id="calibrationTestWiggleButton" type="button">
+              Test Gentle Wiggle
+            </button>
+            <button id="calibrationTestApproachButton" type="button">
+              Test Life Approach
+            </button>
+            <button id="calibrationTestRetreatButton" type="button">
+              Test Life Retreat
+            </button>
+          </div>
+          <div class="debug-grid">
+            <div>
+              <span>Latest robot config</span>
+              <pre id="robotConfigDisplay">No robot config received yet.</pre>
+            </div>
+            <div>
+              <span>Recent command history</span>
+              <pre id="recentCommandHistory">No movement commands yet.</pre>
+            </div>
+            <div>
+              <span>Motion debug</span>
+              <pre id="motionDebugDisplay">No motion telemetry yet.</pre>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel-card voice-card">
+          <h2>Voice</h2>
+          <p class="panel-note">
+            Voice transcripts are posted to the Robot Event Inbox. KimiClaw Cloud
+            can read them and respond with actions.
+          </p>
+          <div class="status-grid">
+            <div class="status-row">
+              <span>Speech input</span>
+              <strong id="speechSupportState">checking</strong>
+            </div>
+            <div class="status-row">
+              <span>Speech output</span>
+              <strong id="voiceSupportState">checking</strong>
+            </div>
+            <div class="status-row">
+              <span>Event post</span>
+              <strong id="robotEventPostStatus">idle</strong>
+            </div>
+            <div class="status-row">
+              <span>Last event</span>
+              <strong id="lastRobotEventPosted">--</strong>
+            </div>
+          </div>
+          <p id="speechSecureWarning" class="voice-warning">
+            Microphone access may require HTTPS or localhost.
+          </p>
+          <div class="input-stack">
+            <label class="field-label" for="speechLanguageInput">Speech language</label>
+            <input id="speechLanguageInput" type="text" value="en-US" autocomplete="off" />
+          </div>
+          <label class="checkbox-field">
+            <input id="continuousListeningToggle" type="checkbox" checked />
+            <span>Continuous listening</span>
+          </label>
+          <div class="button-grid">
+            <button id="startListeningButton" class="primary-button" type="button">
+              Start Listening
+            </button>
+            <button id="stopListeningButton" type="button">
+              Stop Listening
+            </button>
+          </div>
+          <div class="transcript-grid">
+            <div>
+              <span>Interim transcript</span>
+              <p id="interimTranscript" class="transcript transcript--interim">--</p>
+            </div>
+            <div>
+              <span>Final transcript</span>
+              <p id="finalTranscript" class="transcript">--</p>
+            </div>
+          </div>
+          <div class="input-stack">
+            <label class="field-label" for="voiceSelect">Voice</label>
+            <select id="voiceSelect"></select>
+          </div>
+          <label class="checkbox-field">
+            <input id="muteSpeechToggle" type="checkbox" />
+            <span>Mute Speech</span>
+          </label>
+          <div class="slider-grid">
+            <label class="slider-field" for="voiceRateSlider">
+              <span>Voice rate</span>
+              <input id="voiceRateSlider" type="range" min="0.6" max="1.4" step="0.1" value="1" />
+            </label>
+            <label class="slider-field" for="voicePitchSlider">
+              <span>Voice pitch</span>
+              <input id="voicePitchSlider" type="range" min="0.6" max="1.4" step="0.1" value="1" />
+            </label>
+          </div>
+          <div class="button-grid button-grid--single">
+            <button id="speakTestButton" type="button">Speak Test</button>
+          </div>
+        </section>
+
+        <section class="panel-card camera-card">
+          <h2>Camera / Eyes</h2>
+          <p class="panel-note">
+            The camera runs locally in the browser. KimiClaw Cloud can only request
+            camera actions when Cloud Camera is allowed.
+          </p>
+          <div class="status-grid">
+            <div class="status-row">
+              <span>Camera support</span>
+              <strong id="cameraSupportState">checking</strong>
+            </div>
+            <div class="status-row">
+              <span>Camera running</span>
+              <strong id="cameraRunningState">stopped</strong>
+            </div>
+            <div class="status-row">
+              <span>Facing mode</span>
+              <strong id="cameraFacingMode">unknown</strong>
+            </div>
+            <div class="status-row">
+              <span>Vision support</span>
+              <strong id="cameraVisionSupport">checking</strong>
+            </div>
+            <div class="status-row">
+              <span>Last camera error</span>
+              <strong id="cameraLastError">--</strong>
+            </div>
+            <div class="status-row">
+              <span>Cloud Camera</span>
+              <strong id="cloudCameraState" class="cloud-camera-state--blocked">
+                BLOCKED - cloud camera actions are rejected
+              </strong>
+            </div>
+          </div>
+          <p id="cameraSecureWarning" class="camera-warning">
+            Camera access may require HTTPS or localhost.
+          </p>
+          <p class="privacy-note">
+            Cloud camera actions are blocked until you allow them here.
+          </p>
+          <div class="button-grid">
+            <button id="startFrontCameraButton" class="primary-button" type="button">
+              Start Front Camera
+            </button>
+            <button id="startBackCameraButton" type="button">
+              Start Back Camera
+            </button>
+            <button id="switchCameraButton" type="button">
+              Switch Camera
+            </button>
+            <button id="stopCameraButton" type="button">
+              Stop Camera
+            </button>
+            <button id="captureSnapshotButton" type="button">
+              Capture Snapshot
+            </button>
+            <button id="cloudCameraAllowButton" class="warning-button" type="button">
+              Allow Cloud Camera
+            </button>
+          </div>
+          <div class="camera-preview-grid">
+            <video id="cameraPreview" autoplay playsinline muted></video>
+            <img id="snapshotPreview" alt="Latest small camera snapshot" hidden />
+            <canvas id="cameraCanvas" hidden></canvas>
+          </div>
+          <div class="status-grid">
+            <div class="status-row">
+              <span>User visible</span>
+              <strong id="cameraUserVisible">false</strong>
+            </div>
+            <div class="status-row">
+              <span>User position</span>
+              <strong id="cameraUserPosition">unknown</strong>
+            </div>
+            <div class="status-row">
+              <span>User distance</span>
+              <strong id="cameraUserDistance">unknown</strong>
+            </div>
+            <div class="status-row">
+              <span>Face count</span>
+              <strong id="cameraFaceCount">--</strong>
+            </div>
+            <div class="status-row">
+              <span>Last observation</span>
+              <strong id="cameraLastObservation">--</strong>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel-card runtime-card">
+          <h2>Robot Runtime Pairing / Heartbeat</h2>
+          <p class="panel-note">
+            Runtime heartbeat tells KimiClaw Cloud whether the phone robot is
+            online, armed, connected, and safe.
+          </p>
+          <div class="status-grid">
+            <div class="status-row">
+              <span>Runtime auth</span>
+              <strong id="runtimeAuthState">checking</strong>
+            </div>
+            <div class="status-row">
+              <span>Runtime ID</span>
+              <strong id="runtimeIdDisplay">not registered</strong>
+            </div>
+            <div class="status-row">
+              <span>Heartbeat</span>
+              <strong id="runtimeHeartbeatState">not registered</strong>
+            </div>
+            <div class="status-row">
+              <span>Last heartbeat</span>
+              <strong id="runtimeLastHeartbeat">--</strong>
+            </div>
+          </div>
+          <div class="input-stack">
+            <label class="field-label" for="runtimePairingCodeInput">
+              Runtime pairing code
+            </label>
+            <input
+              id="runtimePairingCodeInput"
+              type="password"
+              placeholder="Runtime pairing code"
+              autocomplete="off"
+              spellcheck="false"
+            />
+          </div>
+          <div class="button-grid button-grid--triple">
+            <button id="registerRuntimeButton" class="primary-button" type="button">
+              Register Runtime
+            </button>
+            <button id="startHeartbeatButton" type="button">
+              Start Heartbeat
+            </button>
+            <button id="stopHeartbeatButton" type="button">
+              Stop Heartbeat
+            </button>
+          </div>
+        </section>
+
+        <section class="panel-card claw-bridge-card">
+          <h2>KimiClaw Cloud Bridge</h2>
+          <p class="panel-note">
+            KimiClaw Cloud actions arrive here first. Approved actions execute
+            locally through ToolExecutor, Life Engine, SafetyGate, and CommandQueue.
+          </p>
+          <p class="cloud-warning">
+            For KimiClaw Cloud, ROBOT_BRIDGE_PUBLIC_URL must be a public HTTPS
+            URL pointing to this server.
+          </p>
+          <div class="status-grid">
+            <div class="status-row">
+              <span>Bridge status</span>
+              <strong id="clawBridgeState">stopped</strong>
+            </div>
+            <div class="status-row">
+              <span>Runtime online</span>
+              <strong id="runtimeOnlineState" class="runtime-state--offline">offline</strong>
+            </div>
+            <div class="status-row">
+              <span>Cloud Motion</span>
+              <strong id="cloudMotionState" class="cloud-motion-state--disarmed">
+                DISARMED - cloud actions cannot move the body
+              </strong>
+            </div>
+          </div>
+          <p class="safety-note">
+            Only arm cloud motion when the robot is supervised and wheels/body are safe.
+            Stop actions still execute while disarmed.
+          </p>
+          <div class="bridge-policy-grid">
+            <label class="checkbox-field">
+              <input id="cloudSpeakToggle" type="checkbox" checked />
+              <span>Allow cloud speech</span>
+            </label>
+            <label class="checkbox-field">
+              <input id="cloudNonPhysicalToggle" type="checkbox" checked />
+              <span>Allow cloud expressions / memory / observe</span>
+            </label>
+          </div>
+          <div class="button-grid">
+            <button id="startClawBridgeButton" class="primary-button" type="button">
+              Start KimiClaw Bridge
+            </button>
+            <button id="stopClawBridgeButton" type="button">
+              Stop KimiClaw Bridge
+            </button>
+            <button id="cloudMotionArmButton" class="warning-button" type="button">
+              Arm Cloud Motion
+            </button>
+            <button id="injectTestClawActionButton" type="button">
+              Inject Test Claw Action
+            </button>
+            <button id="injectComeHereActionButton" type="button">
+              Inject Come Here Action
+            </button>
+            <button id="injectStopActionButton" class="danger-button" type="button">
+              Inject Stop Action
+            </button>
+            <button id="injectSpeakActionButton" type="button">
+              Inject Speak Action
+            </button>
+            <button id="injectOpenFrontCameraActionButton" type="button">
+              Inject Open Front Camera Action
+            </button>
+            <button id="injectObserveSceneActionButton" type="button">
+              Inject Observe Scene Action
+            </button>
+            <button id="injectCaptureSnapshotActionButton" type="button">
+              Inject Capture Snapshot Action
+            </button>
+          </div>
+          <div id="clawActionList" class="claw-action-list" aria-live="polite"></div>
+        </section>
+
+        <section class="panel-card">
+          <h2>Robot Body</h2>
+          <p class="safety-note">
+            Safety: lift the wheels before the first movement test.
+          </p>
+          <div class="input-stack">
+            <label class="field-label" for="esp32UrlInput">WebSocket URL</label>
+            <input
+              id="esp32UrlInput"
+              type="text"
+              value="ws://192.168.4.1:81"
+              autocomplete="off"
+              spellcheck="false"
+            />
+          </div>
+          <div class="button-grid button-grid--triple">
+            <button id="connectEsp32Button" class="primary-button" type="button">
+              Connect ESP32
+            </button>
+            <button id="disconnectEsp32Button" type="button">Disconnect</button>
+            <button id="pingButton" type="button">Ping</button>
+          </div>
+          <div class="button-grid button-grid--single">
+            <button id="stopButton" class="danger-button" type="button">
+              Emergency Stop
+            </button>
+          </div>
+        </section>
+
+        <section class="panel-card">
+          <h2>Manual Movement Test</h2>
+          <div class="slider-grid">
+            <label class="slider-field" for="speedSlider">
+              <span>Speed</span>
+              <strong id="speedValue">0.20</strong>
+              <input
+                id="speedSlider"
+                type="range"
+                min="0.05"
+                max="0.40"
+                step="0.05"
+                value="0.20"
+              />
+            </label>
+            <label class="slider-field" for="durationSlider">
+              <span>Duration</span>
+              <strong id="durationValue">400 ms</strong>
+              <input
+                id="durationSlider"
+                type="range"
+                min="100"
+                max="1000"
+                step="50"
+                value="400"
+              />
+            </label>
+          </div>
+          <div class="movement-grid">
+            <button id="moveForwardButton" class="movement-button" type="button">
+              Forward
+            </button>
+            <button id="moveBackwardButton" class="movement-button" type="button">
+              Backward
+            </button>
+            <button id="rotateLeftButton" class="movement-button" type="button">
+              Rotate Left
+            </button>
+            <button id="rotateRightButton" class="movement-button" type="button">
+              Rotate Right
+            </button>
+            <button id="manualStopButton" class="danger-button movement-button" type="button">
+              Stop
+            </button>
+          </div>
+        </section>
+
+        <section class="panel-card">
+          <h2>Telemetry</h2>
+          <div class="status-grid telemetry-grid">
+            <div class="status-row">
+              <span>Connection state</span>
+              <strong id="connectionState">disconnected</strong>
+            </div>
+            <div class="status-row">
+              <span>Latest RSSI</span>
+              <strong id="telemetryRssi">--</strong>
+            </div>
+            <div class="status-row">
+              <span>Client count</span>
+              <strong id="telemetryClients">--</strong>
+            </div>
+            <div class="status-row">
+              <span>Motor state</span>
+              <strong id="telemetryMotorState">--</strong>
+            </div>
+            <div class="status-row">
+              <span>Left speed</span>
+              <strong id="telemetryLeftSpeed">--</strong>
+            </div>
+            <div class="status-row">
+              <span>Right speed</span>
+              <strong id="telemetryRightSpeed">--</strong>
+            </div>
+            <div class="status-row">
+              <span>Motion remaining</span>
+              <strong id="telemetryMotionRemaining">--</strong>
+            </div>
+            <div class="status-row">
+              <span>Last command age</span>
+              <strong id="telemetryLastCommandAge">--</strong>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel-card">
+          <h2>Scenario Tests</h2>
+          <p class="panel-note">
+            These simulate local Life Engine reactions only. Kimi is not involved.
+          </p>
+          <div class="button-grid scenario-grid">
+            <button id="scenarioComeHereButton" class="primary-button" type="button">
+              Scenario: Come Here
+            </button>
+            <button id="scenarioGiveMeSpaceButton" type="button">
+              Scenario: Give Me Space
+            </button>
+            <button id="scenarioLookAroundButton" type="button">
+              Scenario: Look Around
+            </button>
+            <button id="scenarioStopButton" class="danger-button" type="button">
+              Scenario: Stop / Freeze
+            </button>
+            <button id="scenarioBoredButton" type="button">
+              Scenario: Ignored / Bored
+            </button>
+            <button id="scenarioLowEnergyButton" type="button">
+              Scenario: Low Energy
+            </button>
+            <button id="scenarioObstacleButton" class="warning-button" type="button">
+              Scenario: Obstacle
+            </button>
+            <button id="scenarioClearObstacleButton" type="button">
+              Scenario: Clear Obstacle
+            </button>
+          </div>
+        </section>
+
+        <section class="panel-card">
+          <h2>Face & Demo</h2>
+          <div class="input-row">
+            <input
+              id="userInput"
+              type="text"
+              placeholder="Say something to LOOI..."
+              autocomplete="off"
+            />
+            <button id="sendButton" class="primary-button" type="button">
+              Send
+            </button>
+          </div>
+          <div class="button-grid">
+            <button id="happyButton" type="button">Test Happy</button>
+            <button id="curiousButton" type="button">Test Curious</button>
+            <button id="wiggleButton" type="button">Test Wiggle</button>
+          </div>
+        </section>
+
+        <section class="panel-card log-card">
+          <h2>Log</h2>
+          <div id="logPanel" class="log-panel" aria-live="polite"></div>
+        </section>
+      </section>
+    </main>
+
+    <script type="module" src="./js/app.js"></script>
+  </body>
+</html>

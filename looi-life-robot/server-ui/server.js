@@ -1,0 +1,758 @@
+import cors from "cors";
+import dotenv from "dotenv";
+import express from "express";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { LearnedPhraseStore } from "./lib/memory/learnedPhraseStore.js";
+import { MemoryStore, looksLikeSecret } from "./lib/memory/memoryStore.js";
+import { RobotActionQueue } from "./lib/robotBridge/actionQueue.js";
+import { RobotEventQueue } from "./lib/robotBridge/eventQueue.js";
+import { RuntimeRegistry } from "./lib/robotBridge/runtimeRegistry.js";
+
+dotenv.config();
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const app = express();
+const port = Number(process.env.PORT || 3000);
+const robotActionQueue = new RobotActionQueue();
+const memoryStore = new MemoryStore();
+const learnedPhraseStore = new LearnedPhraseStore();
+const robotEventQueue = new RobotEventQueue({
+  maxEvents: Number(process.env.ROBOT_EVENT_MAX_STORED || 200)
+});
+const requireRuntimeAuth = process.env.ROBOT_REQUIRE_RUNTIME_AUTH === "true";
+const runtimeHeartbeatStaleMs = Number(process.env.ROBOT_RUNTIME_HEARTBEAT_STALE_MS || 5000);
+const robotActionWaitTimeoutMs = Number(process.env.ROBOT_ACTION_WAIT_TIMEOUT_MS || 15000);
+const robotEventWaitTimeoutMs = Number(process.env.ROBOT_EVENT_WAIT_TIMEOUT_MS || 30000);
+const runtimeRegistry = new RuntimeRegistry({
+  tokenTtlMs: Number(process.env.ROBOT_RUNTIME_TOKEN_TTL_MS || 86_400_000),
+  staleMs: runtimeHeartbeatStaleMs
+});
+const requireHttpsForExternal =
+  process.env.ROBOT_BRIDGE_REQUIRE_HTTPS_FOR_EXTERNAL !== "false";
+
+// Only public, browser-safe config lives here.
+const PUBLIC_CONFIG = {
+  defaultEsp32WsUrl: "ws://192.168.4.1:81",
+  maxSpeed: 0.4,
+  maxDurationMs: 1000,
+  robotBridgeEnabled: true,
+  robotBridgePollMs: Number(process.env.ROBOT_BRIDGE_POLL_MS || 1000),
+  robotBridgePublicUrlConfigured: Boolean(process.env.ROBOT_BRIDGE_PUBLIC_URL),
+  bridgeAuthEnabled: Boolean(process.env.ROBOT_BRIDGE_TOKEN),
+  robotRequireRuntimeAuth: requireRuntimeAuth,
+  robotRuntimeHeartbeatMs: 1000,
+  robotRuntimeHeartbeatStaleMs: runtimeHeartbeatStaleMs,
+  robotEventWaitTimeoutMs,
+  cameraObservationPostMs: 3000,
+  cameraSnapshotMaxWidth: 320,
+  cloudCameraAllowedDefault: false
+};
+
+app.set("trust proxy", true);
+app.use(cors());
+app.use(express.json());
+app.use(express.static(path.join(__dirname, "public")));
+
+app.get("/api/health", (_req, res) => {
+  res.json({
+    ok: true,
+    service: "looi-life-server",
+    time: new Date().toISOString()
+  });
+});
+
+app.get("/api/config", (_req, res) => {
+  res.json(PUBLIC_CONFIG);
+});
+
+app.get("/api/robot-bridge/health", (_req, res) => {
+  const stats = robotActionQueue.getStats();
+  const eventStats = robotEventQueue.getStats();
+
+  res.json({
+    ok: true,
+    service: "looi-robot-bridge",
+    time: new Date().toISOString(),
+    publicUrlConfigured: Boolean(process.env.ROBOT_BRIDGE_PUBLIC_URL),
+    pendingActions: stats.pending,
+    recentActions: stats.recent,
+    newEvents: eventStats.new,
+    recentEvents: eventStats.recent,
+    requireHttpsForExternal,
+    runtime: runtimeRegistry.getPublicStatus()
+  });
+});
+
+app.post("/api/robot-bridge/runtime/register", (req, res) => {
+  const pairingCode = typeof req.body?.pairingCode === "string" ? req.body.pairingCode : "";
+  const expectedPairingCode = process.env.ROBOT_RUNTIME_PAIRING_CODE;
+
+  if (
+    requireRuntimeAuth &&
+    (!expectedPairingCode || pairingCode !== expectedPairingCode)
+  ) {
+    res.status(401).json({
+      ok: false,
+      error: "Invalid runtime pairing code"
+    });
+    return;
+  }
+
+  const runtime = runtimeRegistry.createRuntime({
+    name: req.body?.name ?? "phone-browser"
+  });
+
+  res.json({
+    ok: true,
+    ...runtime,
+    requireRuntimeAuth
+  });
+});
+
+app.post("/api/robot-bridge/runtime/heartbeat", requireRobotRuntimeAuth, (req, res) => {
+  const runtimeToken = getRuntimeTokenFromRequest(req);
+  const runtime = runtimeRegistry.updateHeartbeat({
+    runtimeId: req.body?.runtimeId,
+    runtimeToken,
+    status: req.body?.status ?? {}
+  });
+
+  if (!runtime) {
+    res.status(401).json({
+      ok: false,
+      error: "Invalid robot runtime heartbeat"
+    });
+    return;
+  }
+
+  res.json({
+    ok: true,
+    online: runtimeRegistry.isRuntimeOnline(),
+    serverTime: new Date().toISOString()
+  });
+});
+
+app.get("/api/robot-bridge/runtime/status", requireRobotBridgeAuth, (_req, res) => {
+  res.json({
+    ok: true,
+    runtime: runtimeRegistry.getPublicStatus()
+  });
+});
+
+app.post("/api/robot-bridge/events", requireRobotRuntimeAuth, (req, res) => {
+  try {
+    const event = robotEventQueue.enqueueEvent(req.body ?? {});
+    res.json({
+      ok: true,
+      event
+    });
+  } catch (error) {
+    sendBridgeError(res, error);
+  }
+});
+
+app.get("/api/robot-bridge/events/recent", requireRobotBridgeAuth, (req, res) => {
+  res.json({
+    ok: true,
+    events: robotEventQueue.getRecentEvents({ limit: req.query.limit })
+  });
+});
+
+app.get("/api/robot-bridge/events/new", requireRobotBridgeAuth, (req, res) => {
+  res.json({
+    ok: true,
+    events: robotEventQueue.getNewEvents({
+      limit: req.query.limit,
+      types: req.query.types
+    })
+  });
+});
+
+app.post("/api/robot-bridge/events/claim", requireRobotBridgeAuth, (req, res) => {
+  const body = req.body ?? {};
+
+  res.json({
+    ok: true,
+    events: robotEventQueue.claimEvents({
+      consumer: body.consumer ?? "kimi_claw_cloud",
+      limit: body.limit ?? 10
+    })
+  });
+});
+
+app.get("/api/robot-bridge/events/wait", requireRobotBridgeAuth, async (req, res) => {
+  const timeoutMs = clampNumber(req.query.timeoutMs, 0, 60_000, robotEventWaitTimeoutMs);
+  const pollMs = clampNumber(req.query.pollMs, 100, 2_000, 500);
+  const result = await robotEventQueue.waitForEvent({
+    timeoutMs,
+    pollMs,
+    types: req.query.types
+  });
+
+  res.json({
+    ok: true,
+    done: result.done,
+    events: result.events,
+    timedOut: result.timedOut
+  });
+});
+
+app.post("/api/robot-bridge/events/clear", requireRobotBridgeAuth, (req, res) => {
+  const includeNew = req.body?.includeNew === true;
+  const cleared = robotEventQueue.clearAll({ includeNew });
+
+  res.json({
+    ok: true,
+    cleared,
+    includeNew,
+    stats: robotEventQueue.getStats()
+  });
+});
+
+app.get("/api/robot-bridge/events/:id", requireRobotBridgeAuth, (req, res) => {
+  const event = robotEventQueue.getEvent(req.params.id);
+  sendEventResult(res, event);
+});
+
+app.post("/api/robot-bridge/events/:id/handled", requireRobotBridgeAuth, (req, res) => {
+  const event = robotEventQueue.markHandled(req.params.id, req.body?.result ?? {});
+  sendEventResult(res, event);
+});
+
+app.post("/api/robot-bridge/events/:id/ignored", requireRobotBridgeAuth, (req, res) => {
+  const event = robotEventQueue.markIgnored(req.params.id, req.body?.result ?? {});
+  sendEventResult(res, event);
+});
+
+app.post("/api/robot-bridge/actions", requireRobotBridgeAuth, (req, res) => {
+  try {
+    const action = robotActionQueue.enqueueAction(req.body ?? {});
+    res.json({
+      ok: true,
+      action
+    });
+  } catch (error) {
+    sendBridgeError(res, error);
+  }
+});
+
+app.post("/api/robot-bridge/actions/batch", requireRobotBridgeAuth, (req, res) => {
+  try {
+    const actions = robotActionQueue.enqueueBatch(req.body ?? {});
+
+    res.json({
+      ok: true,
+      actions
+    });
+  } catch (error) {
+    sendBridgeError(res, error);
+  }
+});
+
+app.get("/api/robot-bridge/actions/pending", (req, res) => {
+  res.json({
+    ok: true,
+    actions: robotActionQueue.getPendingActions({ limit: req.query.limit })
+  });
+});
+
+app.post("/api/robot-bridge/actions/claim", requireRobotRuntimeAuth, (req, res) => {
+  const body = req.body ?? {};
+
+  res.json({
+    ok: true,
+    actions: robotActionQueue.claimActions({
+      consumer: body.consumer ?? "phone-browser",
+      limit: body.limit ?? 10
+    })
+  });
+});
+
+app.get("/api/robot-bridge/actions/recent", (req, res) => {
+  res.json({
+    ok: true,
+    actions: robotActionQueue.getRecentActions({ limit: req.query.limit })
+  });
+});
+
+app.get("/api/robot-bridge/actions/:id", requireRobotBridgeAuth, (req, res) => {
+  const action = robotActionQueue.getAction(req.params.id);
+  sendActionResult(res, action);
+});
+
+app.get("/api/robot-bridge/actions/:id/wait", requireRobotBridgeAuth, async (req, res) => {
+  const actionId = req.params.id;
+  const timeoutMs = clampNumber(
+    req.query.timeoutMs,
+    0,
+    30_000,
+    robotActionWaitTimeoutMs
+  );
+  const pollMs = clampNumber(req.query.pollMs, 100, 2_000, 500);
+  const started = Date.now();
+
+  let action = robotActionQueue.getAction(actionId);
+
+  if (!action) {
+    res.status(404).json({
+      ok: false,
+      error: "Robot bridge action not found"
+    });
+    return;
+  }
+
+  while (!isTerminalAction(action) && Date.now() - started < timeoutMs) {
+    await sleep(pollMs);
+    action = robotActionQueue.getAction(actionId);
+
+    if (!action) {
+      res.status(404).json({
+        ok: false,
+        error: "Robot bridge action not found"
+      });
+      return;
+    }
+  }
+
+  const done = isTerminalAction(action);
+
+  res.json({
+    ok: true,
+    done,
+    action,
+    timedOut: !done
+  });
+});
+
+app.post("/api/robot-bridge/actions/:id/complete", requireRobotRuntimeAuth, (req, res) => {
+  const action = robotActionQueue.completeAction(req.params.id, req.body?.result ?? {});
+  sendActionResult(res, action);
+});
+
+app.post("/api/robot-bridge/actions/:id/fail", requireRobotRuntimeAuth, (req, res) => {
+  const action = robotActionQueue.failAction(req.params.id, req.body?.error ?? "Action failed");
+  sendActionResult(res, action);
+});
+
+app.post("/api/robot-bridge/actions/:id/reject", requireRobotRuntimeAuth, (req, res) => {
+  const action = robotActionQueue.rejectAction(
+    req.params.id,
+    req.body?.error ?? "Action rejected"
+  );
+  sendActionResult(res, action);
+});
+
+app.post("/api/robot-bridge/actions/clear", requireRobotBridgeAuth, (req, res) => {
+  const includePending = req.body?.includePending === true;
+  const cleared = robotActionQueue.clearAll({ includePending });
+
+  res.json({
+    ok: true,
+    cleared,
+    includePending,
+    stats: robotActionQueue.getStats()
+  });
+});
+
+app.post("/api/memory/write", requireMemoryAccess, async (req, res) => {
+  try {
+    const result = await memoryStore.writeMemory({
+      type: req.body?.type,
+      text: req.body?.text,
+      metadata: req.body?.metadata ?? {}
+    });
+
+    res.json({
+      ok: true,
+      memory: result,
+      writtenTo: result.path
+    });
+  } catch (error) {
+    sendMemoryError(res, error);
+  }
+});
+
+app.get("/api/memory/context", requireMemoryAccess, async (_req, res) => {
+  try {
+    res.json({
+      ok: true,
+      memory: await memoryStore.getCompactMemoryContext()
+    });
+  } catch (error) {
+    sendMemoryError(res, error);
+  }
+});
+
+app.get("/api/memory/learned-phrases", requireMemoryAccess, async (_req, res) => {
+  try {
+    res.json({
+      ok: true,
+      phrases: await learnedPhraseStore.listPhrases()
+    });
+  } catch (error) {
+    sendMemoryError(res, error);
+  }
+});
+
+app.post("/api/memory/learned-phrases", requireMemoryAccess, async (req, res) => {
+  try {
+    rejectSecretLikeLearnedPhrase(req.body ?? {});
+    const entry = await addLearnedPhraseAndRemember(req.body ?? {}, "manual");
+
+    res.json({
+      ok: true,
+      phrase: entry
+    });
+  } catch (error) {
+    sendMemoryError(res, error);
+  }
+});
+
+app.delete("/api/memory/learned-phrases/:id", requireMemoryAccess, async (req, res) => {
+  try {
+    const result = await learnedPhraseStore.removePhrase(req.params.id);
+
+    if (!result) {
+      res.status(404).json({
+        ok: false,
+        error: "learned phrase not found"
+      });
+      return;
+    }
+
+    res.json({
+      ok: true,
+      removed: result
+    });
+  } catch (error) {
+    sendMemoryError(res, error);
+  }
+});
+
+app.post("/api/memory/learned-phrases/:id/use", requireMemoryAccess, async (req, res) => {
+  try {
+    const phrase = await learnedPhraseStore.recordUse(req.params.id);
+
+    if (!phrase) {
+      res.status(404).json({
+        ok: false,
+        error: "learned phrase not found"
+      });
+      return;
+    }
+
+    res.json({
+      ok: true,
+      phrase
+    });
+  } catch (error) {
+    sendMemoryError(res, error);
+  }
+});
+
+app.get("/api/memory/stats", requireMemoryAccess, async (_req, res) => {
+  try {
+    const [stats, phrases] = await Promise.all([
+      memoryStore.getMemoryStats(),
+      learnedPhraseStore.listPhrases()
+    ]);
+
+    res.json({
+      ok: true,
+      stats: {
+        ...stats,
+        learnedPhraseCount: phrases.length
+      }
+    });
+  } catch (error) {
+    sendMemoryError(res, error);
+  }
+});
+
+app.get("/api/robot-bridge/memory/context", requireRobotBridgeAuth, async (_req, res) => {
+  try {
+    res.json({
+      ok: true,
+      memory: await memoryStore.getCompactMemoryContext()
+    });
+  } catch (error) {
+    sendMemoryError(res, error);
+  }
+});
+
+app.post("/api/robot-bridge/memory/write", requireRobotBridgeAuth, async (req, res) => {
+  try {
+    const result = await memoryStore.writeMemory({
+      type: req.body?.type,
+      text: req.body?.text,
+      metadata: {
+        source: "kimi_claw",
+        ...(req.body?.metadata ?? {})
+      }
+    });
+
+    res.json({
+      ok: true,
+      memory: result,
+      writtenTo: result.path
+    });
+  } catch (error) {
+    sendMemoryError(res, error);
+  }
+});
+
+app.get("/api/robot-bridge/memory/learned-phrases", requireRobotBridgeAuth, async (_req, res) => {
+  try {
+    res.json({
+      ok: true,
+      phrases: await learnedPhraseStore.listPhrases()
+    });
+  } catch (error) {
+    sendMemoryError(res, error);
+  }
+});
+
+app.post("/api/robot-bridge/memory/learned-phrases", requireRobotBridgeAuth, async (req, res) => {
+  try {
+    rejectSecretLikeLearnedPhrase(req.body ?? {});
+    const entry = await addLearnedPhraseAndRemember(req.body ?? {}, "kimi_claw");
+
+    res.json({
+      ok: true,
+      phrase: entry
+    });
+  } catch (error) {
+    sendMemoryError(res, error);
+  }
+});
+
+// Placeholder: POST /api/agent/message
+// Placeholder: POST /api/agent/tool-results
+
+function requireRobotBridgeAuth(req, res, next) {
+  if (verifyRobotBridgeAuth(req)) {
+    next();
+    return;
+  }
+
+  res.status(401).json({
+    ok: false,
+    error: "Unauthorized robot bridge request"
+  });
+}
+
+function requireRobotRuntimeAuth(req, res, next) {
+  if (verifyRuntimeAuth(req)) {
+    next();
+    return;
+  }
+
+  res.status(401).json({
+    ok: false,
+    error: "Unauthorized robot runtime request"
+  });
+}
+
+function requireMemoryAccess(req, res, next) {
+  if (isLocalRequest(req) || verifyRuntimeAuth(req) || verifyRobotBridgeAuth(req)) {
+    next();
+    return;
+  }
+
+  res.status(401).json({
+    ok: false,
+    error: "Unauthorized memory request"
+  });
+}
+
+function verifyRobotBridgeAuth(req) {
+  const localRequest = isLocalRequest(req);
+
+  if (localRequest && process.env.ROBOT_BRIDGE_ALLOW_UNAUTH_LOCAL === "true") {
+    return true;
+  }
+
+  if (requireHttpsForExternal && !localRequest && !isHttpsRequest(req)) {
+    return false;
+  }
+
+  const expectedToken = process.env.ROBOT_BRIDGE_TOKEN;
+
+  if (!expectedToken) {
+    return false;
+  }
+
+  const authHeader = req.get("authorization") ?? "";
+  const bearerPrefix = "Bearer ";
+  const bearerToken = authHeader.startsWith(bearerPrefix)
+    ? authHeader.slice(bearerPrefix.length)
+    : "";
+  const headerToken = req.get("x-robot-bridge-token") ?? "";
+
+  return bearerToken === expectedToken || headerToken === expectedToken;
+}
+
+function verifyRuntimeAuth(req) {
+  if (!requireRuntimeAuth) {
+    return true;
+  }
+
+  const runtimeToken = getRuntimeTokenFromRequest(req);
+  const expectedBridgeToken = process.env.ROBOT_BRIDGE_TOKEN;
+
+  if (!runtimeToken || (expectedBridgeToken && runtimeToken === expectedBridgeToken)) {
+    return false;
+  }
+
+  return Boolean(runtimeRegistry.verifyRuntimeToken(runtimeToken));
+}
+
+function getRuntimeTokenFromRequest(req) {
+  const authHeader = req.get("authorization") ?? "";
+  const bearerToken = authHeader.startsWith("Bearer ") ? authHeader.slice("Bearer ".length) : "";
+  return bearerToken || req.get("x-robot-runtime-token") || "";
+}
+
+function isLocalRequest(req) {
+  const ip = req.ip ?? req.socket?.remoteAddress ?? "";
+  const forwardedFor = String(req.get("x-forwarded-for") ?? "")
+    .split(",")[0]
+    .trim();
+  const host = req.hostname ?? "";
+
+  if (forwardedFor) {
+    return (
+      forwardedFor === "127.0.0.1" ||
+      forwardedFor === "::1" ||
+      forwardedFor === "::ffff:127.0.0.1"
+    );
+  }
+
+  return (
+    ip === "127.0.0.1" ||
+    ip === "::1" ||
+    ip === "::ffff:127.0.0.1" ||
+    host === "localhost" ||
+    host === "127.0.0.1"
+  );
+}
+
+function isHttpsRequest(req) {
+  return req.secure || String(req.get("x-forwarded-proto") ?? "").split(",")[0].trim() === "https";
+}
+
+function isTerminalAction(action) {
+  return ["completed", "failed", "rejected"].includes(action?.status);
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+function clampNumber(value, min, max, fallback) {
+  const numericValue = Number(value);
+  const fallbackValue = Number.isFinite(Number(fallback)) ? Number(fallback) : min;
+
+  if (!Number.isFinite(numericValue)) {
+    return Math.min(max, Math.max(min, fallbackValue));
+  }
+
+  return Math.min(max, Math.max(min, numericValue));
+}
+
+function sendBridgeError(res, error) {
+  const statusCode = error.statusCode ?? 500;
+
+  res.status(statusCode).json({
+    ok: false,
+    error: statusCode === 500 ? "Robot bridge error" : error.message
+  });
+}
+
+function sendActionResult(res, action) {
+  if (!action) {
+    res.status(404).json({
+      ok: false,
+      error: "Robot bridge action not found"
+    });
+    return;
+  }
+
+  res.json({
+    ok: true,
+    action
+  });
+}
+
+function sendEventResult(res, event) {
+  if (!event) {
+    res.status(404).json({
+      ok: false,
+      error: "Robot event not found"
+    });
+    return;
+  }
+
+  res.json({
+    ok: true,
+    event
+  });
+}
+
+function sendMemoryError(res, error) {
+  const statusCode = Number(error?.statusCode) || 500;
+
+  res.status(statusCode).json({
+    ok: false,
+    error: statusCode === 500 ? "Memory request failed" : error.message
+  });
+}
+
+async function addLearnedPhraseAndRemember(body = {}, fallbackSource = "manual") {
+  const entry = await learnedPhraseStore.addPhrase({
+    phrase: body.phrase,
+    meaning: body.meaning,
+    action: body.action,
+    args: body.args ?? {},
+    confidence: body.confidence ?? "medium",
+    source: body.source ?? fallbackSource
+  });
+
+  await memoryStore.appendLongTermMemory(
+    `Learned phrase "${entry.phrase}" means "${entry.meaning || entry.action}" and maps to ${entry.action}.`,
+    {
+      source: entry.source,
+      importance: entry.confidence,
+      memory_type: "learned_phrase"
+    }
+  );
+
+  return entry;
+}
+
+function rejectSecretLikeLearnedPhrase(entry = {}) {
+  const value = [
+    entry.phrase,
+    entry.meaning,
+    typeof entry.args === "object" ? JSON.stringify(entry.args) : ""
+  ].join(" ");
+
+  if (looksLikeSecret(value)) {
+    throw Object.assign(new Error("learned phrase appears to contain a token, API key, or password"), {
+      statusCode: 400
+    });
+  }
+}
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  app.listen(port, () => {
+    console.log(`LOOI Life Server listening on http://localhost:${port}`);
+  });
+}
+
+export { app, robotActionQueue, robotEventQueue, verifyRobotBridgeAuth };
