@@ -2061,7 +2061,7 @@ function updateCalibrationUi(settings = bodyCalibration?.getSettings?.()) {
     leftTrim: 1,
     rightTrim: 1,
     deadband: 0.03,
-    minPwm: 0,
+    minPwm: 210,
     motionIntensityScale: 1,
     idleMotionEnabled: true
   };

@@ -479,7 +479,7 @@ function createDefaultConfig() {
     right_trim: 1.0,
     deadband: 0.03,
     default_ramp_ms: 120,
-    min_pwm: 0
+    min_pwm: 210
   };
 }
 
@@ -495,7 +495,7 @@ function normalizeConfig(config = {}) {
     default_ramp_ms: Math.round(
       clampWithWarning(config.default_ramp_ms, 0, MAX_RAMP_MS, defaults.default_ramp_ms, "default_ramp_ms", warnings)
     ),
-    min_pwm: Math.round(clampWithWarning(config.min_pwm, 0, 90, defaults.min_pwm, "min_pwm", warnings))
+    min_pwm: Math.round(clampWithWarning(config.min_pwm, 0, 255, defaults.min_pwm, "min_pwm", warnings))
   };
 
   return {

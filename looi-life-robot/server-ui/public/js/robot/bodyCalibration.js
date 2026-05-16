@@ -16,7 +16,7 @@ export const DEFAULT_BODY_CALIBRATION = {
   leftTrim: 1.0,
   rightTrim: 1.0,
   deadband: 0.03,
-  minPwm: 0,
+  minPwm: 210,
   motionIntensityScale: 1.0,
   idleMotionEnabled: true
 };
@@ -180,7 +180,7 @@ export function normalizeSettings(settings = {}) {
     leftTrim: clampNumber(settings.leftTrim, 0.5, 1.3, DEFAULT_BODY_CALIBRATION.leftTrim),
     rightTrim: clampNumber(settings.rightTrim, 0.5, 1.3, DEFAULT_BODY_CALIBRATION.rightTrim),
     deadband: clampNumber(settings.deadband, 0, 0.12, DEFAULT_BODY_CALIBRATION.deadband),
-    minPwm: clampRound(settings.minPwm, 0, 90, DEFAULT_BODY_CALIBRATION.minPwm),
+    minPwm: clampRound(settings.minPwm, 0, 255, DEFAULT_BODY_CALIBRATION.minPwm),
     motionIntensityScale: clampNumber(
       settings.motionIntensityScale,
       0.2,

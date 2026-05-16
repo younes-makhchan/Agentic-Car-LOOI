@@ -26,7 +26,7 @@ assert.equal(clamped.maxSpeed, 0.4);
 assert.equal(clamped.leftTrim, 1.3);
 assert.equal(clamped.rightTrim, 0.5);
 assert.equal(clamped.rampMs, 500);
-assert.equal(clamped.minPwm, 90);
+assert.equal(clamped.minPwm, 255);
 assert.equal(clamped.motionIntensityScale, 1.2);
 
 const exported = calibration.exportJson();

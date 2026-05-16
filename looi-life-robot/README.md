@@ -823,6 +823,7 @@ What changed:
 - Telemetry includes current/target wheel speeds, ramp, motion label, and config.
 - Life Engine body language uses local calibration settings for gentler, more characterful motion.
 - Calibration test movement has its own browser `Calibration Test Armed` gate.
+- Default `min_pwm` is `210` to overcome the current motor/driver startup deadzone.
 
 Safety instructions:
 1. Lift wheels before calibration.
@@ -835,8 +836,9 @@ Safety instructions:
 Tuning guide:
 - If the robot veers left when moving forward, reduce right trim or increase left trim carefully.
 - If the robot veers right, reduce left trim or increase right trim carefully.
-- If movement is jerky, increase `ramp_ms`, reduce `min_pwm`, or reduce speed.
+- If movement is jerky or too strong, increase `ramp_ms`, reduce `min_pwm`, or reduce speed.
 - If the robot does not move at very low speeds, slightly increase `gentleSpeed` or `min_pwm`.
+- If the browser was opened before this change, press `Reset Calibration`, then `Apply to Robot` so the new `min_pwm: 210` default is sent.
 - If it feels too much like an RC car, reduce speed, increase ramp, and use shorter Life Engine movements.
 - If the L298N gets hot, reduce speed and duty cycle; consider TB6612FNG or DRV8833 later.
 

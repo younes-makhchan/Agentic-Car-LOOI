@@ -57,6 +57,7 @@ constexpr uint32_t MIN_DURATION_MS = 50;
 constexpr uint32_t DEFAULT_DURATION_MS = 300;
 constexpr float DEFAULT_DEADBAND = 0.03f;
 constexpr uint32_t DEFAULT_RAMP_MS = 120;
+constexpr uint8_t DEFAULT_MIN_PWM = 210;
 constexpr uint32_t MAX_RAMP_MS = 500;
 constexpr uint32_t MOTOR_UPDATE_INTERVAL_MS = 20;
 
@@ -94,7 +95,7 @@ float leftTrim = 1.0f;
 float rightTrim = 1.0f;
 float runtimeDeadband = DEFAULT_DEADBAND;
 uint32_t defaultRampMs = DEFAULT_RAMP_MS;
-uint8_t minPwm = 0;
+uint8_t minPwm = DEFAULT_MIN_PWM;
 char motionLabel[48] = "";
 
 void setupPins();
@@ -920,7 +921,7 @@ uint32_t clampRamp(double rampMs, uint32_t durationMs) {
 }
 
 uint8_t clampMinPwm(double value) {
-  const double bounded = constrain(value, 0.0, 90.0);
+  const double bounded = constrain(value, 0.0, static_cast<double>(PWM_MAX_DUTY));
   return static_cast<uint8_t>(lround(bounded));
 }
 
