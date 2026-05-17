@@ -993,10 +993,15 @@ export { app, robotActionQueue, robotEventQueue, verifyRobotBridgeAuth };
 async function startServer() {
   if (esp32ConnectOnStart) {
     console.log(`[BOOT] Connecting to ESP32 before server start: ${esp32DefaultWsUrl}`);
-    await esp32Gateway.connect(esp32DefaultWsUrl, {
-      timeoutMs: esp32ConnectTimeoutMs
-    });
-    console.log(`[BOOT] ESP32 connected: ${esp32DefaultWsUrl}`);
+    try {
+      await esp32Gateway.connect(esp32DefaultWsUrl, {
+        timeoutMs: esp32ConnectTimeoutMs
+      });
+      console.log(`[BOOT] ESP32 connected: ${esp32DefaultWsUrl}`);
+    } catch (error) {
+      console.warn(`[BOOT] ESP32 preconnect skipped: ${error.message}`);
+      console.warn("[BOOT] Server will still start. Connect ESP32 from the UI when the robot is reachable.");
+    }
   }
 
   app.listen(port, () => {
