@@ -135,6 +135,10 @@ export function classifySpeech(text, context = {}) {
   const lifeState = context.lifeState ?? {};
   const userVisible = Boolean(lifeState.userVisible);
   const userNear = ["near", "medium", "close"].includes(String(lifeState.userDistance ?? "").toLowerCase());
+  const liveMindActive = Boolean(
+    context.localPolicy?.localBrainEnabled &&
+    (context.speechStatus?.alwaysListening || context.speechStatus?.listening)
+  );
 
   if (!normalizedText || confidence < 0.15) {
     return result("noise", false, "low", false, false, false, normalizedText, "empty_or_low_confidence");
@@ -176,6 +180,24 @@ export function classifySpeech(text, context = {}) {
         directIntent
       );
     }
+  }
+
+  if (
+    liveMindActive &&
+    confidence >= 0.45 &&
+    (startsWithGreeting(normalizedText) || looksLikeQuestion(normalizedText) || looksLikeAssistantRequest(normalizedText))
+  ) {
+    return result(
+      directIntent ? "direct_to_robot" : looksLikeQuestion(normalizedText) ? "question" : "social_comment",
+      true,
+      "normal",
+      true,
+      true,
+      false,
+      normalizedText,
+      "live_mind_social_or_request",
+      directIntent
+    );
   }
 
   if ((userVisible || userNear) && directIntent && confidence >= 0.45) {
@@ -288,6 +310,16 @@ function looksLikeQuestion(text) {
 
 function looksSocial(text) {
   return /\b(hello|hi|hey|good morning|good night|thank you|thanks)\b/.test(normalizeSpeechText(text));
+}
+
+function startsWithGreeting(text) {
+  return /^(hello|hi|hey|good morning|good night)\b/.test(normalizeSpeechText(text));
+}
+
+function looksLikeAssistantRequest(text) {
+  return /^(please\s+)?(can you|could you|would you|will you|move|come|look|listen|say|tell me|answer)\b/.test(
+    normalizeSpeechText(text)
+  );
 }
 
 function stripWakeNames(text, names) {

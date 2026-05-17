@@ -19,6 +19,16 @@ speechGate.openAttentionWindow("smoke");
 assert.equal(speechGate.processTranscript({ text: "come here", confidence: 1 }).classification, "direct_to_robot");
 speechGate.closeAttentionWindow("smoke");
 assert.ok(["possible_direct_command", "background"].includes(speechGate.processTranscript({ text: "come here", confidence: 1 }).classification));
+const liveGate = new SpeechGate({
+  logger: () => {},
+  getContext: () => ({
+    localPolicy: { localBrainEnabled: true },
+    speechStatus: { alwaysListening: true }
+  })
+});
+const liveGreeting = liveGate.processTranscript({ text: "hi can you me", confidence: 1 });
+assert.equal(liveGreeting.accepted, true);
+assert.equal(liveGreeting.shouldTriggerBrain, true);
 
 const attention = new AttentionSystem({ logger: () => {} });
 attention.wake("smoke", 1000);

@@ -1127,7 +1127,9 @@ async function init() {
     logger: (message, level = "info") => log(message, level),
     getContext: () => ({
       lifeState: lifeEngine?.getState?.() ?? {},
-      attention: attentionSystem?.getStatus?.() ?? null
+      attention: attentionSystem?.getStatus?.() ?? null,
+      localPolicy: getPolicy(),
+      speechStatus: speechInput?.getStatus?.() ?? null
     })
   });
   speechGate.attentionWindowMs =
@@ -2371,6 +2373,8 @@ async function startLocalBrainProductionMode() {
   ui.continuousListeningToggle.checked = true;
   ui.alwaysListeningToggle.checked = true;
   speechInput?.startAlwaysListening?.();
+  attentionSystem?.wake?.("live_start", activeConfig.conversationWindowMs ?? 30000);
+  speechGate?.openAttentionWindow?.("live_start");
 
   ui.audioLevelMonitorToggle.checked = true;
   setAudioLevelMonitorEnabled(true).catch((error) => {
