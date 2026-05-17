@@ -964,7 +964,7 @@ function rejectSecretLikeLearnedPhrase(entry = {}) {
 
 function normalizeLocalBrainProvider(value) {
   const provider = String(value || "mock").trim().toLowerCase();
-  return ["mock", "rule", "ollama", "openai-compatible"].includes(provider)
+  return ["mock", "rule", "ollama", "groq", "openai-compatible"].includes(provider)
     ? provider
     : "mock";
 }
@@ -974,6 +974,7 @@ function defaultLocalBrainModel(provider) {
     mock: "mock",
     rule: "rule",
     ollama: "",
+    groq: "llama-3.1-8b-instant",
     "openai-compatible": ""
   }[provider] ?? "mock";
 }

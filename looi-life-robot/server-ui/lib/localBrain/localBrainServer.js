@@ -4,6 +4,7 @@ import {
   normalizeBrainResponse,
   parseBrainResponse
 } from "./brainResponseParser.js";
+import { GroqProvider } from "./providers/groqProvider.js";
 import { MockProvider } from "./providers/mockProvider.js";
 import { OllamaProvider } from "./providers/ollamaProvider.js";
 import { OpenAICompatibleProvider } from "./providers/openAICompatibleProvider.js";
@@ -132,6 +133,8 @@ export function createLocalBrainServerFromEnv(env = process.env, logger) {
         baseUrl: env.LOCAL_BRAIN_BASE_URL || "http://localhost:11434",
         openAiBaseUrl: env.LOCAL_BRAIN_OPENAI_BASE_URL || "http://localhost:1234/v1",
         apiKey: env.LOCAL_BRAIN_OPENAI_API_KEY || "local-not-needed",
+        groqBaseUrl: env.GROQ_BASE_URL || env.LOCAL_BRAIN_GROQ_BASE_URL || "https://api.groq.com/openai/v1",
+        groqApiKey: env.GROQ_API_KEY || env.LOCAL_BRAIN_GROQ_API_KEY || "",
         timeoutMs,
         temperature,
         maxOutputTokens
@@ -160,6 +163,15 @@ function createProvider(providerName, options) {
         timeoutMs: options.timeoutMs,
         temperature: options.temperature
       });
+    case "groq":
+      return new GroqProvider({
+        baseUrl: options.groqBaseUrl,
+        apiKey: options.groqApiKey,
+        model: options.model ?? "llama-3.1-8b-instant",
+        timeoutMs: options.timeoutMs,
+        temperature: options.temperature,
+        maxOutputTokens: options.maxOutputTokens
+      });
     case "openai-compatible":
       return new OpenAICompatibleProvider({
         baseUrl: options.openAiBaseUrl,
@@ -176,7 +188,7 @@ function createProvider(providerName, options) {
 
 function normalizeProvider(value) {
   const provider = String(value || "mock").trim().toLowerCase();
-  return ["mock", "rule", "ollama", "openai-compatible"].includes(provider)
+  return ["mock", "rule", "ollama", "groq", "openai-compatible"].includes(provider)
     ? provider
     : "mock";
 }

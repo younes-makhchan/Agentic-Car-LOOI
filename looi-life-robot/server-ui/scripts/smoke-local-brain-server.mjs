@@ -56,6 +56,18 @@ const fallbackStatus = await fallbackServer.status();
 assert.equal(fallbackStatus.provider, "mock");
 assert.equal(fallbackStatus.available, true);
 
+const groqServer = createLocalBrainServerFromEnv({
+  LOCAL_BRAIN_ENABLED: "true",
+  LOCAL_BRAIN_PROVIDER: "groq",
+  LOCAL_BRAIN_MODEL: "llama-3.1-8b-instant",
+  GROQ_API_KEY: ""
+}, () => {});
+const groqStatus = await groqServer.status();
+assert.equal(groqStatus.provider, "groq");
+assert.equal(groqStatus.model, "llama-3.1-8b-instant");
+assert.equal(groqStatus.available, false);
+assert.match(groqStatus.details.error, /GROQ_API_KEY/);
+
 assert.deepEqual(parseBrainResponse({ text: null, actions: [] }).actions, []);
 assert.equal(parseBrainResponse('{"actions":[{"type":"express","args":{"emotion":"happy"}}]}').actions[0].type, "express");
 assert.equal(stripMarkdownCodeFence("```json\n{\"ok\":true}\n```"), '{"ok":true}');

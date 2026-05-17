@@ -5,7 +5,9 @@ export class OpenAICompatibleProvider {
     model = "",
     timeoutMs = 20000,
     temperature = 0.4,
-    maxOutputTokens = 512
+    maxOutputTokens = 512,
+    name = "openai-compatible",
+    responseFormat = null
   } = {}) {
     this.baseUrl = trimTrailingSlash(baseUrl);
     this.apiKey = apiKey;
@@ -13,10 +15,12 @@ export class OpenAICompatibleProvider {
     this.timeoutMs = Number(timeoutMs) || 20000;
     this.temperature = Number.isFinite(Number(temperature)) ? Number(temperature) : 0.4;
     this.maxOutputTokens = Number(maxOutputTokens) || 512;
+    this.name = name;
+    this.responseFormat = responseFormat;
   }
 
   getName() {
-    return "openai-compatible";
+    return this.name;
   }
 
   async status() {
@@ -63,7 +67,8 @@ export class OpenAICompatibleProvider {
         model: this.model,
         messages,
         temperature: this.temperature,
-        max_tokens: this.maxOutputTokens
+        max_tokens: this.maxOutputTokens,
+        ...(this.responseFormat ? { response_format: this.responseFormat } : {})
       })
     });
     const payload = await response.json().catch(() => ({}));

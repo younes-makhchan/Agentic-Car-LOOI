@@ -76,7 +76,7 @@ npm run smoke:local-first
 
 The laptop `server-ui` process can now run local thinking. The browser asks `POST /api/local-brain/think`, the server returns strict JSON action suggestions, and the browser still executes through `ToolExecutor`, `LifeEngine`, `SafetyGate`, `CommandQueue`, and ESP32.
 
-The server never moves the robot, never connects to ESP32 as a brain, and does not call cloud LLM APIs.
+The server never moves the robot and never connects to ESP32 as a brain. For local-first mode use mock, rule, Ollama, or a local OpenAI-compatible server. If `LOCAL_BRAIN_PROVIDER=groq`, the server calls Groq as a hosted LLM provider, but the browser still only receives structured action suggestions and still executes through the local safety path.
 
 Providers:
 
@@ -90,6 +90,15 @@ Rule:
 
 ```bash
 LOCAL_BRAIN_PROVIDER=rule
+```
+
+Groq hosted provider:
+
+```bash
+LOCAL_BRAIN_PROVIDER=groq
+LOCAL_BRAIN_MODEL=llama-3.1-8b-instant
+GROQ_BASE_URL=https://api.groq.com/openai/v1
+GROQ_API_KEY=your_groq_api_key
 ```
 
 Ollama:
