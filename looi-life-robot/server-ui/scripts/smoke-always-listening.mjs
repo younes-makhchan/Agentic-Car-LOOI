@@ -130,6 +130,54 @@ engineBus.publish("user_speech", {
 await wait(20);
 assert.equal(adapterCalls, 0);
 
+engine.setAdapter({
+  async isAvailable() {
+    return true;
+  },
+  async think() {
+    adapterCalls += 1;
+    return {
+      ok: true,
+      source: "server_llm",
+      actions: [{ type: "express", args: { emotion: "attentive", intensity: 0.5 } }],
+      reason: "speech"
+    };
+  }
+});
+policy = {
+  ...policy,
+  eventThoughtCooldownMs: 0
+};
+engineBus.publish("autonomous_tick", {
+  reason: "boredom_high"
+});
+engineBus.publish("camera_observation", {
+  observation: { userVisible: true }
+});
+await wait(20);
+assert.equal(adapterCalls, 0);
+engineBus.publish("user_speech", {
+  text: "looi hello",
+  classification: "direct_to_robot",
+  accepted: true,
+  shouldTriggerBrain: true
+});
+await wait(20);
+assert.equal(adapterCalls, 1);
+
+engine.setAdapter({
+  async isAvailable() {
+    return true;
+  },
+  async think() {
+    return {
+      ok: true,
+      source: "smoke",
+      actions: [{ type: "approach_user", args: { style: "gentle", distance: "short" } }],
+      reason: "approach"
+    };
+  }
+});
 const rejected = await engine.thinkNow("manual", {
   type: "user_text",
   payload: { text: "come here", accepted: true, shouldTriggerBrain: true }

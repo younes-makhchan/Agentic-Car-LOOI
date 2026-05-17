@@ -4,6 +4,7 @@ import {
   normalizeBrainResponse,
   parseBrainResponse
 } from "./brainResponseParser.js";
+import { FireworksProvider } from "./providers/fireworksProvider.js";
 import { GroqProvider } from "./providers/groqProvider.js";
 import { MockProvider } from "./providers/mockProvider.js";
 import { OllamaProvider } from "./providers/ollamaProvider.js";
@@ -186,6 +187,17 @@ export function createLocalBrainServerFromEnv(env = process.env, logger) {
         apiKey: env.LOCAL_BRAIN_OPENAI_API_KEY || "local-not-needed",
         groqBaseUrl: env.GROQ_BASE_URL || env.LOCAL_BRAIN_GROQ_BASE_URL || "https://api.groq.com/openai/v1",
         groqApiKey: env.GROQ_API_KEY || env.LOCAL_BRAIN_GROQ_API_KEY || "",
+        fireworksBaseUrl:
+          env.FIREWORKS_BASE_URL ||
+          env.LOCAL_BRAIN_FIREWORKS_BASE_URL ||
+          "https://api.fireworks.ai/inference/v1",
+        fireworksApiKey: env.FIREWORKS_API_KEY || env.LOCAL_BRAIN_FIREWORKS_API_KEY || "",
+        fireworksTopP: env.FIREWORKS_TOP_P ?? env.LOCAL_BRAIN_FIREWORKS_TOP_P,
+        fireworksTopK: env.FIREWORKS_TOP_K ?? env.LOCAL_BRAIN_FIREWORKS_TOP_K,
+        fireworksPresencePenalty:
+          env.FIREWORKS_PRESENCE_PENALTY ?? env.LOCAL_BRAIN_FIREWORKS_PRESENCE_PENALTY,
+        fireworksFrequencyPenalty:
+          env.FIREWORKS_FREQUENCY_PENALTY ?? env.LOCAL_BRAIN_FIREWORKS_FREQUENCY_PENALTY,
         logger,
         trace,
         timeoutMs,
@@ -308,6 +320,21 @@ function createProvider(providerName, options) {
         logger: options.logger,
         trace: options.trace
       });
+    case "fireworks":
+      return new FireworksProvider({
+        baseUrl: options.fireworksBaseUrl,
+        apiKey: options.fireworksApiKey,
+        model: options.model ?? "accounts/fireworks/models/gpt-oss-20b",
+        timeoutMs: options.timeoutMs,
+        temperature: options.temperature,
+        maxOutputTokens: options.maxOutputTokens,
+        topP: options.fireworksTopP,
+        topK: options.fireworksTopK,
+        presencePenalty: options.fireworksPresencePenalty,
+        frequencyPenalty: options.fireworksFrequencyPenalty,
+        logger: options.logger,
+        trace: options.trace
+      });
     case "openai-compatible":
       return new OpenAICompatibleProvider({
         baseUrl: options.openAiBaseUrl,
@@ -326,7 +353,7 @@ function createProvider(providerName, options) {
 
 function normalizeProvider(value) {
   const provider = String(value || "mock").trim().toLowerCase();
-  return ["mock", "rule", "ollama", "groq", "openai-compatible"].includes(provider)
+  return ["mock", "rule", "ollama", "groq", "fireworks", "openai-compatible"].includes(provider)
     ? provider
     : "mock";
 }

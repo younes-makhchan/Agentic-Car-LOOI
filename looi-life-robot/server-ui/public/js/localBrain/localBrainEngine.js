@@ -26,6 +26,11 @@ const THOUGHT_EVENTS = new Set([
   "system"
 ]);
 
+const LLM_TRIGGER_EVENT_TYPES = new Set([
+  "user_speech",
+  "user_text"
+]);
+
 const IGNORED_SPEECH_CLASSIFICATIONS = new Set([
   "background",
   "noise",
@@ -234,7 +239,7 @@ export class LocalBrainEngine {
     }
 
     if (event.type === "autonomous_tick") {
-      return this.requestAutonomousThought(event.payload?.reason ?? "autonomous_tick", event);
+      return null;
     }
 
     const policy = this.policy();
@@ -312,33 +317,16 @@ export class LocalBrainEngine {
   }
 
   async requestAutonomousThought(reason = "autonomous_tick", triggerEvent = null) {
-    if (!this.running) {
-      return null;
-    }
-
-    const policy = this.policy();
-
-    if (!policy.localBrainEnabled || !policy.autonomousMode) {
-      return null;
-    }
-
-    if (this.attentionSystem && !this.attentionSystem.canAutonomouslyAct(policy)) {
-      return null;
-    }
-
-    const event = triggerEvent ?? {
-      type: "autonomous_tick",
-      payload: { reason },
-      source: "local_brain",
-      timestamp: new Date().toISOString()
-    };
-
-    return this.thinkNow("autonomous_tick", event);
+    return null;
   }
 
   shouldThinkAboutEvent(event) {
-    if (event?.type === "local_stop_phrase" || event?.type === "autonomous_tick") {
+    if (event?.type === "local_stop_phrase") {
       return true;
+    }
+
+    if (event?.type === "autonomous_tick") {
+      return false;
     }
 
     const payload = event?.payload ?? {};
@@ -361,13 +349,7 @@ export class LocalBrainEngine {
     }
 
     if (event?.type === "camera_observation") {
-      const observation = payload.observation ?? payload.latestObservation ?? {};
-      const attention = this.attentionSystem?.getStatus?.();
-      return Boolean(
-        payload.shouldTriggerBrain ||
-        observation.userVisible ||
-        ["attentive", "conversation"].includes(attention?.mode)
-      );
+      return payload.shouldTriggerBrain === true && payload.fromUserRequest === true;
     }
 
     if (event?.type === "system") {
@@ -489,7 +471,6 @@ export class LocalBrainEngine {
           Date.now() - this.lastThoughtAt >= nextPolicy.minAutonomousThoughtIntervalMs
         ) {
           this.eventBus?.publish?.("autonomous_tick", {}, { source: "local_brain" });
-          await this.thinkNow("autonomous_tick", null);
         }
       } finally {
         this.scheduleAutonomousLoop();
@@ -498,14 +479,21 @@ export class LocalBrainEngine {
   }
 
   async thinkWithAvailableAdapter(context) {
+    const primaryAllowed = this.shouldUsePrimaryAdapter(context);
     const candidates = [
-      { adapter: this.primaryAdapter, fallbackUsed: false },
+      ...(primaryAllowed ? [{ adapter: this.primaryAdapter, fallbackUsed: false }] : []),
       { adapter: this.fallback, fallbackUsed: true },
       { adapter: this.adapter, fallbackUsed: true }
     ].filter((entry, index, list) =>
       entry.adapter &&
       list.findIndex((candidate) => candidate.adapter === entry.adapter) === index
     );
+
+    if (!primaryAllowed && this.primaryAdapter) {
+      this.log(
+        `Local Brain skipped server LLM for trigger=${context.triggerEvent?.type ?? "none"} reason=${context.reason ?? "unknown"}.`
+      );
+    }
 
     let lastError = null;
 
@@ -558,6 +546,31 @@ export class LocalBrainEngine {
 
     this.adapterAvailable = false;
     throw lastError ?? new Error("No Local Brain adapter or fallback is available.");
+  }
+
+  shouldUsePrimaryAdapter(context = {}) {
+    const reason = context.reason ?? "";
+    const triggerType = context.triggerEvent?.type ?? null;
+    const payload = context.triggerEvent?.payload ?? {};
+    const classification = payload.classification ?? payload.speechClassification ?? null;
+
+    if (reason === "manual") {
+      return true;
+    }
+
+    if (!LLM_TRIGGER_EVENT_TYPES.has(triggerType)) {
+      return false;
+    }
+
+    if (payload.shouldTriggerBrain === false) {
+      return false;
+    }
+
+    if (IGNORED_SPEECH_CLASSIFICATIONS.has(classification) && payload.accepted !== true) {
+      return false;
+    }
+
+    return payload.accepted === true || payload.shouldTriggerBrain === true;
   }
 
   async executeStopNow(event) {

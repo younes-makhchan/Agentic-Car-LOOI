@@ -68,6 +68,18 @@ assert.equal(groqStatus.model, "llama-3.1-8b-instant");
 assert.equal(groqStatus.available, false);
 assert.match(groqStatus.details.error, /GROQ_API_KEY/);
 
+const fireworksServer = createLocalBrainServerFromEnv({
+  LOCAL_BRAIN_ENABLED: "true",
+  LOCAL_BRAIN_PROVIDER: "fireworks",
+  LOCAL_BRAIN_MODEL: "accounts/fireworks/models/gpt-oss-20b",
+  FIREWORKS_API_KEY: ""
+}, () => {});
+const fireworksStatus = await fireworksServer.status();
+assert.equal(fireworksStatus.provider, "fireworks");
+assert.equal(fireworksStatus.model, "accounts/fireworks/models/gpt-oss-20b");
+assert.equal(fireworksStatus.available, false);
+assert.match(fireworksStatus.details.error, /FIREWORKS_API_KEY/);
+
 assert.deepEqual(parseBrainResponse({ text: null, actions: [] }).actions, []);
 assert.equal(parseBrainResponse('{"actions":[{"type":"express","args":{"emotion":"happy"}}]}').actions[0].type, "express");
 assert.equal(stripMarkdownCodeFence("```json\n{\"ok\":true}\n```"), '{"ok":true}');

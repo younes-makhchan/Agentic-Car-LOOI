@@ -8,6 +8,7 @@ export class OpenAICompatibleProvider {
     maxOutputTokens = 192,
     name = "openai-compatible",
     responseFormat = null,
+    extraParams = {},
     logger,
     trace = false
   } = {}) {
@@ -19,6 +20,7 @@ export class OpenAICompatibleProvider {
     this.maxOutputTokens = Number(maxOutputTokens) || 192;
     this.name = name;
     this.responseFormat = responseFormat;
+    this.extraParams = isPlainObject(extraParams) ? { ...extraParams } : {};
     this.logger = logger;
     this.trace = Boolean(trace);
   }
@@ -84,6 +86,7 @@ export class OpenAICompatibleProvider {
       messages,
       temperature: this.temperature,
       max_tokens: this.maxOutputTokens,
+      ...this.extraParams,
       ...(this.responseFormat ? { response_format: this.responseFormat } : {})
     };
 
@@ -171,4 +174,8 @@ function trimTrailingSlash(value) {
 
 function shortLogText(value, maxLength = 240) {
   return String(value ?? "").replace(/\s+/g, " ").trim().slice(0, maxLength);
+}
+
+function isPlainObject(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
