@@ -110,7 +110,7 @@ export class ToolExecutor {
     return new Promise((resolve) => {
       this.executionQueue.push({ action, resolve });
       this.log(
-        `ToolExecutor queued action ${action?.type ?? "unknown"} from ${action?.source ?? "unknown"}: ${safeStringify(action?.args ?? {})}`
+        `STEP 4 TOOL_QUEUE ${action?.type ?? "unknown"} from ${action?.source ?? "unknown"}: ${safeStringify(action?.args ?? {})}`
       );
       this.processQueue();
     });
@@ -886,7 +886,7 @@ export class ToolExecutor {
 
     this.recordResult(result);
     this.log(
-      `ToolExecutor result ${result.type}: status=${result.status} executed=${result.executed} physical=${result.physical} message="${result.message}"`
+      `STEP 6 TOOL_RESULT ${result.type}: status=${result.status} executed=${result.executed} physical=${result.physical} message="${result.message}"`
     );
     return result;
   }
@@ -909,7 +909,7 @@ export class ToolExecutor {
       const shapeError = this.validateActionShape(action);
 
       if (shapeError) {
-        this.log(`ToolExecutor rejected action ${action.type}: ${shapeError}`, "warn");
+        this.log(`STEP 4 TOOL_REJECT ${action.type}: ${shapeError}`, "warn");
         item.resolve(
           this.buildResult("rejected", {
             action,
@@ -919,7 +919,7 @@ export class ToolExecutor {
           })
         );
       } else {
-        this.log(`ToolExecutor executing action ${action.type}: ${safeStringify(action.args)}`);
+        this.log(`STEP 4 TOOL_EXECUTE ${action.type}: ${safeStringify(action.args)}`);
         item.resolve(await this.executeTool(action.type, action.args, action));
       }
     } catch (error) {

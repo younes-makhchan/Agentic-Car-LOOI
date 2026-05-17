@@ -163,7 +163,7 @@ export class LocalBrainEngine {
       this.lastFallbackUsed = fallbackUsed;
       this.lastError = null;
       this.log(
-        `Local Brain response provider=${this.provider} latency=${Math.round(Number(this.latestLatencyMs) || 0)}ms text="${response.text ?? ""}" actions=${JSON.stringify((response.actions ?? []).map((action) => ({ type: action.type, args: action.args ?? {} })))}`
+        `STEP 2 BRAIN_RESPONSE provider=${this.provider} latency=${Math.round(Number(this.latestLatencyMs) || 0)}ms text="${response.text ?? ""}" actions=${JSON.stringify((response.actions ?? []).map((action) => ({ type: action.type, args: action.args ?? {} })))}`
       );
       const results = await this.executeBrainResponse(response, context);
       this.lastThoughtAt = Date.now();
@@ -621,7 +621,7 @@ export class LocalBrainEngine {
     };
 
     this.log(
-      `Local Brain executing action ${executableAction.type}: ${JSON.stringify(executableAction.args)}`
+      `STEP 3 ACTION ${executableAction.type}: ${JSON.stringify(executableAction.args)}`
     );
 
     if (!this.toolExecutor?.executeBridgeAction) {

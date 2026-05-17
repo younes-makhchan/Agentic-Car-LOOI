@@ -1668,7 +1668,7 @@ async function handleSend() {
     return;
   }
 
-  log(`User input: ${text}`);
+  log(`STEP 0 INPUT typed: "${text}"`);
   ui.userInput.value = "";
   await handleGatedTranscript({
     text,
@@ -1695,7 +1695,7 @@ async function handleGatedTranscript(transcript = {}) {
     text,
     source
   }) ?? fallbackGateResult(text, source);
-  traceLive("SpeechGate", {
+  traceLive("STEP 1 SPEECH_GATE", {
     text,
     source,
     classification: gateResult.classification,
@@ -1822,7 +1822,7 @@ async function handleFinalSpeech(payload) {
   };
   ui.finalTranscript.textContent = text;
   ui.interimTranscript.textContent = "";
-  log(`Heard: ${text}`);
+  log(`STEP 0 INPUT speech: "${text}"`);
   await handleGatedTranscript({
     ...payload,
     text,
@@ -3661,7 +3661,7 @@ function traceBrainThoughtResult(event = {}) {
   const results = payload.results ?? thought.results ?? [];
   const actions = response.actions ?? thought.actions ?? [];
 
-  traceLive("Brain", {
+  traceLive("STEP 2 BRAIN", {
     reason: thought.reason ?? response.reason,
     provider: payload.provider ?? thought.provider,
     latencyMs: payload.latencyMs ?? thought.latencyMs,
@@ -3695,7 +3695,7 @@ function traceMacroEvent(event = {}) {
     return;
   }
 
-  traceLive(`Macro ${event.type ?? "event"}`, {
+  traceLive(`STEP 4 MACRO ${event.type ?? "event"}`, {
     macro: macroName,
     reason,
     source: payload.source,
