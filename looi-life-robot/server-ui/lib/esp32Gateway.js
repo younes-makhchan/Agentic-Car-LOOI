@@ -20,6 +20,7 @@ export class ESP32Gateway {
     this.lastError = null;
     this.messages = [];
     this.seq = 0;
+    this.lastTelemetryLogKey = "";
   }
 
   async connect(url = DEFAULT_URL, { timeoutMs = this.connectTimeoutMs } = {}) {
@@ -27,6 +28,7 @@ export class ESP32Gateway {
     this.url = nextUrl;
 
     if (this.isConnected() && this.ws?.url === nextUrl) {
+      this.log(`GATEWAY_CONNECT reuse state=connected url=${nextUrl}`);
       return this.getStatus();
     }
 
@@ -42,11 +44,13 @@ export class ESP32Gateway {
     return new Promise((resolve, reject) => {
       let settled = false;
       const ws = new WebSocket(nextUrl);
+      this.log(`GATEWAY_CONNECT opening url=${nextUrl} timeout=${timeoutMs}ms`);
       const timer = setTimeout(() => {
         const error = new Error(`Timed out connecting to ESP32 at ${nextUrl}.`);
         this.lastError = error.message;
         this.connecting = false;
         this.connected = false;
+        this.log(`GATEWAY_CONNECT timeout url=${nextUrl}`, "warn");
         this.recordMessage({
           type: "error",
           cmd: "gateway_connect",
@@ -80,6 +84,7 @@ export class ESP32Gateway {
         this.connected = true;
         this.connecting = false;
         this.lastError = null;
+        this.log(`GATEWAY_CONNECT open url=${nextUrl}`);
         this.recordMessage({
           type: "gateway_status",
           status: "connected",
@@ -97,6 +102,10 @@ export class ESP32Gateway {
         const wasConnecting = this.connecting;
         this.connected = false;
         this.connecting = false;
+        this.log(
+          `GATEWAY_CLOSE url=${nextUrl} code=${event?.code ?? "unknown"} reason=${event?.reason ?? ""}`,
+          wasConnecting ? "warn" : "info"
+        );
 
         if (this.ws === ws) {
           this.ws = null;
@@ -118,6 +127,7 @@ export class ESP32Gateway {
       ws.addEventListener("error", () => {
         const error = new Error(`ESP32 WebSocket error at ${nextUrl}`);
         this.lastError = error.message;
+        this.log(`GATEWAY_ERROR ${error.message}`, "warn");
         this.recordMessage({
           type: "error",
           cmd: "gateway_connect",
@@ -149,6 +159,7 @@ export class ESP32Gateway {
       ws.close(1000, reason);
     }
 
+    this.log(`GATEWAY_DISCONNECT reason=${reason} clearState=${clearState}`);
     this.recordMessage({
       type: "gateway_status",
       status: "disconnected",
@@ -175,6 +186,7 @@ export class ESP32Gateway {
     }
 
     this.ws.send(JSON.stringify(message));
+    this.log(`GATEWAY_SEND ${safeJson(summarizeGatewayPayload(message))}`);
     return message.id;
   }
 
@@ -251,6 +263,7 @@ export class ESP32Gateway {
     }
 
     this.recordMessage(message);
+    this.logIncomingMessage(message);
   }
 
   recordMessage(message) {
@@ -261,6 +274,45 @@ export class ESP32Gateway {
       message
     });
     this.messages = this.messages.slice(-MAX_MESSAGES);
+  }
+
+  logIncomingMessage(message = {}) {
+    if (!message || typeof message !== "object") {
+      return;
+    }
+
+    if (message.type === "telemetry") {
+      const key = [
+        message.motor_state,
+        message.left_speed,
+        message.right_speed,
+        message.current_left_speed,
+        message.current_right_speed,
+        message.battery
+      ].join("|");
+
+      if (key && key !== this.lastTelemetryLogKey) {
+        this.lastTelemetryLogKey = key;
+        this.log(`GATEWAY_RECV telemetry ${safeJson(summarizeGatewayPayload(message))}`);
+      }
+      return;
+    }
+
+    const level = message.type === "error" ? "warn" : "info";
+    this.log(`GATEWAY_RECV ${safeJson(summarizeGatewayPayload(message))}`, level);
+  }
+
+  log(message, level = "info") {
+    const loggerMethod = level === "error" ? "error" : level === "warn" ? "warn" : "info";
+
+    if (typeof this.logger?.[loggerMethod] === "function") {
+      this.logger[loggerMethod](message);
+      return;
+    }
+
+    if (typeof this.logger === "function") {
+      this.logger(message, level);
+    }
   }
 }
 
@@ -287,4 +339,53 @@ function getReadyStateLabel(readyState, connected, connecting) {
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value ?? null));
+}
+
+function summarizeGatewayPayload(payload = {}) {
+  if (!payload || typeof payload !== "object") {
+    return payload;
+  }
+
+  const summary = {};
+  const allowedKeys = [
+    "id",
+    "type",
+    "cmd",
+    "status",
+    "label",
+    "reason",
+    "message",
+    "duration_ms",
+    "ramp_ms",
+    "linear",
+    "angular",
+    "motor_state",
+    "battery",
+    "rssi",
+    "left_speed",
+    "right_speed",
+    "current_left_speed",
+    "current_right_speed",
+    "code"
+  ];
+
+  for (const key of allowedKeys) {
+    if (payload[key] !== undefined) {
+      summary[key] = typeof payload[key] === "string" ? payload[key].slice(0, 180) : payload[key];
+    }
+  }
+
+  if (payload.config && typeof payload.config === "object") {
+    summary.configKeys = Object.keys(payload.config).slice(0, 20);
+  }
+
+  return summary;
+}
+
+function safeJson(value) {
+  try {
+    return JSON.stringify(value);
+  } catch (_error) {
+    return String(value);
+  }
 }

@@ -172,7 +172,7 @@ export function createLocalBrainServerFromEnv(env = process.env, logger) {
   const trace = env.LOCAL_BRAIN_TRACE === "true";
   const timeoutMs = Number(env.LOCAL_BRAIN_TIMEOUT_MS || 20000);
   const temperature = Number(env.LOCAL_BRAIN_TEMPERATURE || 0.4);
-  const maxOutputTokens = Number(env.LOCAL_BRAIN_MAX_OUTPUT_TOKENS || 512);
+  const maxOutputTokens = Number(env.LOCAL_BRAIN_MAX_OUTPUT_TOKENS || 192);
 
   try {
     return new LocalBrainServer({
@@ -186,6 +186,8 @@ export function createLocalBrainServerFromEnv(env = process.env, logger) {
         apiKey: env.LOCAL_BRAIN_OPENAI_API_KEY || "local-not-needed",
         groqBaseUrl: env.GROQ_BASE_URL || env.LOCAL_BRAIN_GROQ_BASE_URL || "https://api.groq.com/openai/v1",
         groqApiKey: env.GROQ_API_KEY || env.LOCAL_BRAIN_GROQ_API_KEY || "",
+        logger,
+        trace,
         timeoutMs,
         temperature,
         maxOutputTokens
@@ -291,7 +293,9 @@ function createProvider(providerName, options) {
         baseUrl: options.baseUrl,
         model: options.model ?? "",
         timeoutMs: options.timeoutMs,
-        temperature: options.temperature
+        temperature: options.temperature,
+        logger: options.logger,
+        trace: options.trace
       });
     case "groq":
       return new GroqProvider({
@@ -300,7 +304,9 @@ function createProvider(providerName, options) {
         model: options.model ?? "llama-3.1-8b-instant",
         timeoutMs: options.timeoutMs,
         temperature: options.temperature,
-        maxOutputTokens: options.maxOutputTokens
+        maxOutputTokens: options.maxOutputTokens,
+        logger: options.logger,
+        trace: options.trace
       });
     case "openai-compatible":
       return new OpenAICompatibleProvider({
@@ -309,7 +315,9 @@ function createProvider(providerName, options) {
         model: options.model ?? "",
         timeoutMs: options.timeoutMs,
         temperature: options.temperature,
-        maxOutputTokens: options.maxOutputTokens
+        maxOutputTokens: options.maxOutputTokens,
+        logger: options.logger,
+        trace: options.trace
       });
     default:
       return new MockProvider({ model: "mock" });

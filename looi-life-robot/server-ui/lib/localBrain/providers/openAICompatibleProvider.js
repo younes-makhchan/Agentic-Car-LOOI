@@ -5,18 +5,22 @@ export class OpenAICompatibleProvider {
     model = "",
     timeoutMs = 20000,
     temperature = 0.4,
-    maxOutputTokens = 512,
+    maxOutputTokens = 192,
     name = "openai-compatible",
-    responseFormat = null
+    responseFormat = null,
+    logger,
+    trace = false
   } = {}) {
     this.baseUrl = trimTrailingSlash(baseUrl);
     this.apiKey = apiKey;
     this.model = model;
     this.timeoutMs = Number(timeoutMs) || 20000;
     this.temperature = Number.isFinite(Number(temperature)) ? Number(temperature) : 0.4;
-    this.maxOutputTokens = Number(maxOutputTokens) || 512;
+    this.maxOutputTokens = Number(maxOutputTokens) || 192;
     this.name = name;
     this.responseFormat = responseFormat;
+    this.logger = logger;
+    this.trace = Boolean(trace);
   }
 
   getName() {
@@ -29,11 +33,18 @@ export class OpenAICompatibleProvider {
     }
 
     try {
+      const startedAt = Date.now();
+      this.traceLog(
+        `PROVIDER_STATUS start provider=${this.getName()} model=${this.model} url=${this.baseUrl}/models timeout=${Math.min(this.timeoutMs, 5000)}ms`
+      );
       const response = await fetchWithTimeout(`${this.baseUrl}/models`, {
         method: "GET",
         timeoutMs: Math.min(this.timeoutMs, 5000),
         headers: this.headers()
       });
+      this.traceLog(
+        `PROVIDER_STATUS response provider=${this.getName()} status=${response.status} duration=${Date.now() - startedAt}ms`
+      );
 
       return {
         ok: true,
@@ -46,6 +57,10 @@ export class OpenAICompatibleProvider {
         }
       };
     } catch (error) {
+      this.traceLog(
+        `PROVIDER_STATUS failed provider=${this.getName()} error="${shortLogText(error.message)}"`,
+        "warn"
+      );
       return unavailable(this.getName(), this.model, error.message);
     }
   }
@@ -59,21 +74,41 @@ export class OpenAICompatibleProvider {
       };
     }
 
+    const startedAt = Date.now();
+    const messageCount = Array.isArray(messages) ? messages.length : 0;
+    const promptChars = Array.isArray(messages)
+      ? messages.reduce((sum, message) => sum + String(message?.content ?? "").length, 0)
+      : 0;
+    const requestBody = {
+      model: this.model,
+      messages,
+      temperature: this.temperature,
+      max_tokens: this.maxOutputTokens,
+      ...(this.responseFormat ? { response_format: this.responseFormat } : {})
+    };
+
+    this.traceLog(
+      `PROVIDER_HTTP start provider=${this.getName()} model=${this.model} url=${this.baseUrl}/chat/completions timeout=${this.timeoutMs}ms messages=${messageCount} promptChars=${promptChars}`
+    );
+
     const response = await fetchWithTimeout(`${this.baseUrl}/chat/completions`, {
       method: "POST",
       timeoutMs: this.timeoutMs,
       headers: this.headers(),
-      body: JSON.stringify({
-        model: this.model,
-        messages,
-        temperature: this.temperature,
-        max_tokens: this.maxOutputTokens,
-        ...(this.responseFormat ? { response_format: this.responseFormat } : {})
-      })
+      body: JSON.stringify(requestBody)
     });
     const payload = await response.json().catch(() => ({}));
+    const durationMs = Date.now() - startedAt;
+
+    this.traceLog(
+      `PROVIDER_HTTP response provider=${this.getName()} status=${response.status} duration=${durationMs}ms choices=${Array.isArray(payload.choices) ? payload.choices.length : 0}`
+    );
 
     if (!response.ok) {
+      this.traceLog(
+        `PROVIDER_HTTP error provider=${this.getName()} status=${response.status} message="${shortLogText(payload.error?.message ?? payload.error ?? "")}"`,
+        "warn"
+      );
       return {
         ok: false,
         error: payload.error?.message ?? payload.error ?? `OpenAI-compatible HTTP ${response.status}`,
@@ -89,6 +124,14 @@ export class OpenAICompatibleProvider {
       "Content-Type": "application/json",
       ...(this.apiKey ? { Authorization: `Bearer ${this.apiKey}` } : {})
     };
+  }
+
+  traceLog(message, level = "info") {
+    if (!this.trace || typeof this.logger !== "function") {
+      return;
+    }
+
+    this.logger(message, level);
   }
 }
 
@@ -124,4 +167,8 @@ async function fetchWithTimeout(url, { timeoutMs, ...options } = {}) {
 
 function trimTrailingSlash(value) {
   return String(value || "").replace(/\/+$/, "");
+}
+
+function shortLogText(value, maxLength = 240) {
+  return String(value ?? "").replace(/\s+/g, " ").trim().slice(0, maxLength);
 }

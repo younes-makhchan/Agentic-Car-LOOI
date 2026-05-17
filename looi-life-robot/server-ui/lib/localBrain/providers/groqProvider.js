@@ -10,7 +10,9 @@ export class GroqProvider extends OpenAICompatibleProvider {
     model = DEFAULT_GROQ_MODEL,
     timeoutMs = 20000,
     temperature = 0.2,
-    maxOutputTokens = 512
+    maxOutputTokens = 192,
+    logger,
+    trace = false
   } = {}) {
     super({
       baseUrl,
@@ -20,7 +22,9 @@ export class GroqProvider extends OpenAICompatibleProvider {
       temperature,
       maxOutputTokens,
       name: "groq",
-      responseFormat: { type: "json_object" }
+      responseFormat: { type: "json_object" },
+      logger,
+      trace
     });
   }
 

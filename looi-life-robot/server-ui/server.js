@@ -21,8 +21,21 @@ const port = Number(process.env.PORT || 3000);
 const esp32DefaultWsUrl = process.env.ESP32_DEFAULT_WS_URL || "ws://192.168.4.1:81";
 const esp32ConnectOnStart = process.env.ESP32_CONNECT_ON_START === "true";
 const esp32ConnectTimeoutMs = Number(process.env.ESP32_CONNECT_TIMEOUT_MS || 8000);
+const serverTraceEnabled = process.env.SERVER_TRACE === "true" || process.env.API_TRACE === "true";
+const serverTracePollEndpoints =
+  process.env.SERVER_TRACE_POLL_ENDPOINTS === "true" ||
+  process.env.API_TRACE_POLL_ENDPOINTS === "true";
+const serverTraceRequestBodies = process.env.SERVER_TRACE_REQUEST_BODIES !== "false";
+const serverTraceResponseBodies = process.env.SERVER_TRACE_RESPONSE_BODIES !== "false";
+let apiTraceCounter = 0;
+let lastServerLogEntry = null;
 const esp32Gateway = new ESP32Gateway({
-  connectTimeoutMs: esp32ConnectTimeoutMs
+  connectTimeoutMs: esp32ConnectTimeoutMs,
+  logger: {
+    info: (message) => esp32Log(message),
+    warn: (message) => esp32Log(message, "warn"),
+    error: (message) => esp32Log(message, "error")
+  }
 });
 const robotActionQueue = new RobotActionQueue();
 const memoryStore = new MemoryStore();
@@ -94,6 +107,7 @@ const PUBLIC_CONFIG = {
 app.set("trust proxy", true);
 app.use(cors());
 app.use(express.json());
+app.use(apiTraceMiddleware);
 app.use(express.static(path.join(__dirname, "public")));
 
 app.get("/api/health", (_req, res) => {
@@ -137,12 +151,20 @@ app.post("/api/local-brain/think", requireLocalBrainAccess, async (req, res) => 
 });
 
 app.post("/api/local-brain/chat", requireLocalBrainAccess, async (req, res) => {
+  const startedAt = Date.now();
+  serverLog(
+    `HTTP CHAT request reason=${req.body?.reason ?? "manual"} message="${shortServerLogText(req.body?.message ?? "")}"`
+  );
   const response = await localBrainServer.chat({
     message: req.body?.message ?? "",
     context: req.body?.context ?? {},
     reason: req.body?.reason ?? "manual"
   });
 
+  serverLog(
+    `HTTP CHAT response ok=${response.ok !== false} provider=${response.provider} model=${response.model} latency=${Date.now() - startedAt}ms actions=${response.actions?.map((action) => action.type).join(",") || "none"} reason="${shortServerLogText(response.reason)}"`,
+    response.ok === false ? "warn" : "info"
+  );
   res.status(response.ok === false ? 502 : 200).json(response);
 });
 
@@ -167,14 +189,15 @@ app.get("/api/esp32/messages", requireEsp32GatewayAccess, (req, res) => {
 });
 
 app.post("/api/esp32/connect", requireEsp32GatewayAccess, async (req, res) => {
-  try {
-    const status = await esp32Gateway.connect(
-      typeof req.body?.url === "string" ? req.body.url : esp32DefaultWsUrl,
-      {
-        timeoutMs: esp32ConnectTimeoutMs
-      }
-    );
+  const targetUrl = typeof req.body?.url === "string" ? req.body.url : esp32DefaultWsUrl;
+  esp32Log(`CONNECT start url=${safeLogUrl(targetUrl)} timeout=${esp32ConnectTimeoutMs}ms`);
 
+  try {
+    const status = await esp32Gateway.connect(targetUrl, {
+      timeoutMs: esp32ConnectTimeoutMs
+    });
+
+    esp32Log(`CONNECT ok state=${status.state} connected=${status.connected}`);
     res.json({
       ok: true,
       status,
@@ -182,6 +205,10 @@ app.post("/api/esp32/connect", requireEsp32GatewayAccess, async (req, res) => {
       config: esp32Gateway.latestConfig
     });
   } catch (error) {
+    esp32Log(
+      `CONNECT failed url=${safeLogUrl(targetUrl)} error="${shortServerLogText(error.message)}"`,
+      "warn"
+    );
     res.status(502).json({
       ok: false,
       error: error.message,
@@ -191,10 +218,13 @@ app.post("/api/esp32/connect", requireEsp32GatewayAccess, async (req, res) => {
 });
 
 app.post("/api/esp32/disconnect", requireEsp32GatewayAccess, (req, res) => {
+  const reason = req.body?.reason ?? "ui_disconnect";
+  esp32Log(`DISCONNECT reason=${shortServerLogText(reason, 80)}`);
   const status = esp32Gateway.disconnect({
-    reason: req.body?.reason ?? "ui_disconnect"
+    reason
   });
 
+  esp32Log(`DISCONNECT ok state=${status.state}`);
   res.json({
     ok: true,
     status
@@ -206,6 +236,7 @@ app.post("/api/esp32/send", requireEsp32GatewayAccess, (req, res) => {
     const payload = req.body?.payload;
 
     if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+      esp32Log("SEND rejected payload must be an object", "warn");
       res.status(400).json({
         ok: false,
         error: "payload must be an object"
@@ -213,7 +244,9 @@ app.post("/api/esp32/send", requireEsp32GatewayAccess, (req, res) => {
       return;
     }
 
+    esp32Log(`SEND start payload=${safeJson(summarizeEsp32Payload(payload))}`);
     const id = esp32Gateway.sendJson(payload);
+    esp32Log(`SEND queued id=${id} state=${esp32Gateway.getStatus().state}`);
 
     res.json({
       ok: true,
@@ -221,6 +254,7 @@ app.post("/api/esp32/send", requireEsp32GatewayAccess, (req, res) => {
       status: esp32Gateway.getStatus()
     });
   } catch (error) {
+    esp32Log(`SEND failed error="${shortServerLogText(error.message)}"`, "warn");
     res.status(409).json({
       ok: false,
       error: error.message,
@@ -694,6 +728,341 @@ app.post("/api/robot-bridge/memory/learned-phrases", requireRobotBridgeAuth, asy
 // Placeholder: POST /api/agent/message
 // Placeholder: POST /api/agent/tool-results
 
+function apiTraceMiddleware(req, res, next) {
+  if (!serverTraceEnabled || !req.path.startsWith("/api/")) {
+    next();
+    return;
+  }
+
+  const traceId = createApiTraceId();
+  const startedAt = Date.now();
+  const requestPath = req.originalUrl || req.url || req.path;
+  const pollEndpoint = isHighFrequencyApiPath(req.path);
+
+  res.locals.apiTraceId = traceId;
+
+  if (serverTraceResponseBodies) {
+    const originalJson = res.json.bind(res);
+
+    res.json = (body) => {
+      res.locals.apiTraceResponse = summarizeApiResponseBody(req, body);
+      return originalJson(body);
+    };
+  }
+
+  if (!pollEndpoint || serverTracePollEndpoints) {
+    apiLog(
+      `${traceId} REQUEST ${req.method} ${requestPath} client=${getClientIp(req) || "unknown"} body=${safeJson(summarizeApiRequestBody(req))}`
+    );
+  }
+
+  res.on("finish", () => {
+    const statusCode = res.statusCode;
+
+    if (pollEndpoint && !serverTracePollEndpoints && statusCode < 400) {
+      return;
+    }
+
+    const durationMs = Date.now() - startedAt;
+    const level = statusCode >= 500 ? "error" : statusCode >= 400 ? "warn" : "info";
+    const responseSummary =
+      serverTraceResponseBodies && res.locals.apiTraceResponse !== undefined
+        ? ` response=${safeJson(res.locals.apiTraceResponse)}`
+        : "";
+
+    apiLog(
+      `${traceId} RESPONSE ${req.method} ${requestPath} status=${statusCode} duration=${durationMs}ms${responseSummary}`,
+      level
+    );
+  });
+
+  next();
+}
+
+function summarizeApiRequestBody(req) {
+  if (!serverTraceRequestBodies) {
+    return "[request_body_logging_disabled]";
+  }
+
+  const body = req.body ?? null;
+
+  if (!body || typeof body !== "object") {
+    return body;
+  }
+
+  if (req.path === "/api/local-brain/think") {
+    return {
+      reason: body.reason ?? "manual",
+      triggerEvent: summarizeTriggerEvent(body.triggerEvent),
+      context: summarizeRuntimeContext(body.context)
+    };
+  }
+
+  if (req.path === "/api/local-brain/chat") {
+    return {
+      reason: body.reason ?? "manual",
+      message: shortServerLogText(body.message, 240),
+      context: summarizeRuntimeContext(body.context)
+    };
+  }
+
+  if (req.path === "/api/esp32/connect") {
+    return {
+      url: safeLogUrl(body.url || esp32DefaultWsUrl)
+    };
+  }
+
+  if (req.path === "/api/esp32/disconnect") {
+    return {
+      reason: shortServerLogText(body.reason ?? "ui_disconnect", 100)
+    };
+  }
+
+  if (req.path === "/api/esp32/send") {
+    return {
+      payload: summarizeEsp32Payload(body.payload)
+    };
+  }
+
+  if (req.path === "/api/memory/write" || req.path === "/api/robot-bridge/memory/write") {
+    return {
+      type: body.type ?? null,
+      textChars: typeof body.text === "string" ? body.text.length : 0,
+      textPreview: shortServerLogText(body.text, 160),
+      metadata: redactAndCompact(body.metadata)
+    };
+  }
+
+  if (req.path.includes("/learned-phrases")) {
+    return {
+      phrase: shortServerLogText(body.phrase, 120),
+      meaning: shortServerLogText(body.meaning, 160),
+      action: body.action ?? null,
+      confidence: body.confidence ?? null,
+      args: redactAndCompact(body.args)
+    };
+  }
+
+  if (req.path === "/api/robot-bridge/runtime/register") {
+    return {
+      name: shortServerLogText(body.name, 80),
+      pairingCode: body.pairingCode ? "[REDACTED]" : ""
+    };
+  }
+
+  if (req.path === "/api/robot-bridge/runtime/heartbeat") {
+    return {
+      runtimeId: shortServerLogText(body.runtimeId, 120),
+      status: redactAndCompact(body.status)
+    };
+  }
+
+  return redactAndCompact(body);
+}
+
+function summarizeApiResponseBody(req, body) {
+  if (!body || typeof body !== "object") {
+    return body;
+  }
+
+  if (req.path.startsWith("/api/local-brain/")) {
+    return {
+      ok: body.ok,
+      provider: body.provider ?? body.brain?.provider ?? null,
+      model: body.model ?? body.brain?.model ?? null,
+      available: body.brain?.available,
+      latencyMs: body.latencyMs,
+      actions: Array.isArray(body.actions)
+        ? body.actions.map((action) => ({
+            type: action?.type,
+            args: redactAndCompact(action?.args)
+          }))
+        : undefined,
+      reason: shortServerLogText(body.reason, 160),
+      error: body.error ? shortServerLogText(body.error, 240) : undefined
+    };
+  }
+
+  if (req.path.startsWith("/api/esp32/")) {
+    return {
+      ok: body.ok,
+      id: body.id,
+      connected: body.status?.connected,
+      connecting: body.status?.connecting,
+      state: body.status?.state,
+      lastError: body.status?.lastError ? shortServerLogText(body.status.lastError, 200) : undefined,
+      telemetry: summarizeTelemetry(body.telemetry),
+      error: body.error ? shortServerLogText(body.error, 240) : undefined
+    };
+  }
+
+  if (req.path === "/api/config") {
+    return {
+      localFirstMode: body.localFirstMode,
+      localBrainProvider: body.localBrainProvider,
+      localBrainModel: body.localBrainModel,
+      esp32ConnectionMode: body.esp32ConnectionMode,
+      legacyCloudBridgeInactive: body.legacyCloudBridgeInactive
+    };
+  }
+
+  if (req.path.includes("/memory/")) {
+    return {
+      ok: body.ok,
+      memoryId: body.memory?.id,
+      phraseId: body.phrase?.id,
+      count: Array.isArray(body.phrases) ? body.phrases.length : undefined,
+      error: body.error ? shortServerLogText(body.error, 240) : undefined
+    };
+  }
+
+  if (req.path.includes("/robot-bridge/")) {
+    return {
+      ok: body.ok,
+      actionId: body.action?.id,
+      eventId: body.event?.id,
+      actionCount: Array.isArray(body.actions) ? body.actions.length : undefined,
+      eventCount: Array.isArray(body.events) ? body.events.length : undefined,
+      done: body.done,
+      timedOut: body.timedOut,
+      error: body.error ? shortServerLogText(body.error, 240) : undefined
+    };
+  }
+
+  return redactAndCompact(body);
+}
+
+function summarizeTriggerEvent(event = null) {
+  if (!event || typeof event !== "object") {
+    return null;
+  }
+
+  const payload = event.payload && typeof event.payload === "object" ? event.payload : {};
+
+  return {
+    type: event.type ?? null,
+    text: shortServerLogText(payload.text ?? event.text ?? "", 240),
+    classification: event.classification ?? payload.classification ?? null,
+    accepted: event.accepted ?? payload.accepted,
+    shouldTriggerBrain: event.shouldTriggerBrain ?? payload.shouldTriggerBrain,
+    shouldOpenAttention: event.shouldOpenAttention ?? payload.shouldOpenAttention,
+    shouldImmediateStop: event.shouldImmediateStop ?? payload.shouldImmediateStop,
+    suggestedIntent: summarizeSuggestedIntent(event.suggestedIntent ?? payload.suggestedIntent)
+  };
+}
+
+function summarizeSuggestedIntent(intent = null) {
+  if (!intent || typeof intent !== "object") {
+    return null;
+  }
+
+  return {
+    action: intent.action ?? null,
+    confidence: intent.confidence,
+    args: redactAndCompact(intent.args)
+  };
+}
+
+function summarizeRuntimeContext(context = null) {
+  if (!context || typeof context !== "object") {
+    return null;
+  }
+
+  return {
+    simulatorMode: context.simulatorMode,
+    robotConnected: context.robotConnected,
+    policy: redactAndCompact(context.policy),
+    attention: context.attention
+      ? {
+          mode: context.attention.mode,
+          attentionTarget: context.attention.attentionTarget,
+          stopRespectUntil: context.attention.stopRespectUntil
+        }
+      : null,
+    lifeState: context.lifeState
+      ? {
+          mood: context.lifeState.mood,
+          energy: context.lifeState.energy,
+          boredom: context.lifeState.boredom,
+          fear: context.lifeState.fear,
+          curiosity: context.lifeState.curiosity,
+          userVisible: context.lifeState.userVisible,
+          userPosition: context.lifeState.userPosition,
+          userDistance: context.lifeState.userDistance,
+          currentBehavior: context.lifeState.currentBehavior,
+          robotMotorState: context.lifeState.robotMotorState
+        }
+      : null,
+    camera: context.camera
+      ? {
+          running: context.camera.running,
+          facingMode: context.camera.facingMode,
+          userVisible: context.camera.userVisible,
+          userPosition: context.camera.userPosition,
+          userDistance: context.camera.userDistance,
+          faceCount: context.camera.faceCount
+        }
+      : null
+  };
+}
+
+function summarizeTelemetry(telemetry = null) {
+  if (!telemetry || typeof telemetry !== "object") {
+    return telemetry ?? null;
+  }
+
+  return {
+    type: telemetry.type,
+    battery: telemetry.battery,
+    rssi: telemetry.rssi,
+    motor_state: telemetry.motor_state,
+    simulated: telemetry.simulated
+  };
+}
+
+function summarizeEsp32Payload(payload = null) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return payload === undefined ? null : typeof payload;
+  }
+
+  const summary = {};
+  const allowedKeys = [
+    "id",
+    "type",
+    "cmd",
+    "label",
+    "source",
+    "reason",
+    "duration_ms",
+    "durationMs",
+    "linear",
+    "angular",
+    "speed",
+    "left_speed",
+    "right_speed",
+    "current_left_speed",
+    "current_right_speed"
+  ];
+
+  for (const key of allowedKeys) {
+    if (payload[key] !== undefined) {
+      summary[key] = redactAndCompact(payload[key], { key });
+    }
+  }
+
+  if (payload.config && typeof payload.config === "object") {
+    summary.configKeys = Object.keys(payload.config).slice(0, 20);
+  }
+
+  const omittedKeys = Object.keys(payload).filter((key) => !allowedKeys.includes(key) && key !== "config");
+
+  if (omittedKeys.length) {
+    summary.omittedKeys = omittedKeys.slice(0, 20);
+  }
+
+  return summary;
+}
+
 function requireRobotBridgeAuth(req, res, next) {
   if (verifyRobotBridgeAuth(req)) {
     next();
@@ -987,9 +1356,150 @@ function defaultLocalBrainModel(provider) {
   }[provider] ?? "mock";
 }
 
-function serverLog(message, level = "info") {
+function redactAndCompact(value, { key = "", depth = 0 } = {}) {
+  if (shouldRedactKey(key)) {
+    return "[REDACTED]";
+  }
+
+  if (value === null || value === undefined) {
+    return value ?? null;
+  }
+
+  if (typeof value === "string") {
+    if (looksLikeDataUrl(value)) {
+      return `[data_url_omitted chars=${value.length}]`;
+    }
+
+    const compact = value.replace(/\s+/g, " ").trim();
+    return compact.length > 240 ? `${compact.slice(0, 240)}... [${compact.length} chars]` : compact;
+  }
+
+  if (typeof value === "number" || typeof value === "boolean") {
+    return value;
+  }
+
+  if (typeof value !== "object") {
+    return String(value);
+  }
+
+  if (depth >= 4) {
+    return Array.isArray(value)
+      ? `[array length=${value.length}]`
+      : `[object keys=${Object.keys(value).slice(0, 10).join(",")}]`;
+  }
+
+  if (Array.isArray(value)) {
+    const items = value.slice(0, 8).map((item) => redactAndCompact(item, { depth: depth + 1 }));
+    if (value.length > items.length) {
+      items.push(`[${value.length - items.length} more]`);
+    }
+    return items;
+  }
+
+  const result = {};
+  const entries = Object.entries(value).slice(0, 24);
+
+  for (const [entryKey, entryValue] of entries) {
+    if (shouldRedactKey(entryKey)) {
+      result[entryKey] = "[REDACTED]";
+    } else if (shouldOmitLargeKey(entryKey)) {
+      result[entryKey] = "[OMITTED]";
+    } else {
+      result[entryKey] = redactAndCompact(entryValue, {
+        key: entryKey,
+        depth: depth + 1
+      });
+    }
+  }
+
+  const omittedCount = Object.keys(value).length - entries.length;
+  if (omittedCount > 0) {
+    result.__omittedKeys = omittedCount;
+  }
+
+  return result;
+}
+
+function shouldRedactKey(key = "") {
+  return /(authorization|bearer|cookie|api[_-]?key|token|secret|password|pairing)/i.test(String(key));
+}
+
+function shouldOmitLargeKey(key = "") {
+  return /(dataurl|data_url|image|snapshot|base64|audio|video|blob)/i.test(String(key));
+}
+
+function looksLikeDataUrl(value = "") {
+  return /^data:(image|audio|video)\//i.test(value);
+}
+
+function isHighFrequencyApiPath(pathname = "") {
+  return [
+    "/api/health",
+    "/api/config",
+    "/api/esp32/status",
+    "/api/esp32/messages",
+    "/api/robot-bridge/actions/pending",
+    "/api/robot-bridge/actions/recent",
+    "/api/robot-bridge/events/recent",
+    "/api/robot-bridge/events/new"
+  ].includes(pathname);
+}
+
+function createApiTraceId() {
+  apiTraceCounter += 1;
+  return `api_${Date.now()}_${apiTraceCounter}`;
+}
+
+function safeLogUrl(value) {
+  try {
+    const url = new URL(String(value || ""));
+
+    if (url.username) {
+      url.username = "[REDACTED]";
+    }
+
+    if (url.password) {
+      url.password = "[REDACTED]";
+    }
+
+    for (const key of [...url.searchParams.keys()]) {
+      if (shouldRedactKey(key)) {
+        url.searchParams.set(key, "[REDACTED]");
+      }
+    }
+
+    return url.toString();
+  } catch (_error) {
+    return shortServerLogText(value, 180);
+  }
+}
+
+function safeJson(value) {
+  try {
+    return JSON.stringify(value);
+  } catch (_error) {
+    return String(value);
+  }
+}
+
+function apiLog(message, level = "info") {
+  serverLog(message, level, "API");
+}
+
+function esp32Log(message, level = "info") {
+  serverLog(message, level, "ESP32");
+}
+
+function serverLog(message, level = "info", scope = "LOCAL_BRAIN") {
   const prefix = level === "warn" ? "WARN" : level === "error" ? "ERROR" : "INFO";
-  console.log(`[LOCAL_BRAIN:${prefix}] ${message}`);
+  const line = `[${scope}:${prefix}] ${message}`;
+
+  if (line === lastServerLogEntry) {
+    return;
+  }
+
+  lastServerLogEntry = line;
+  console.log(line);
 }
 
 function shortServerLogText(value, maxLength = 180) {
@@ -1006,6 +1516,13 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
 export { app, robotActionQueue, robotEventQueue, verifyRobotBridgeAuth };
 
 async function startServer() {
+  console.log(
+    `[BOOT] Local brain provider=${localBrainProvider} model=${localBrainModel || "(not set)"} trace=${process.env.LOCAL_BRAIN_TRACE === "true"}`
+  );
+  console.log(
+    `[BOOT] Server API trace=${serverTraceEnabled} pollTrace=${serverTracePollEndpoints} esp32Gateway=${esp32DefaultWsUrl}`
+  );
+
   if (esp32ConnectOnStart) {
     console.log(`[BOOT] Connecting to ESP32 before server start: ${esp32DefaultWsUrl}`);
     try {
