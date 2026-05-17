@@ -119,12 +119,20 @@ app.get("/api/local-brain/status", requireLocalBrainAccess, async (_req, res) =>
 });
 
 app.post("/api/local-brain/think", requireLocalBrainAccess, async (req, res) => {
+  const startedAt = Date.now();
+  serverLog(
+    `HTTP THINK request reason=${req.body?.reason ?? "manual"} trigger=${req.body?.triggerEvent?.type ?? "none"} text="${shortServerLogText(req.body?.triggerEvent?.payload?.text ?? req.body?.triggerEvent?.text ?? "")}"`
+  );
   const response = await localBrainServer.think({
     reason: req.body?.reason ?? "manual",
     triggerEvent: req.body?.triggerEvent ?? null,
     context: req.body?.context ?? {}
   });
 
+  serverLog(
+    `HTTP THINK response ok=${response.ok !== false} provider=${response.provider} model=${response.model} latency=${Date.now() - startedAt}ms actions=${response.actions?.map((action) => action.type).join(",") || "none"} reason="${shortServerLogText(response.reason)}"`,
+    response.ok === false ? "warn" : "info"
+  );
   res.status(response.ok === false ? 502 : 200).json(response);
 });
 
@@ -982,6 +990,10 @@ function defaultLocalBrainModel(provider) {
 function serverLog(message, level = "info") {
   const prefix = level === "warn" ? "WARN" : level === "error" ? "ERROR" : "INFO";
   console.log(`[LOCAL_BRAIN:${prefix}] ${message}`);
+}
+
+function shortServerLogText(value, maxLength = 180) {
+  return String(value ?? "").replace(/\s+/g, " ").trim().slice(0, maxLength);
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

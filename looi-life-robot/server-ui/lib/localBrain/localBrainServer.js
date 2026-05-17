@@ -11,10 +11,12 @@ import { OpenAICompatibleProvider } from "./providers/openAICompatibleProvider.j
 import { RuleProvider } from "./providers/ruleProvider.js";
 
 export class LocalBrainServer {
-  constructor({ provider, enabled = true, logger } = {}) {
+  constructor({ provider, enabled = true, logger, trace = false } = {}) {
     this.provider = provider ?? new MockProvider();
     this.enabled = enabled !== false;
     this.logger = logger;
+    this.trace = Boolean(trace);
+    this.requestCounter = 0;
   }
 
   async status() {
@@ -40,10 +42,21 @@ export class LocalBrainServer {
 
   async think(input = {}) {
     const started = Date.now();
+    const requestId = `brain_${Date.now()}_${++this.requestCounter}`;
     const provider = this.provider.getName?.() ?? "unknown";
     const model = this.provider.model ?? provider;
+    const triggerText = extractTriggerText(input);
+
+    this.traceLog(requestId, "REQUEST", {
+      reason: input.reason ?? "manual",
+      triggerType: input.triggerEvent?.type ?? null,
+      text: triggerText,
+      provider,
+      model
+    });
 
     if (!this.enabled) {
+      this.traceLog(requestId, "SKIP", { reason: "disabled" }, "warn");
       return failedResponse({
         provider,
         model,
@@ -59,6 +72,13 @@ export class LocalBrainServer {
       triggerEvent: input.triggerEvent
     });
     const messages = buildLocalBrainMessages(context);
+    this.traceLog(requestId, "CONTEXT", summarizeContext(context));
+    this.traceLog(requestId, "CALL_PROVIDER", {
+      provider,
+      model,
+      messageCount: messages.length,
+      promptChars: messages.reduce((sum, message) => sum + String(message.content ?? "").length, 0)
+    });
 
     try {
       const raw = await this.provider.think({
@@ -66,9 +86,14 @@ export class LocalBrainServer {
         messages,
         input
       });
+      this.traceLog(requestId, "RAW_RESPONSE", summarizeRawResponse(raw));
       const parsed = parseBrainResponse(raw);
 
       if (parsed?.ok === false) {
+        this.traceLog(requestId, "PROVIDER_ERROR", {
+          reason: parsed.reason ?? "provider_error",
+          error: parsed.error ?? "Provider returned an error."
+        }, "warn");
         return failedResponse({
           provider,
           model,
@@ -79,13 +104,29 @@ export class LocalBrainServer {
         });
       }
 
-      return normalizeBrainResponse(parsed, {
+      const normalized = normalizeBrainResponse(parsed, {
         provider,
         model,
         latencyMs: Date.now() - started,
         raw: typeof raw === "string" ? raw.slice(0, 2000) : null
       });
+      this.traceLog(requestId, "NORMALIZED", {
+        ok: normalized.ok,
+        latencyMs: normalized.latencyMs,
+        text: normalized.text,
+        actions: normalized.actions.map((action) => ({
+          type: action.type,
+          args: action.args
+        })),
+        reason: normalized.reason,
+        confidence: normalized.confidence
+      }, normalized.ok ? "info" : "warn");
+      return normalized;
     } catch (error) {
+      this.traceLog(requestId, "FAILED", {
+        error: error.message,
+        latencyMs: Date.now() - started
+      }, "warn");
       this.log(`Local brain provider failed: ${error.message}`, "warn");
       return failedResponse({
         provider,
@@ -115,11 +156,20 @@ export class LocalBrainServer {
       this.logger(message, level);
     }
   }
+
+  traceLog(requestId, step, payload = {}, level = "info") {
+    if (!this.trace) {
+      return;
+    }
+
+    this.log(`TRACE ${requestId} ${step} ${safeJson(payload)}`, level);
+  }
 }
 
 export function createLocalBrainServerFromEnv(env = process.env, logger) {
   const providerName = normalizeProvider(env.LOCAL_BRAIN_PROVIDER);
   const enabled = env.LOCAL_BRAIN_ENABLED !== "false";
+  const trace = env.LOCAL_BRAIN_TRACE === "true";
   const timeoutMs = Number(env.LOCAL_BRAIN_TIMEOUT_MS || 20000);
   const temperature = Number(env.LOCAL_BRAIN_TEMPERATURE || 0.4);
   const maxOutputTokens = Number(env.LOCAL_BRAIN_MAX_OUTPUT_TOKENS || 512);
@@ -128,6 +178,7 @@ export function createLocalBrainServerFromEnv(env = process.env, logger) {
     return new LocalBrainServer({
       enabled,
       logger,
+      trace,
       provider: createProvider(providerName, {
         model: env.LOCAL_BRAIN_MODEL || undefined,
         baseUrl: env.LOCAL_BRAIN_BASE_URL || "http://localhost:11434",
@@ -145,9 +196,88 @@ export function createLocalBrainServerFromEnv(env = process.env, logger) {
     return new LocalBrainServer({
       enabled,
       logger,
+      trace,
       provider: new MockProvider()
     });
   }
+}
+
+function extractTriggerText(input = {}) {
+  return shortLogText(
+    input.triggerEvent?.payload?.text ??
+      input.triggerEvent?.text ??
+      input.context?.triggerEvent?.payload?.text ??
+      input.context?.triggerEvent?.text ??
+      ""
+  );
+}
+
+function summarizeContext(context = {}) {
+  const trigger = context.triggerEvent ?? {};
+  return {
+    reason: context.reason,
+    triggerType: trigger.type ?? null,
+    triggerText: shortLogText(trigger.text ?? ""),
+    classification: trigger.classification ?? null,
+    suggestedIntent: trigger.suggestedIntent
+      ? {
+          action: trigger.suggestedIntent.action,
+          confidence: trigger.suggestedIntent.confidence,
+          args: trigger.suggestedIntent.args
+        }
+      : null,
+    policy: context.policy ?? null,
+    attentionMode: context.attention?.mode ?? null,
+    simulatorMode: context.simulatorMode,
+    robotConnected: context.robotConnected,
+    camera: context.camera
+      ? {
+          running: context.camera.running,
+          userVisible: context.camera.userVisible,
+          userPosition: context.camera.userPosition,
+          userDistance: context.camera.userDistance
+        }
+      : null
+  };
+}
+
+function summarizeRawResponse(raw) {
+  if (typeof raw === "string") {
+    return {
+      type: "string",
+      chars: raw.length,
+      preview: shortLogText(raw, 600)
+    };
+  }
+
+  if (raw && typeof raw === "object") {
+    return {
+      type: "object",
+      keys: Object.keys(raw).slice(0, 20),
+      ok: raw.ok,
+      reason: shortLogText(raw.reason, 180),
+      actions: Array.isArray(raw.actions)
+        ? raw.actions.map((action) => ({ type: action?.type, args: action?.args ?? {} })).slice(0, 4)
+        : null
+    };
+  }
+
+  return {
+    type: typeof raw,
+    preview: shortLogText(raw)
+  };
+}
+
+function safeJson(value) {
+  try {
+    return JSON.stringify(value);
+  } catch (_error) {
+    return String(value);
+  }
+}
+
+function shortLogText(value, maxLength = 240) {
+  return String(value ?? "").replace(/\s+/g, " ").trim().slice(0, maxLength);
 }
 
 function createProvider(providerName, options) {
