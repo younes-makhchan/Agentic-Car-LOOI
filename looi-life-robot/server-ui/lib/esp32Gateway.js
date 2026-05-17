@@ -1,6 +1,6 @@
 const DEFAULT_URL = "ws://192.168.4.1:81";
 const MAX_MESSAGES = 200;
-
+import WebSocket from "ws";
 let messageCounter = 0;
 
 export class ESP32Gateway {

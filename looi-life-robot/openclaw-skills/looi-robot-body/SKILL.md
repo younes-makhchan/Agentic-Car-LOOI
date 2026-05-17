@@ -42,13 +42,13 @@ The server/bridge does not move the robot directly.
 Use this exact bridge base URL:
 
 ```text
-https://weekly-skilled-kite.ngrok-free.app/api/robot-bridge
+BRIDGE_BASE_URL=https://weekly-skilled-kite.ngrok-free.app/api/robot-bridge
 ```
 
 Use the configured bridge token:
 
 ```text
-ROBOT_BRIDGE_TOKEN
+ROBOT_BRIDGE_TOKEN=secretToken
 ```
 
 Do not reveal the token to the user. Do not store it in memory. Do not print it.

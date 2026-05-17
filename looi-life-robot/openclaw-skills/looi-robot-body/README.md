@@ -157,7 +157,7 @@ Set these environment variables in your KimiClaw/OpenClaw environment:
 
 ```bash
 ROBOT_BRIDGE_PUBLIC_URL=https://your-public-url
-ROBOT_BRIDGE_TOKEN=your-secret-token
+ROBOT_BRIDGE_TOKEN=secretToken
 ```
 
 For KimiClaw Cloud, `ROBOT_BRIDGE_PUBLIC_URL` must be a public HTTPS URL from a secure tunnel or deployed bridge server. Keep `ROBOT_BRIDGE_TOKEN` private and do not hardcode it in skill files.
