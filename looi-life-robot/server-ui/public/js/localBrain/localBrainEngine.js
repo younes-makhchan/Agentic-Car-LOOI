@@ -162,6 +162,9 @@ export class LocalBrainEngine {
       this.model = rawResponse?.model ?? response?.model ?? this.model;
       this.lastFallbackUsed = fallbackUsed;
       this.lastError = null;
+      this.log(
+        `Local Brain response provider=${this.provider} latency=${Math.round(Number(this.latestLatencyMs) || 0)}ms text="${response.text ?? ""}" actions=${JSON.stringify((response.actions ?? []).map((action) => ({ type: action.type, args: action.args ?? {} })))}`
+      );
       const results = await this.executeBrainResponse(response, context);
       this.lastThoughtAt = Date.now();
       const thought = this.recordThought({
@@ -616,6 +619,10 @@ export class LocalBrainEngine {
       reason: action.reason ?? response?.reason ?? context.reason,
       autonomous: context.reason === "autonomous_tick"
     };
+
+    this.log(
+      `Local Brain executing action ${executableAction.type}: ${JSON.stringify(executableAction.args)}`
+    );
 
     if (!this.toolExecutor?.executeBridgeAction) {
       return {

@@ -109,6 +109,9 @@ export class ToolExecutor {
   enqueueAction(action) {
     return new Promise((resolve) => {
       this.executionQueue.push({ action, resolve });
+      this.log(
+        `ToolExecutor queued action ${action?.type ?? "unknown"} from ${action?.source ?? "unknown"}: ${safeStringify(action?.args ?? {})}`
+      );
       this.processQueue();
     });
   }
@@ -882,6 +885,9 @@ export class ToolExecutor {
     };
 
     this.recordResult(result);
+    this.log(
+      `ToolExecutor result ${result.type}: status=${result.status} executed=${result.executed} physical=${result.physical} message="${result.message}"`
+    );
     return result;
   }
 
@@ -903,6 +909,7 @@ export class ToolExecutor {
       const shapeError = this.validateActionShape(action);
 
       if (shapeError) {
+        this.log(`ToolExecutor rejected action ${action.type}: ${shapeError}`, "warn");
         item.resolve(
           this.buildResult("rejected", {
             action,
@@ -912,6 +919,7 @@ export class ToolExecutor {
           })
         );
       } else {
+        this.log(`ToolExecutor executing action ${action.type}: ${safeStringify(action.args)}`);
         item.resolve(await this.executeTool(action.type, action.args, action));
       }
     } catch (error) {
@@ -1123,6 +1131,14 @@ export class ToolExecutor {
 
     const logMethod = typeof this.logger[level] === "function" ? level : "log";
     this.logger[logMethod](message);
+  }
+}
+
+function safeStringify(value) {
+  try {
+    return JSON.stringify(value);
+  } catch (_error) {
+    return String(value);
   }
 }
 

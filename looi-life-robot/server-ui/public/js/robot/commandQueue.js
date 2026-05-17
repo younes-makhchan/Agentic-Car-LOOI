@@ -43,6 +43,9 @@ export class CommandQueue {
       rampMs: clamp(rampMs ?? 120, 0, MAX_RAMP_MS)
     };
 
+    this.log(
+      `CommandQueue requested motion ${safeCommand.label}: linear=${safeCommand.linear.toFixed(2)} angular=${safeCommand.angular.toFixed(2)} duration=${safeCommand.durationMs}ms ramp=${Math.round(safeCommand.rampMs)}ms`
+    );
     return this.enqueueItem(safeCommand);
   }
 
@@ -226,6 +229,7 @@ export class CommandQueue {
           rampMs: item.rampMs,
           label: item.label
         });
+        this.log(`CommandQueue sent motion to ESP32 gateway: ${item.label}`);
 
         await wait(item.durationMs + COMMAND_BUFFER_MS);
       }

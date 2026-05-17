@@ -1113,6 +1113,10 @@ async function init() {
       latestActionResult = summarizeActionResult(lastResult);
     }
   });
+  localEventBus.subscribe("brain_thought_result", traceBrainThoughtResult);
+  ["macro_started", "macro_result", "macro_interrupted"].forEach((type) => {
+    localEventBus.subscribe(type, traceMacroEvent);
+  });
 
   attentionSystem = new AttentionSystem({
     logger: (message, level = "info") => log(message, level)
@@ -1687,6 +1691,16 @@ async function handleGatedTranscript(transcript = {}) {
     text,
     source
   }) ?? fallbackGateResult(text, source);
+  traceLive("SpeechGate", {
+    text,
+    source,
+    classification: gateResult.classification,
+    accepted: gateResult.accepted,
+    triggerBrain: gateResult.shouldTriggerBrain,
+    immediateStop: gateResult.shouldImmediateStop,
+    reason: gateResult.reason,
+    suggestedIntent: gateResult.suggestedIntent
+  });
   const priority =
     gateResult.priority === "critical"
       ? "high"
@@ -3605,4 +3619,111 @@ function log(message, level = "info") {
 
   ui.logPanel.append(entry);
   ui.logPanel.scrollTop = ui.logPanel.scrollHeight;
+  const method = level === "error" ? "error" : level === "warn" ? "warn" : "log";
+  console[method]?.(`[LOOI] ${message}`);
+}
+
+function traceLive(label, payload = {}, level = "info") {
+  const compact = compactTracePayload(payload);
+  const message = `[TRACE] ${label}: ${formatTracePayload(compact)}`;
+  log(message, level);
+  console.debug?.(`[LOOI TRACE] ${label}`, compact);
+}
+
+function traceBrainThoughtResult(event = {}) {
+  const payload = event.payload ?? {};
+  const thought = payload.thought ?? {};
+  const response = payload.response ?? thought.response ?? {};
+  const results = payload.results ?? thought.results ?? [];
+  const actions = response.actions ?? thought.actions ?? [];
+
+  traceLive("Brain", {
+    reason: thought.reason ?? response.reason,
+    provider: payload.provider ?? thought.provider,
+    latencyMs: payload.latencyMs ?? thought.latencyMs,
+    text: response.text ?? thought.text,
+    actions: summarizeActions(actions),
+    results: summarizeResults(results),
+    fallbackUsed: payload.fallbackUsed ?? thought.fallbackUsed,
+    error: payload.error ?? thought.error
+  }, payload.error ? "warn" : "info");
+}
+
+function traceMacroEvent(event = {}) {
+  const payload = event.payload ?? {};
+  traceLive(`Macro ${event.type ?? "event"}`, {
+    macro: payload.macro ?? payload.name,
+    reason: payload.reason,
+    source: payload.source,
+    result: payload.result
+      ? {
+          ok: payload.result.ok,
+          executed: payload.result.executed,
+          partial: payload.result.partial,
+          skippedFrames: payload.result.skippedFrames,
+          reason: payload.result.reason
+        }
+      : null
+  });
+}
+
+function summarizeActions(actions = []) {
+  return Array.isArray(actions)
+    ? actions.map((action) => ({
+        type: action?.type,
+        args: action?.args ?? {}
+      }))
+    : [];
+}
+
+function summarizeResults(results = []) {
+  return Array.isArray(results)
+    ? results.map((result) => ({
+        type: result?.type,
+        status: result?.status,
+        executed: result?.executed,
+        physical: result?.physical,
+        message: result?.message
+      }))
+    : [];
+}
+
+function compactTracePayload(value) {
+  if (value === null || value === undefined) {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    return value.length > 180 ? `${value.slice(0, 177)}...` : value;
+  }
+
+  if (typeof value !== "object") {
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    return value.slice(0, 6).map(compactTracePayload);
+  }
+
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([, entryValue]) => entryValue !== undefined)
+      .map(([key, entryValue]) => [key, compactTracePayload(entryValue)])
+  );
+}
+
+function formatTracePayload(payload) {
+  if (payload === null || payload === undefined) {
+    return String(payload);
+  }
+
+  if (typeof payload === "string") {
+    return payload;
+  }
+
+  try {
+    return JSON.stringify(payload);
+  } catch (_error) {
+    return String(payload);
+  }
 }
