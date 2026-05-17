@@ -312,6 +312,11 @@ let looiModeEnabled = false;
 let idleMicroBehaviorEnabled = true;
 let attentionBodyTrackingEnabled = false;
 let keepRobotAwakeEnabled = false;
+let lastLogSignature = "";
+let lastLogAt = 0;
+let duplicateLogCount = 0;
+let duplicateLogTimer = null;
+const LOG_DEDUP_WINDOW_MS = 2500;
 
 face = createFaceController(ui.canvas);
 face.setExpression("neutral");
@@ -3614,6 +3619,43 @@ function waitMs(ms) {
 }
 
 function log(message, level = "info") {
+  const signature = `${level}:${message}`;
+  const now = Date.now();
+
+  if (signature === lastLogSignature && now - lastLogAt < LOG_DEDUP_WINDOW_MS) {
+    duplicateLogCount += 1;
+    lastLogAt = now;
+    scheduleDuplicateLogSummary();
+    return;
+  }
+
+  flushDuplicateLogSummary();
+  lastLogSignature = signature;
+  lastLogAt = now;
+
+  appendLogEntry(message, level);
+}
+
+function scheduleDuplicateLogSummary() {
+  globalThis.clearTimeout(duplicateLogTimer);
+  duplicateLogTimer = globalThis.setTimeout(() => {
+    flushDuplicateLogSummary();
+  }, LOG_DEDUP_WINDOW_MS);
+}
+
+function flushDuplicateLogSummary() {
+  if (duplicateLogCount <= 0) {
+    return;
+  }
+
+  const count = duplicateLogCount;
+  duplicateLogCount = 0;
+  globalThis.clearTimeout(duplicateLogTimer);
+  duplicateLogTimer = null;
+  appendLogEntry(`Repeated previous log ${count} more time${count === 1 ? "" : "s"}.`, "info");
+}
+
+function appendLogEntry(message, level = "info") {
   const entry = document.createElement("div");
   const time = new Date().toLocaleTimeString();
 
