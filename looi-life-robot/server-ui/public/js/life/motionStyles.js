@@ -3,6 +3,10 @@ import { clamp01, updateDriveValue } from "./state.js";
 
 // Expressive body language. These functions never bypass SafetyGate or CommandQueue.
 export async function softIdle(context, _args = {}) {
+  if (context.macroSequencer) {
+    return macroBehavior(context, "soft_idle", _args, { allowMotion: false, priority: 20 });
+  }
+
   const { state, face } = context;
   const calibration = getCalibrationSettings(context);
   const now = Date.now();
@@ -44,6 +48,10 @@ export async function softIdle(context, _args = {}) {
 }
 
 export async function listenPose(context, _args = {}) {
+  if (context.macroSequencer) {
+    return macroBehavior(context, "soft_listen", _args, { allowMotion: false, priority: 80 });
+  }
+
   const { face } = context;
 
   face?.setExpression?.("attentive", 1);
@@ -62,6 +70,13 @@ export async function listenPose(context, _args = {}) {
 }
 
 export async function curiousScan(context, args = {}) {
+  if (context.macroSequencer) {
+    return macroBehavior(context, context.allowMotion === false ? "look_around_only" : "curious_scan", args, {
+      allowMotion: context.allowMotion !== false,
+      priority: 60
+    });
+  }
+
   const { face } = context;
   const calibration = getCalibrationSettings(context);
   const intensity = clamp01(args.intensity ?? 0.5) * calibration.motionIntensityScale;
@@ -122,6 +137,13 @@ export async function curiousScan(context, args = {}) {
 }
 
 export async function excitedWiggle(context, args = {}) {
+  if (context.macroSequencer) {
+    return macroBehavior(context, "excited_wiggle", args, {
+      allowMotion: context.allowMotion !== false,
+      priority: 62
+    });
+  }
+
   const { face } = context;
   const calibration = getCalibrationSettings(context);
   const intensity = clamp01(args.intensity ?? 0.6) * calibration.motionIntensityScale;
@@ -173,6 +195,13 @@ export async function excitedWiggle(context, args = {}) {
 }
 
 export async function approachUser(context, args = {}) {
+  if (context.macroSequencer) {
+    return macroBehavior(context, args.style === "happy" ? "happy_approach" : "gentle_approach", args, {
+      allowMotion: context.allowMotion !== false,
+      priority: 70
+    });
+  }
+
   const { face, state } = context;
   const calibration = getCalibrationSettings(context);
   const style = normalizeStyle(args.style, ["gentle", "happy", "curious", "shy"], "gentle");
@@ -211,6 +240,13 @@ export async function approachUser(context, args = {}) {
 }
 
 export async function retreat(context, args = {}) {
+  if (context.macroSequencer) {
+    return macroBehavior(context, "shy_retreat", args, {
+      allowMotion: context.allowMotion !== false,
+      priority: 70
+    });
+  }
+
   const { face } = context;
   const calibration = getCalibrationSettings(context);
   const style = normalizeStyle(args.style, ["gentle", "shy", "scared", "playful"], "gentle");
@@ -245,6 +281,36 @@ export async function retreat(context, args = {}) {
 }
 
 export async function rotateTowardUser(context, args = {}) {
+  if (context.macroSequencer) {
+    const direction = normalizeDirection(args.direction, "center");
+    return context.macroSequencer.playMacroObject({
+      name: `attentive_turn_${direction}`,
+      description: "Gentle attention turn.",
+      priority: 50,
+      interruptible: true,
+      requiresMotion: false,
+      cooldownMs: 2000,
+      frames: [
+        { type: "face", expression: "attentive", intensity: 0.9, eyeDirection: direction, durationMs: 90 },
+        {
+          type: "motion",
+          linear: 0,
+          angular: direction === "left" ? -0.12 : direction === "right" ? 0.12 : 0,
+          durationMs: 160,
+          rampMs: 120,
+          label: `macro_rotate_toward_user_${direction}`,
+          allowSkip: true
+        }
+      ]
+    }, {
+      source: "life_engine",
+      priority: 50,
+      allowMotion: context.allowMotion !== false && direction !== "center",
+      allowSpeech: false,
+      reason: "rotate_toward_user"
+    });
+  }
+
   const { face } = context;
   const calibration = getCalibrationSettings(context);
   const direction = normalizeDirection(args.direction, "center");
@@ -280,6 +346,10 @@ export async function rotateTowardUser(context, args = {}) {
 }
 
 export async function sleepyIdle(context, _args = {}) {
+  if (context.macroSequencer) {
+    return macroBehavior(context, "sleepy_idle", _args, { allowMotion: false, priority: 30 });
+  }
+
   const { face } = context;
 
   face?.setExpression?.("sleepy", 0.9);
@@ -296,6 +366,10 @@ export async function sleepyIdle(context, _args = {}) {
 }
 
 export async function scaredStop(context, args = {}) {
+  if (context.macroSequencer) {
+    return macroBehavior(context, "scared_stop", args, { allowMotion: false, priority: 100 });
+  }
+
   const { commandQueue, face, state, logger } = context;
   const reason = args.reason ?? "life_scared_stop";
 
@@ -489,4 +563,29 @@ function log(logger, message, level = "info") {
 
   const logMethod = typeof logger[level] === "function" ? level : "log";
   logger[logMethod](message);
+}
+
+async function macroBehavior(context, macroName, args = {}, options = {}) {
+  const result = await context.macroSequencer.playMacro(macroName, {
+    source: "life_engine",
+    priority: options.priority,
+    allowMotion: options.allowMotion,
+    allowSpeech: context.allowSpeech === true,
+    reason: args.reason ?? macroName,
+    context: { args }
+  });
+
+  return {
+    ok: result.ok,
+    allowed: result.ok !== false,
+    executed: result.executed,
+    queuedMotions: result.executedFrames ?? 0,
+    behavior: macroName,
+    style: args.style ?? macroName,
+    emotionalTone: macroName.includes("happy") ? "happy" : macroName.includes("shy") ? "shy" : "attentive",
+    labels: [macroName],
+    moved: result.skippedFrames?.includes("motion_not_allowed") ? false : Boolean(options.allowMotion),
+    macroResult: result,
+    skippedReason: result.ok === false ? result.reason : undefined
+  };
 }

@@ -151,7 +151,12 @@ try {
   assert.ok(cleared.cleared >= 3);
 
   const config = await getJson("/api/config");
-  assert.equal(config.robotBridgeEnabled, true);
+  if (config.localFirstMode) {
+    assert.equal(config.robotBridgeEnabled, false);
+    assert.equal(config.legacyCloudBridgeInactive, true);
+  } else {
+    assert.equal(config.robotBridgeEnabled, true);
+  }
   assert.equal(config.robotBridgePublicUrlConfigured, true);
   assert.equal(Object.hasOwn(config, "ROBOT_BRIDGE_TOKEN"), false);
   assert.equal(Object.hasOwn(config, "robotBridgeToken"), false);

@@ -12,10 +12,10 @@
         <p class="eyebrow">LOOI Runtime</p>
         <h1>Wake Body</h1>
         <p>
-          Register this phone as LOOI's runtime, enter full screen, and show the robot face.
+          Start this phone as LOOI's local runtime, enter full screen, and show the robot face.
         </p>
         <button id="productionStartButton" class="primary-button" type="button" disabled>
-          Register Runtime & Enter
+          Start Local Runtime & Enter
         </button>
       </div>
     </div>
@@ -24,8 +24,8 @@
       <button id="productionStopButton" class="production-stop-button" type="button">
         Stop
       </button>
-      <button id="bridgeKimiButton" class="bridge-kimi-button" type="button" disabled>
-        Bridge Kimi
+      <button id="localBrainQuickButton" class="local-brain-quick-button" type="button" disabled>
+        Start Local Brain
       </button>
       <button
         id="settingsToggleButton"
@@ -43,10 +43,10 @@
     <aside id="looiVisionWidget" class="looi-vision-widget" aria-live="polite">
       <div class="looi-vision-widget__header">
         <span>LOOI Eyes</span>
-        <strong id="kimiVisionState">camera off</strong>
+        <strong id="localVisionState">camera off</strong>
       </div>
-      <video id="kimiVisionPreview" autoplay playsinline muted></video>
-      <p id="kimiVisionDetail">Kimi receives metadata only unless Cloud Camera is allowed.</p>
+      <video id="localVisionPreview" autoplay playsinline muted></video>
+      <p id="localVisionDetail">Local Brain camera actions are blocked until allowed.</p>
     </aside>
 
     <main class="app-shell">
@@ -69,8 +69,8 @@
           <p class="eyebrow">Phone-Bodied Life Robot</p>
           <h1>LOOI Life Robot</h1>
           <p class="subtitle">
-            Step 12 personality, memory, voice, camera, KimiClaw bridge, and safe local body
-            runtime. Safety: lift the wheels before the first movement test.
+            Local-first phone-bodied robot runtime with Life Engine, voice, camera, memory,
+            local brain scaffolding, and safe ESP32 body control.
           </p>
         </header>
 
@@ -128,7 +128,7 @@
           <h2>Life Engine</h2>
           <p class="panel-note">
             Local instincts only: mood, attention, drives, face, and safe body language.
-            No Kimi or AI API calls yet.
+            No cloud or external AI calls are active.
           </p>
           <div class="button-grid">
             <button id="lifeEngineToggle" class="primary-button" type="button">
@@ -152,7 +152,7 @@
         <section class="panel-card personality-card">
           <h2>Personality / Memory</h2>
           <p class="panel-note">
-            Personality changes local body behavior and gives KimiClaw context.
+            Personality changes local body behavior and gives the Local Brain context.
             Memory helps the robot remember phrases, preferences, and shared moments.
           </p>
           <div class="input-stack">
@@ -442,8 +442,8 @@
         <section class="panel-card voice-card">
           <h2>Voice</h2>
           <p class="panel-note">
-            Voice transcripts are posted to the Robot Event Inbox. KimiClaw Cloud
-            can read them and respond with actions.
+            Voice transcripts are published to the local event bus. Stop phrases remain
+            immediate local safety commands.
           </p>
           <div class="status-grid">
             <div class="status-row">
@@ -515,11 +515,88 @@
           </div>
         </section>
 
+        <section class="panel-card ears-card">
+          <h2>Always Listening / Ears</h2>
+          <p class="panel-note">
+            The robot can hear continuously, but it only thinks when speech is relevant.
+            Stop/freeze is handled instantly without the model.
+          </p>
+          <div class="status-grid">
+            <div class="status-row">
+              <span>Ears</span>
+              <strong id="earsState" class="ears-state--off">ears off</strong>
+            </div>
+            <div class="status-row">
+              <span>SpeechGate</span>
+              <strong id="speechGateState">0 accepted / 0 ignored</strong>
+            </div>
+            <div class="status-row">
+              <span>Attention mode</span>
+              <strong id="attentionModeState">idle</strong>
+            </div>
+            <div class="status-row">
+              <span>Attention remaining</span>
+              <strong id="attentionWindowRemaining">--</strong>
+            </div>
+            <div class="status-row">
+              <span>Last classification</span>
+              <strong id="lastSpeechClassification">--</strong>
+            </div>
+            <div class="status-row">
+              <span>Autonomous scheduler</span>
+              <strong id="autonomousSchedulerState">stopped</strong>
+            </div>
+            <div class="status-row">
+              <span>Last autonomous reason</span>
+              <strong id="lastAutonomousReason">--</strong>
+            </div>
+          </div>
+          <div class="brain-policy-grid">
+            <label class="checkbox-field ears-toggle-field">
+              <input id="alwaysListeningToggle" type="checkbox" />
+              <span>Always Listening</span>
+            </label>
+            <label class="checkbox-field">
+              <input id="audioLevelMonitorToggle" type="checkbox" />
+              <span>Audio Activity Monitor</span>
+            </label>
+          </div>
+          <div class="input-stack">
+            <label class="field-label" for="wakeNamesInput">Wake names</label>
+            <input id="wakeNamesInput" type="text" value="looi,louie,lui,robot" autocomplete="off" />
+          </div>
+          <div class="button-grid button-grid--single">
+            <button id="saveWakeNamesButton" type="button">
+              Save Wake Names
+            </button>
+          </div>
+          <div class="status-grid">
+            <div class="status-row">
+              <span>Audio level</span>
+              <strong id="audioLevelDisplay">off</strong>
+            </div>
+            <div class="status-row">
+              <span>Voice activity</span>
+              <strong id="voiceActivityState">off</strong>
+            </div>
+          </div>
+          <div class="transcript-grid">
+            <div>
+              <span>Last accepted transcript</span>
+              <p id="lastAcceptedTranscript" class="transcript">--</p>
+            </div>
+            <div>
+              <span>Last ignored transcript</span>
+              <p id="lastIgnoredTranscript" class="transcript transcript--ignored">--</p>
+            </div>
+          </div>
+        </section>
+
         <section class="panel-card camera-card">
           <h2>Camera / Eyes</h2>
           <p class="panel-note">
-            The camera runs locally in the browser. KimiClaw Cloud can only request
-            camera actions when Cloud Camera is allowed.
+            The camera runs locally in the browser. Local Brain camera actions are blocked
+            until Local Camera is allowed in the Local Brain panel.
           </p>
           <div class="status-grid">
             <div class="status-row">
@@ -542,18 +619,13 @@
               <span>Last camera error</span>
               <strong id="cameraLastError">--</strong>
             </div>
-            <div class="status-row">
-              <span>Cloud Camera</span>
-              <strong id="cloudCameraState" class="cloud-camera-state--blocked">
-                BLOCKED - cloud camera actions are rejected
-              </strong>
-            </div>
           </div>
           <p id="cameraSecureWarning" class="camera-warning">
             Camera access may require HTTPS or localhost.
           </p>
           <p class="privacy-note">
-            Cloud camera actions are blocked until you allow them here.
+            Camera access requires your browser permission. The Local Brain cannot request
+            camera actions unless explicitly allowed.
           </p>
           <div class="button-grid">
             <button id="startFrontCameraButton" class="primary-button" type="button">
@@ -570,9 +642,6 @@
             </button>
             <button id="captureSnapshotButton" type="button">
               Capture Snapshot
-            </button>
-            <button id="cloudCameraAllowButton" class="warning-button" type="button">
-              Allow Cloud Camera
             </button>
           </div>
           <div class="camera-preview-grid">
@@ -604,128 +673,192 @@
           </div>
         </section>
 
-        <section class="panel-card runtime-card">
-          <h2>Robot Runtime Pairing / Heartbeat</h2>
+        <section class="panel-card local-brain-card">
+          <h2>Local Brain</h2>
           <p class="panel-note">
-            Runtime heartbeat tells KimiClaw Cloud whether the phone robot is
-            online, armed, connected, and safe.
+            Local Brain can think continuously, but physical motion is blocked until
+            Local Motion is armed. It never talks to ESP32 directly.
+          </p>
+          <p class="panel-note">
+            The local brain server runs on your laptop. It can use mock, rule, Ollama,
+            LM Studio, or another local OpenAI-compatible model. The server only returns
+            action suggestions; the browser executes safely.
           </p>
           <div class="status-grid">
             <div class="status-row">
-              <span>Runtime auth</span>
-              <strong id="runtimeAuthState">checking</strong>
+              <span>Brain state</span>
+              <strong id="localBrainState" class="local-brain-state--stopped">stopped</strong>
             </div>
             <div class="status-row">
-              <span>Runtime ID</span>
-              <strong id="runtimeIdDisplay">not registered</strong>
+              <span>Adapter</span>
+              <strong id="localBrainAdapterState">mock + rule fallback</strong>
             </div>
             <div class="status-row">
-              <span>Heartbeat</span>
-              <strong id="runtimeHeartbeatState">not registered</strong>
+              <span>Server status</span>
+              <strong id="localBrainServerStatus" class="local-server-state--unavailable">checking</strong>
             </div>
             <div class="status-row">
-              <span>Last heartbeat</span>
-              <strong id="runtimeLastHeartbeat">--</strong>
-            </div>
-          </div>
-          <div class="input-stack">
-            <label class="field-label" for="runtimePairingCodeInput">
-              Runtime pairing code
-            </label>
-            <input
-              id="runtimePairingCodeInput"
-              type="password"
-              placeholder="Runtime pairing code"
-              autocomplete="off"
-              spellcheck="false"
-            />
-          </div>
-          <div class="button-grid button-grid--triple">
-            <button id="registerRuntimeButton" class="primary-button" type="button">
-              Register Runtime
-            </button>
-            <button id="startHeartbeatButton" type="button">
-              Start Heartbeat
-            </button>
-            <button id="stopHeartbeatButton" type="button">
-              Stop Heartbeat
-            </button>
-          </div>
-        </section>
-
-        <section class="panel-card claw-bridge-card">
-          <h2>KimiClaw Cloud Bridge</h2>
-          <p class="panel-note">
-            KimiClaw Cloud actions arrive here first. Approved actions execute
-            locally through ToolExecutor, Life Engine, SafetyGate, and CommandQueue.
-          </p>
-          <p class="cloud-warning">
-            For KimiClaw Cloud, ROBOT_BRIDGE_PUBLIC_URL must be a public HTTPS
-            URL pointing to this server.
-          </p>
-          <div class="status-grid">
-            <div class="status-row">
-              <span>Bridge status</span>
-              <strong id="clawBridgeState">stopped</strong>
+              <span>Provider</span>
+              <strong id="localBrainProvider">mock</strong>
             </div>
             <div class="status-row">
-              <span>Runtime online</span>
-              <strong id="runtimeOnlineState" class="runtime-state--offline">offline</strong>
+              <span>Model</span>
+              <strong id="localBrainModel">mock</strong>
             </div>
             <div class="status-row">
-              <span>Cloud Motion</span>
-              <strong id="cloudMotionState" class="cloud-motion-state--disarmed">
-                DISARMED - cloud actions cannot move the body
-              </strong>
+              <span>Latency</span>
+              <strong id="localBrainLatency">--</strong>
+            </div>
+            <div class="status-row">
+              <span>Last thought</span>
+              <strong id="localBrainLastThought">--</strong>
             </div>
           </div>
           <p class="safety-note">
-            Only arm cloud motion when the robot is supervised and wheels/body are safe.
-            Stop actions still execute while disarmed.
+            Stop always works. Movement actions still go through ToolExecutor, Life Engine,
+            SafetyGate, CommandQueue, and ESP32.
           </p>
-          <div class="bridge-policy-grid">
+          <div class="brain-policy-grid">
             <label class="checkbox-field">
-              <input id="cloudSpeakToggle" type="checkbox" checked />
-              <span>Allow cloud speech</span>
+              <input id="localBrainEnabledToggle" type="checkbox" checked />
+              <span>Local Brain Enabled</span>
             </label>
             <label class="checkbox-field">
-              <input id="cloudNonPhysicalToggle" type="checkbox" checked />
-              <span>Allow cloud expressions / memory / observe</span>
+              <input id="autonomousModeToggle" type="checkbox" />
+              <span>Autonomous Mode</span>
+            </label>
+            <label class="checkbox-field local-motion-arm-field">
+              <input id="localMotionArmedToggle" type="checkbox" />
+              <span>Local Motion Armed</span>
+            </label>
+            <label class="checkbox-field">
+              <input id="localCameraAllowedToggle" type="checkbox" />
+              <span>Local Camera Allowed</span>
+            </label>
+            <label class="checkbox-field">
+              <input id="localSpeechAllowedToggle" type="checkbox" checked />
+              <span>Local Speech Allowed</span>
+            </label>
+            <label class="checkbox-field">
+              <input id="allowAutonomousMovementToggle" type="checkbox" />
+              <span>Allow Autonomous Movement</span>
+            </label>
+            <label class="checkbox-field">
+              <input id="allowAutonomousSpeechToggle" type="checkbox" checked />
+              <span>Allow Autonomous Speech</span>
             </label>
           </div>
           <div class="button-grid">
-            <button id="startClawBridgeButton" class="primary-button" type="button">
-              Start KimiClaw Bridge
+            <button id="startLocalBrainButton" class="primary-button" type="button">
+              Start Local Brain
             </button>
-            <button id="stopClawBridgeButton" type="button">
-              Stop KimiClaw Bridge
+            <button id="stopLocalBrainButton" type="button">
+              Stop Local Brain
             </button>
-            <button id="cloudMotionArmButton" class="warning-button" type="button">
-              Arm Cloud Motion
+            <button id="thinkNowButton" type="button">
+              Think Now
             </button>
-            <button id="injectTestClawActionButton" type="button">
-              Inject Test Claw Action
-            </button>
-            <button id="injectComeHereActionButton" type="button">
-              Inject Come Here Action
-            </button>
-            <button id="injectStopActionButton" class="danger-button" type="button">
-              Inject Stop Action
-            </button>
-            <button id="injectSpeakActionButton" type="button">
-              Inject Speak Action
-            </button>
-            <button id="injectOpenFrontCameraActionButton" type="button">
-              Inject Open Front Camera Action
-            </button>
-            <button id="injectObserveSceneActionButton" type="button">
-              Inject Observe Scene Action
-            </button>
-            <button id="injectCaptureSnapshotActionButton" type="button">
-              Inject Capture Snapshot Action
+            <button id="refreshLocalBrainServerStatusButton" type="button">
+              Refresh Server Status
             </button>
           </div>
-          <div id="clawActionList" class="claw-action-list" aria-live="polite"></div>
+          <h3>Recent Thoughts</h3>
+          <div id="localBrainThoughtList" class="local-brain-list" aria-live="polite"></div>
+          <h3>Local Event Bus</h3>
+          <div class="button-grid button-grid--single">
+            <button id="clearLocalEventsButton" type="button">
+              Clear Local Events
+            </button>
+          </div>
+          <div id="localEventList" class="local-event-list" aria-live="polite"></div>
+        </section>
+
+        <section class="panel-card looi-mode-card">
+          <h2>Embodiment / LOOI Mode</h2>
+          <p class="panel-note">
+            LOOI Mode uses expressive motion macros, face/body synchronization,
+            and local priority scheduling. Physical movement still requires Local
+            Motion Armed.
+          </p>
+          <div class="status-grid">
+            <div class="status-row">
+              <span>Current macro</span>
+              <strong id="currentMacroState">idle</strong>
+            </div>
+            <div class="status-row">
+              <span>Scheduler</span>
+              <strong id="schedulerState">idle</strong>
+            </div>
+            <div class="status-row">
+              <span>Current task</span>
+              <strong id="currentPriorityTask">--</strong>
+            </div>
+            <div class="status-row">
+              <span>FPS</span>
+              <strong id="fpsDisplay">--</strong>
+            </div>
+            <div class="status-row">
+              <span>Performance</span>
+              <strong id="performanceModeDisplay">monitoring</strong>
+            </div>
+            <div class="status-row">
+              <span>Wake lock</span>
+              <strong id="wakeLockState">checking</strong>
+            </div>
+            <div class="status-row">
+              <span>Reliability</span>
+              <strong id="reliabilityModeDisplay">normal</strong>
+            </div>
+          </div>
+          <p class="safety-note">
+            Emergency Stop interrupts macros, speech, scheduler tasks, and motors.
+            LOOI Mode does not arm physical movement by itself.
+          </p>
+          <div class="brain-policy-grid">
+            <label class="checkbox-field looi-mode-toggle-field">
+              <input id="looiModeToggle" type="checkbox" />
+              <span>Enable LOOI Mode</span>
+            </label>
+            <label class="checkbox-field">
+              <input id="idleMicroBehaviorToggle" type="checkbox" checked />
+              <span>Enable Idle Micro Behaviors</span>
+            </label>
+            <label class="checkbox-field">
+              <input id="attentionBodyTrackingToggle" type="checkbox" />
+              <span>Enable Attention Body Tracking</span>
+            </label>
+            <label class="checkbox-field">
+              <input id="keepRobotAwakeToggle" type="checkbox" />
+              <span>Keep Robot Awake</span>
+            </label>
+          </div>
+          <div class="button-grid">
+            <button id="testMacroSoftListenButton" type="button">Test Soft Listen</button>
+            <button id="testMacroThinkingPoseButton" type="button">Test Thinking Pose</button>
+            <button id="testMacroCuriousScanButton" type="button">Test Curious Scan</button>
+            <button id="testMacroHappyApproachButton" type="button">Test Happy Approach</button>
+            <button id="testMacroShyRetreatButton" type="button">Test Shy Retreat</button>
+            <button id="testMacroExcitedWiggleButton" type="button">Test Excited Wiggle</button>
+            <button id="testMacroSleepyIdleButton" type="button">Test Sleepy Idle</button>
+            <button id="testMacroUserReturnedButton" type="button">Test User Returned</button>
+          </div>
+          <div class="button-grid">
+            <button id="runSimulatorLooiDemoButton" class="primary-button" type="button">
+              Run Simulator LOOI Demo
+            </button>
+            <button id="runWheelsLiftedSafetyTestButton" type="button">
+              Run Wheels-Lifted Safety Test
+            </button>
+          </div>
+          <div class="button-grid button-grid--single">
+            <button id="macroStopButton" class="danger-button" type="button">
+              Macro Stop
+            </button>
+          </div>
+          <h3>Macro History</h3>
+          <div id="macroHistoryList" class="macro-history-list" aria-live="polite"></div>
+          <h3>Runtime Warnings</h3>
+          <div id="runtimeWarningsList" class="runtime-warning-list" aria-live="polite"></div>
         </section>
 
         <section class="panel-card">
@@ -845,7 +978,7 @@
         <section class="panel-card">
           <h2>Scenario Tests</h2>
           <p class="panel-note">
-            These simulate local Life Engine reactions only. Kimi is not involved.
+            These simulate local Life Engine reactions only. External cloud is not involved.
           </p>
           <div class="button-grid scenario-grid">
             <button id="scenarioComeHereButton" class="primary-button" type="button">

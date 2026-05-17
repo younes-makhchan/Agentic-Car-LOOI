@@ -4,6 +4,7 @@ import express from "express";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { ESP32Gateway } from "./lib/esp32Gateway.js";
+import { createLocalBrainServerFromEnv } from "./lib/localBrain/localBrainServer.js";
 import { LearnedPhraseStore } from "./lib/memory/learnedPhraseStore.js";
 import { MemoryStore, looksLikeSecret } from "./lib/memory/memoryStore.js";
 import { RobotActionQueue } from "./lib/robotBridge/actionQueue.js";
@@ -33,6 +34,11 @@ const requireRuntimeAuth = process.env.ROBOT_REQUIRE_RUNTIME_AUTH === "true";
 const runtimeHeartbeatStaleMs = Number(process.env.ROBOT_RUNTIME_HEARTBEAT_STALE_MS || 5000);
 const robotActionWaitTimeoutMs = Number(process.env.ROBOT_ACTION_WAIT_TIMEOUT_MS || 15000);
 const robotEventWaitTimeoutMs = Number(process.env.ROBOT_EVENT_WAIT_TIMEOUT_MS || 30000);
+const localFirstDisableKimiCloud = process.env.LOCAL_FIRST_DISABLE_KIMI_CLOUD !== "false";
+const localBrainProvider = normalizeLocalBrainProvider(process.env.LOCAL_BRAIN_PROVIDER);
+const localBrainModel = process.env.LOCAL_BRAIN_MODEL || defaultLocalBrainModel(localBrainProvider);
+const localBrainServer = createLocalBrainServerFromEnv(process.env, serverLog);
+const localBrainRequireLocalNetwork = process.env.LOCAL_BRAIN_REQUIRE_LOCAL_NETWORK === "true";
 const runtimeRegistry = new RuntimeRegistry({
   tokenTtlMs: Number(process.env.ROBOT_RUNTIME_TOKEN_TTL_MS || 86_400_000),
   staleMs: runtimeHeartbeatStaleMs
@@ -47,7 +53,30 @@ const PUBLIC_CONFIG = {
   esp32ConnectOnStart,
   maxSpeed: 0.4,
   maxDurationMs: 1000,
-  robotBridgeEnabled: true,
+  localFirstMode: true,
+  localBrainDefaultEnabled: true,
+  localBrainAutonomousDefault: false,
+  localBrainThoughtIntervalMs: Number(process.env.LOCAL_BRAIN_THOUGHT_INTERVAL_MS || 4000),
+  localBrainMaxThoughtsPerMinute: Number(process.env.LOCAL_BRAIN_MAX_THOUGHTS_PER_MINUTE || 12),
+  localBrainServerEnabled: process.env.LOCAL_BRAIN_ENABLED !== "false",
+  localBrainProvider,
+  localBrainModel,
+  alwaysListeningDefault: false,
+  audioLevelMonitorDefault: false,
+  wakeNamesDefault: ["looi", "louie", "lui", "robot"],
+  attentionWindowMs: Number(process.env.LOOI_ATTENTION_WINDOW_MS || 20000),
+  conversationWindowMs: Number(process.env.LOOI_CONVERSATION_WINDOW_MS || 30000),
+  speechGateEventCooldownMs: Number(process.env.LOOI_SPEECH_GATE_EVENT_COOLDOWN_MS || 800),
+  autonomousSchedulerTickMs: Number(process.env.LOOI_AUTONOMOUS_SCHEDULER_TICK_MS || 1000),
+  looiModeDefault: false,
+  idleMicroBehaviorDefault: true,
+  attentionBodyTrackingDefault: false,
+  keepRobotAwakeDefault: false,
+  idleMicroMinMs: Number(process.env.LOOI_IDLE_MICRO_MIN_MS || 4000),
+  idleMicroMaxMs: Number(process.env.LOOI_IDLE_MICRO_MAX_MS || 12000),
+  macroDefaultRampMs: Number(process.env.LOOI_MACRO_DEFAULT_RAMP_MS || 160),
+  performanceMonitorEnabledDefault: true,
+  robotBridgeEnabled: !localFirstDisableKimiCloud,
   robotBridgePollMs: Number(process.env.ROBOT_BRIDGE_POLL_MS || 1000),
   robotBridgePublicUrlConfigured: Boolean(process.env.ROBOT_BRIDGE_PUBLIC_URL),
   bridgeAuthEnabled: Boolean(process.env.ROBOT_BRIDGE_TOKEN),
@@ -57,7 +86,7 @@ const PUBLIC_CONFIG = {
   robotEventWaitTimeoutMs,
   cameraObservationPostMs: 3000,
   cameraSnapshotMaxWidth: 320,
-  cloudCameraAllowedDefault: false
+  legacyCloudBridgeInactive: localFirstDisableKimiCloud
 };
 
 app.set("trust proxy", true);
@@ -77,6 +106,38 @@ app.get("/api/config", (_req, res) => {
   res.json(PUBLIC_CONFIG);
 });
 
+app.get("/api/local-brain/status", requireLocalBrainAccess, async (_req, res) => {
+  const status = await localBrainServer.status();
+
+  res.json({
+    ok: true,
+    localFirstMode: true,
+    brain: status
+  });
+});
+
+app.post("/api/local-brain/think", requireLocalBrainAccess, async (req, res) => {
+  const response = await localBrainServer.think({
+    reason: req.body?.reason ?? "manual",
+    triggerEvent: req.body?.triggerEvent ?? null,
+    context: req.body?.context ?? {}
+  });
+
+  res.status(response.ok === false ? 502 : 200).json(response);
+});
+
+app.post("/api/local-brain/chat", requireLocalBrainAccess, async (req, res) => {
+  const response = await localBrainServer.chat({
+    message: req.body?.message ?? "",
+    context: req.body?.context ?? {},
+    reason: req.body?.reason ?? "manual"
+  });
+
+  res.status(response.ok === false ? 502 : 200).json(response);
+});
+
+// Local-first runtime uses the ESP32 gateway and memory endpoints below.
+// Legacy cloud robot-bridge endpoints remain later for reference/backward compatibility.
 app.get("/api/esp32/status", requireEsp32GatewayAccess, (req, res) => {
   res.json({
     ok: true,
@@ -158,6 +219,7 @@ app.post("/api/esp32/send", requireEsp32GatewayAccess, (req, res) => {
   }
 });
 
+// Legacy KimiClaw Cloud bridge endpoints are inactive in the local-first browser runtime.
 app.get("/api/robot-bridge/health", (_req, res) => {
   const stats = robotActionQueue.getStats();
   const eventStats = robotEventQueue.getStats();
@@ -658,6 +720,18 @@ function requireMemoryAccess(req, res, next) {
   });
 }
 
+function requireLocalBrainAccess(req, res, next) {
+  if (!localBrainRequireLocalNetwork || isLocalRequest(req) || isPrivateLanRequest(req)) {
+    next();
+    return;
+  }
+
+  res.status(403).json({
+    ok: false,
+    error: "Local brain endpoint requires localhost or private LAN access."
+  });
+}
+
 function requireEsp32GatewayAccess(req, res, next) {
   if (
     isLocalRequest(req) ||
@@ -884,6 +958,27 @@ function rejectSecretLikeLearnedPhrase(entry = {}) {
       statusCode: 400
     });
   }
+}
+
+function normalizeLocalBrainProvider(value) {
+  const provider = String(value || "mock").trim().toLowerCase();
+  return ["mock", "rule", "ollama", "openai-compatible"].includes(provider)
+    ? provider
+    : "mock";
+}
+
+function defaultLocalBrainModel(provider) {
+  return {
+    mock: "mock",
+    rule: "rule",
+    ollama: "",
+    "openai-compatible": ""
+  }[provider] ?? "mock";
+}
+
+function serverLog(message, level = "info") {
+  const prefix = level === "warn" ? "WARN" : level === "error" ? "ERROR" : "INFO";
+  console.log(`[LOCAL_BRAIN:${prefix}] ${message}`);
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

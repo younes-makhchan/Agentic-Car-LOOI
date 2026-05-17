@@ -1,24 +1,303 @@
 # LOOI Life Robot
 
-LOOI Life Robot is a phone-bodied life robot. The phone is the face and brain interface, while the ESP32 is the body motor controller.
+LOOI Life Robot is a local-first phone-bodied life robot. The phone/browser runtime is the face, ears, eyes, body runtime, safety layer, and fast local life loop, while the ESP32 is the body motor controller.
 
-This repository currently includes the Step 1 project foundation and the Step 2 ESP32 body firmware. Full AI logic, personality, and the Life Engine are still intentionally kept off the ESP32.
+The active runtime path no longer requires KimiClaw Cloud. Legacy KimiClaw files and bridge endpoints may remain for reference, but the browser app now routes future thinking through the local event bus and `LocalBrainEngine`.
+
+## Local-First Branch
+
+This branch removes KimiClaw Cloud from the active robot brain. The robot is designed around a local phone/browser runtime and an optional laptop local model server that will be added later.
+
+Why local-first:
+- Lower latency for body presence and stop handling.
+- Works on local Wi-Fi without internet.
+- Better privacy for microphone, camera, memory, and behavior state.
+- More embodied: the Life Engine keeps LOOI alive even without a cloud model.
+- Cloud can be added later only as an optional advisor, not the main control path.
+
+Architecture:
+
+```text
+Phone Browser Runtime
+  sensors -> LocalEventBus -> LifeEngine
+                         |
+                         v
+                  LocalBrainEngine
+                         |
+                         v
+                   ToolExecutor
+                         |
+                         v
+                    SafetyGate
+                         |
+                         v
+                   CommandQueue
+                         |
+                         v
+                       ESP32
+```
+
+Local-first rules:
+- `LifeEngine` handles instant presence, reflexes, mood, attention, and safe body language.
+- `LocalBrainEngine` handles local thinking and future autonomous decisions.
+- `ToolExecutor` remains the only action path for brain actions.
+- The server hosts UI, memory, config, and ESP32 gateway endpoints. The server does not move the robot as a brain.
+- ESP32 remains the muscle controller only.
+- Local Motion Armed is false by default.
+- Autonomous Mode is false by default.
+- Stop always works.
+- The local brain never directly controls ESP32.
+
+Local-first testing:
+
+```bash
+cd server-ui
+npm run dev
+```
+
+Then open the UI:
+
+1. Enable Simulator Mode.
+2. Start Local Brain.
+3. Type `hello` and confirm a local expression/speech response.
+4. Type `come here` and confirm movement is rejected while Local Motion is disarmed.
+5. Arm Local Motion.
+6. Type `come here` again and confirm simulator movement goes through ToolExecutor and LifeEngine.
+7. Type or say `stop` and confirm immediate stop.
+
+Run the smoke check:
+
+```bash
+cd server-ui
+npm run smoke:local-first
+```
+
+## Local-First Step 2: Laptop Local Brain Server
+
+The laptop `server-ui` process can now run local thinking. The browser asks `POST /api/local-brain/think`, the server returns strict JSON action suggestions, and the browser still executes through `ToolExecutor`, `LifeEngine`, `SafetyGate`, `CommandQueue`, and ESP32.
+
+The server never moves the robot, never connects to ESP32 as a brain, and does not call cloud LLM APIs.
+
+Providers:
+
+Mock:
+
+```bash
+LOCAL_BRAIN_PROVIDER=mock
+```
+
+Rule:
+
+```bash
+LOCAL_BRAIN_PROVIDER=rule
+```
+
+Ollama:
+
+```bash
+ollama pull llama3.2:3b
+```
+
+`.env`:
+
+```bash
+LOCAL_BRAIN_PROVIDER=ollama
+LOCAL_BRAIN_MODEL=llama3.2:3b
+LOCAL_BRAIN_BASE_URL=http://localhost:11434
+```
+
+LM Studio / OpenAI-compatible local server:
+
+```bash
+LOCAL_BRAIN_PROVIDER=openai-compatible
+LOCAL_BRAIN_MODEL=your-local-model
+LOCAL_BRAIN_OPENAI_BASE_URL=http://localhost:1234/v1
+LOCAL_BRAIN_OPENAI_API_KEY=local-not-needed
+```
+
+Phone network note:
+- Open the UI from the laptop IP, for example `http://LAPTOP_IP:3000`.
+- The phone talks to the laptop local brain through the same server origin.
+- ESP32 still uses the configured server gateway path to the body controller.
+- Simulator Mode is the easiest safe development loop.
+
+Testing:
+
+1. `cd server-ui`
+2. `npm run dev`
+3. Open the UI from the phone or laptop.
+4. Enable Simulator Mode.
+5. Start Local Brain.
+6. Confirm provider shows `mock`.
+7. Type `come here`.
+8. With Local Motion disarmed, movement should be rejected.
+9. Arm Local Motion.
+10. Type `come here` again.
+11. Simulator should move through ToolExecutor/LifeEngine.
+
+Curl test:
+
+```bash
+curl -X POST http://localhost:3000/api/local-brain/think \
+  -H "Content-Type: application/json" \
+  -d '{
+    "reason":"manual",
+    "triggerEvent":{"type":"user_text","payload":{"text":"come here"}},
+    "context":{
+      "lifeState":{"mood":"curious","energy":0.8,"boredom":0.4},
+      "policy":{"localMotionArmed":false,"localSpeechAllowed":true}
+    }
+  }'
+```
+
+Expected: JSON action suggestions only. No physical movement comes from the server.
+
+Smoke test:
+
+```bash
+cd server-ui
+npm run smoke:local-brain-server
+```
+
+## Local-First Step 3: Always-Listening Local Mind Runtime
+
+The browser mic can now behave like robot ears. Always listening does not mean always thinking: `SpeechGate` filters transcripts, wake names open an attention window, background speech is ignored, and stop/freeze bypasses the model for immediate local stop handling.
+
+Runtime flow:
+
+```text
+microphone / typed text / camera / life events
+  -> LocalEventBus
+  -> SpeechGate + AttentionSystem
+  -> LifeEngine instant reaction
+  -> LocalBrainEngine
+  -> laptop local brain server or rule/mock fallback
+  -> ToolExecutor
+  -> LifeEngine / SafetyGate / CommandQueue
+  -> ESP32 or Simulator
+```
+
+Safety rules:
+- Local Motion Armed is false by default.
+- Allow Autonomous Movement is false by default.
+- Speech recognition can restart automatically, but model calls only happen for relevant speech/events.
+- Stop/freeze/don't move is handled immediately without waiting for the model.
+- Physical motion still requires Local Motion Armed and goes through `ToolExecutor`.
+- Autonomous physical movement also requires Allow Autonomous Movement.
+
+Simulator test:
+
+1. `cd server-ui`
+2. `npm run dev`
+3. Open the UI and enable Simulator Mode.
+4. Start Local Brain.
+5. Enable Always Listening or use typed input.
+6. Type or say `LOOI` and confirm attention mode becomes attentive.
+7. Type or say `come here`.
+8. With Local Motion disarmed, confirm movement is rejected or replaced with a safe explanation.
+9. Arm Local Motion.
+10. Type or say `come here` again and confirm simulator approach behavior.
+11. Type or say `stop` and confirm immediate stop without model delay.
+
+Background speech test:
+
+1. Close/let expire the attention window.
+2. Say an unrelated phrase.
+3. Confirm classification is background/noise and no model call is made.
+
+Autonomous test:
+
+1. Enable Autonomous Mode with Allow Autonomous Movement off.
+2. Wait or inject boredom.
+3. Confirm the local brain may express/speak but does not move.
+4. In simulator only, enable Allow Autonomous Movement and confirm occasional safe autonomous movement.
+
+Real robot warning: lift wheels first, verify manual Emergency Stop, then test stop phrases before arming motion. Do not arm autonomous movement unsupervised.
+
+Run the smoke check:
+
+```bash
+cd server-ui
+npm run smoke:always-listening
+```
+
+## Local-First Step 4: LOOI-Style Embodied Life Polish
+
+The browser runtime now has an embodiment layer. The Local Brain chooses high-level intentions, `EmbodiedActionRouter` maps those intentions to expressive macros, and `MotionMacroSequencer` plays timed face, speech, and safe body frames. The ESP32 still only receives bounded motor commands through `CommandQueue`.
+
+Architecture:
+
+```text
+Speech / Camera / Telemetry / Life Events
+  -> LocalEventBus
+  -> LifeEngine + AttentionSystem
+  -> LocalBrainEngine
+  -> ToolExecutor
+  -> EmbodiedActionRouter
+  -> MotionMacroSequencer
+  -> Face + Voice + CommandQueue
+  -> ESP32 or Simulator
+```
+
+What changed:
+- Motion macros define LOOI-style behaviors such as `soft_listen`, `thinking_pose`, `happy_approach`, `shy_retreat`, `curious_scan`, `excited_wiggle`, and `sleepy_idle`.
+- `PriorityScheduler` coordinates emergency stop, user attention, local brain actions, camera tracking, autonomous life events, and idle micro-behaviors.
+- `IdleMicroBehavior` gives subtle face-only life by default and only uses motion when motion is explicitly armed and autonomous movement is allowed.
+- `AttentionMotorController` uses camera observations for eye attention immediately. Body tracking is gentle and off by default.
+- `WakeLockManager` can keep the screen awake after user action.
+- `PerformanceMonitor` and `ReliabilityManager` reduce non-essential behavior under load.
+
+Safety:
+- Local Motion Armed is false by default.
+- Allow Autonomous Movement is false by default.
+- Attention body tracking is off by default.
+- LOOI Mode does not automatically enable physical movement.
+- Emergency Stop interrupts macros, scheduler tasks, speech, LifeEngine movement, and motors.
+- Server-side local brain endpoints still only return suggestions; the server never moves the robot.
+
+Testing flow:
+
+1. `npm run dev`
+2. Open the UI.
+3. Enable Simulator Mode.
+4. Enable LOOI Mode.
+5. Run Simulator LOOI Demo.
+6. Start Local Brain.
+7. Type `LOOI` and confirm soft listen/thinking behavior.
+8. Type `come here` with Local Motion disarmed and confirm no body movement or partial macro only.
+9. Arm Local Motion in simulator.
+10. Type `come here` again and confirm an approach macro.
+11. Say/type `stop` and confirm macro interruption and motor stop.
+12. Enable Always Listening and test wake name plus attention window.
+13. Test idle micro-behaviors.
+14. Connect real ESP32 with wheels lifted.
+15. Run Wheels-Lifted Safety Test.
+16. Only then test on a safe flat surface.
+
+Performance note: if FPS drops, reliability mode lengthens idle intervals and reduces non-essential behavior. Stillness is acceptable and often more lifelike than constant motion.
+
+Run the smoke check:
+
+```bash
+cd server-ui
+npm run smoke:embodied
+```
 
 ## Core Architecture
 
-- Phone: face, screen UI, camera, microphone, speaker, and browser runtime.
+- Phone: face, screen UI, camera, microphone, speaker, Life Engine, Local Event Bus, Local Brain, ToolExecutor, and browser runtime.
+- Laptop/server: static UI, local memory, ESP32 gateway, and future local model server.
 - ESP32: body controller responsible for safe physical execution only.
-- Kimi chooses high-level intention.
-- Life Engine turns intention into living behavior and safe motion.
+- Life Engine turns local state and high-level requests into living behavior and safe motion.
 - ESP32 only executes safe motor commands.
 
 ## Responsibilities
 
-- Kimi/KimiClaw: personality, reasoning, natural language, memory, and high-level intentions.
+- Local Brain: local reasoning scaffold, mock/rule adapter today, future local model adapter later.
 - Life Engine: low-latency reactions, mood, attention, drives, body language, and the safety gate.
 - ESP32: motor PWM, timeout stop, telemetry, and safe physical execution.
-- Node server: web UI hosting, Robot Bridge action queue, and memory storage.
-- Browser UI: face, speech, camera, Life Engine runtime, and ESP32 connection.
+- Node server: web UI hosting, memory storage, local config, and ESP32 gateway.
+- Browser UI: face, speech, camera, Life Engine runtime, Local Brain, and ESP32 connection.
 
 ## Project Layout
 
@@ -43,6 +322,15 @@ looi-life-robot/
         └── js/
             ├── app.js
             ├── config.js
+            ├── core/
+            │   └── localEventBus.js
+            ├── localBrain/
+            │   ├── localBrainEngine.js
+            │   ├── mockBrainAdapter.js
+            │   ├── ruleBrainFallback.js
+            │   ├── actionParser.js
+            │   ├── brainPolicy.js
+            │   └── brainPrompt.js
             ├── life/
             │   ├── state.js
             │   ├── lifeEngine.js
@@ -53,10 +341,6 @@ looi-life-robot/
             │   ├── esp32Client.js
             │   ├── commandQueue.js
             │   └── toolExecutor.js
-            ├── kimi/
-            │   ├── kimiClient.js
-            │   ├── tools.js
-            │   └── systemPrompt.js
             ├── perception/
             │   ├── speech.js
             │   └── camera.js
@@ -75,7 +359,7 @@ npm run dev
 
 Open `http://localhost:3000`.
 
-## Complete First Setup: Firmware To KimiClaw
+## Complete First Setup: Firmware To Local Runtime
 
 Use this checklist when setting up the whole system from zero.
 
@@ -488,7 +772,9 @@ npm run smoke:sim
 
 When using the real ESP32, disable Simulator Mode and connect to the ESP32 WebSocket URL printed in Serial Monitor, for example `ws://192.168.1.73:81`.
 
-## Step 6: KimiClaw Cloud Robot Bridge
+## Legacy Reference: KimiClaw Cloud Robot Bridge
+
+The sections below describe the old cloud bridge path. They remain as historical/reference notes only. On the local-first branch, `app.js` does not import the KimiClaw bridge client, does not start runtime heartbeat polling, and does not require public tunnels.
 
 KimiClaw Cloud runs outside the robot's local network. It cannot reach `localhost` or the ESP32 WebSocket directly. Instead, KimiClaw Cloud calls a public HTTPS Robot Bridge URL. The server only queues high-level actions, and the phone browser polls that queue and receives actions locally.
 

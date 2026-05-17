@@ -6,6 +6,10 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
+    "smoke:local-first": "node scripts/smoke-local-first.mjs",
+    "smoke:local-brain-server": "node scripts/smoke-local-brain-server.mjs",
+    "smoke:always-listening": "node scripts/smoke-always-listening.mjs",
+    "smoke:embodied": "node scripts/smoke-embodied-polish.mjs",
     "smoke:sim": "node scripts/smoke-simulator.mjs",
     "smoke:bridge": "node scripts/smoke-robot-bridge.mjs",
     "smoke:tools": "node scripts/smoke-tool-executor.mjs",

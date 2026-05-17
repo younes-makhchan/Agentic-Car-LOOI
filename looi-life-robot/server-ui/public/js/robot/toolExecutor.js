@@ -51,6 +51,7 @@ export class ToolExecutor {
     robotClient,
     commandQueue,
     clawBridgeClient,
+    embodiedActionRouter,
     voiceOutput,
     cameraInput,
     logger,
@@ -62,6 +63,7 @@ export class ToolExecutor {
     this.robotClient = robotClient;
     this.commandQueue = commandQueue;
     this.clawBridgeClient = clawBridgeClient;
+    this.embodiedActionRouter = embodiedActionRouter;
     this.voiceOutput = voiceOutput;
     this.cameraInput = cameraInput;
     this.logger = logger;
@@ -90,6 +92,10 @@ export class ToolExecutor {
 
   setCameraInput(cameraInput) {
     this.cameraInput = cameraInput;
+  }
+
+  setEmbodiedActionRouter(embodiedActionRouter) {
+    this.embodiedActionRouter = embodiedActionRouter;
   }
 
   executeBridgeAction(action) {
@@ -172,12 +178,12 @@ export class ToolExecutor {
   }
 
   async executeSpeak(args = {}, action = {}) {
-    if (!this.policy().allowSpeak) {
+    if (!this.isSpeechAllowed(action)) {
       return this.buildResult("rejected", {
         action,
         executed: false,
         physical: false,
-        message: "Cloud speech is disabled in the browser UI."
+        message: `${this.policyLabel(action)} speech is disabled in the browser UI.`
       });
     }
 
@@ -192,6 +198,16 @@ export class ToolExecutor {
       });
     }
 
+    const routed = await this.executeEmbodiedRoute(action, {
+      physical: false,
+      allowMotion: false,
+      allowSpeech: true,
+      args: { ...args, text }
+    });
+    if (routed) {
+      return routed;
+    }
+
     if (this.voiceOutput?.speak) {
       const result = await this.voiceOutput.speak({
         text,
@@ -204,7 +220,7 @@ export class ToolExecutor {
         executed: Boolean(result.executed),
         physical: false,
         message: result.executed
-          ? "Spoke cloud text."
+          ? `Spoke ${this.policyLabel(action)} text.`
           : `Speech not spoken: ${result.reason}`,
         detail: {
           textLength: text.length,
@@ -253,7 +269,7 @@ export class ToolExecutor {
       action,
       executed: true,
       physical: false,
-      message: "Spoke cloud text.",
+      message: `Spoke ${this.policyLabel(action)} text.`,
       detail: { text, tone: args.tone ?? "soft" }
     });
   }
@@ -276,9 +292,18 @@ export class ToolExecutor {
       });
     }
 
+    const routed = await this.executeEmbodiedRoute(action, {
+      physical: false,
+      allowMotion: false,
+      allowSpeech: false
+    });
+    if (routed) {
+      return routed;
+    }
+
     const expression = emotion === "sad" ? "shy" : emotion;
     this.face?.setExpression?.(expression, intensity);
-    this.lifeEngine?.patchState?.({ mood: expression }, "cloud_express");
+    this.lifeEngine?.patchState?.({ mood: expression }, `${this.policyLabel(action)}_express`);
 
     return this.buildResult("completed", {
       action,
@@ -304,12 +329,23 @@ export class ToolExecutor {
     }
 
     if (Math.abs(linear) < 0.001 && Math.abs(angular) < 0.001) {
-      return this.executeStop({ reason: args.reason ?? "cloud_zero_drive" }, action);
+      return this.executeStop({ reason: args.reason ?? `${this.policyLabel(action)}_zero_drive` }, action);
     }
 
     const gate = this.ensurePhysicalAllowed(action);
     if (gate) {
       return gate;
+    }
+
+    if (args.style) {
+      const routed = await this.executeEmbodiedRoute(action, {
+        physical: true,
+        allowMotion: true,
+        allowSpeech: false
+      });
+      if (routed) {
+        return routed;
+      }
     }
 
     const result = await this.lifeEngine?.executeKimiAction?.("drive", {
@@ -324,6 +360,19 @@ export class ToolExecutor {
 
   async executeStop(args = {}, action = {}) {
     const reason = normalizeShortText(args.reason, 160) || "cloud_stop";
+
+    const routed = await this.executeEmbodiedRoute({
+      ...action,
+      args: { ...args, reason }
+    }, {
+      physical: true,
+      allowMotion: false,
+      allowSpeech: false,
+      force: true
+    });
+    if (routed?.status === "completed") {
+      return routed;
+    }
 
     try {
       this.voiceOutput?.cancel?.(reason);
@@ -355,6 +404,15 @@ export class ToolExecutor {
       return gate;
     }
 
+    const routed = await this.executeEmbodiedRoute(action, {
+      physical: true,
+      allowMotion: true,
+      allowSpeech: this.isSpeechAllowed(action)
+    });
+    if (routed) {
+      return routed;
+    }
+
     const result = await this.lifeEngine?.executeKimiAction?.("approach_user", args);
     return this.resultFromLifeEngine(action, result, "Approach user routed through Life Engine.");
   }
@@ -365,12 +423,30 @@ export class ToolExecutor {
       return gate;
     }
 
+    const routed = await this.executeEmbodiedRoute(action, {
+      physical: true,
+      allowMotion: true,
+      allowSpeech: this.isSpeechAllowed(action)
+    });
+    if (routed) {
+      return routed;
+    }
+
     const result = await this.lifeEngine?.executeKimiAction?.("retreat", args);
     return this.resultFromLifeEngine(action, result, "Retreat routed through Life Engine.");
   }
 
   async executeCuriousScan(args = {}, action = {}) {
-    if (!this.isMotionArmed()) {
+    if (!this.isMotionArmed(action)) {
+      const routed = await this.executeEmbodiedRoute(action, {
+        physical: false,
+        allowMotion: false,
+        allowSpeech: false
+      });
+      if (routed) {
+        return routed;
+      }
+
       const nonPhysical = this.ensureNonPhysicalAllowed(action);
       if (nonPhysical) {
         return nonPhysical;
@@ -383,14 +459,23 @@ export class ToolExecutor {
         action,
         executed: true,
         physical: false,
-        message: "Curious expression shown; body motion skipped because Cloud Motion is disarmed.",
-        detail: { partial: true, bodyMotionSkipped: "cloud_motion_not_armed" }
+        message: `Curious expression shown; body motion skipped because ${this.policyLabel(action)} motion is disarmed.`,
+        detail: { partial: true, bodyMotionSkipped: `${this.policyLabel(action)}_motion_not_armed` }
       });
     }
 
     const gate = this.ensurePhysicalAllowed(action);
     if (gate) {
       return gate;
+    }
+
+    const routed = await this.executeEmbodiedRoute(action, {
+      physical: true,
+      allowMotion: true,
+      allowSpeech: false
+    });
+    if (routed) {
+      return routed;
     }
 
     const result = await this.lifeEngine?.executeKimiAction?.("curious_scan", args);
@@ -401,6 +486,15 @@ export class ToolExecutor {
     const gate = this.ensurePhysicalAllowed(action);
     if (gate) {
       return gate;
+    }
+
+    const routed = await this.executeEmbodiedRoute(action, {
+      physical: true,
+      allowMotion: true,
+      allowSpeech: false
+    });
+    if (routed) {
+      return routed;
     }
 
     const result = await this.lifeEngine?.executeKimiAction?.("excited_wiggle", args);
@@ -416,7 +510,7 @@ export class ToolExecutor {
     const includeSnapshot = args.includeSnapshot === true;
 
     if (includeSnapshot) {
-      const cameraGate = this.ensureCloudCameraAllowed(action);
+      const cameraGate = this.ensureCameraAllowed(action);
       if (cameraGate) {
         return cameraGate;
       }
@@ -475,7 +569,7 @@ export class ToolExecutor {
       return nonPhysical;
     }
 
-    const cameraGate = this.ensureCloudCameraAllowed(action);
+    const cameraGate = this.ensureCameraAllowed(action);
     if (cameraGate) {
       return cameraGate;
     }
@@ -510,7 +604,7 @@ export class ToolExecutor {
       return nonPhysical;
     }
 
-    const cameraGate = this.ensureCloudCameraAllowed(action);
+    const cameraGate = this.ensureCameraAllowed(action);
     if (cameraGate) {
       return cameraGate;
     }
@@ -543,7 +637,7 @@ export class ToolExecutor {
       return nonPhysical;
     }
 
-    const cameraGate = this.ensureCloudCameraAllowed(action);
+    const cameraGate = this.ensureCameraAllowed(action);
     if (cameraGate) {
       return cameraGate;
     }
@@ -576,7 +670,7 @@ export class ToolExecutor {
       return nonPhysical;
     }
 
-    const cameraGate = this.ensureCloudCameraAllowed(action);
+    const cameraGate = this.ensureCameraAllowed(action);
     if (cameraGate) {
       return cameraGate;
     }
@@ -606,6 +700,55 @@ export class ToolExecutor {
         snapshot: result.snapshot ?? null
       }
     });
+  }
+
+  async executeEmbodiedRoute(action = {}, {
+    physical = false,
+    allowMotion = false,
+    allowSpeech = false,
+    allowCamera = false,
+    force = false,
+    args = null
+  } = {}) {
+    if (!this.embodiedActionRouter?.execute) {
+      return null;
+    }
+
+    const routedAction = args ? { ...action, args } : action;
+    const policy = this.policy();
+
+    try {
+      const routed = await this.embodiedActionRouter.execute(routedAction, {
+        source: routedAction.source ?? "tool_executor",
+        localPolicy: policy,
+        lifeState: this.lifeEngine?.getState?.() ?? null,
+        allowMotion,
+        allowSpeech,
+        allowCamera,
+        autonomous: routedAction.autonomous === true,
+        force,
+        priority: routedAction.type === "stop" ? 100 : routedAction.autonomous === true ? 40 : 60,
+        reason: routedAction.reason ?? routedAction.type
+      });
+
+      if (!routed || routed.ok === false || routed.status === "rejected") {
+        return null;
+      }
+
+      return this.buildResult("completed", {
+        action: routedAction,
+        executed: routed.result?.executed !== false,
+        physical,
+        message: `Embodied macro ${routed.macro ?? routedAction.type} completed.`,
+        detail: {
+          macro: routed.macro ?? null,
+          route: routed
+        }
+      });
+    } catch (error) {
+      this.log(`Embodied route failed (${routedAction.type}): ${error.message}`, "warn");
+      return null;
+    }
   }
 
   async executeRemember(args = {}, action = {}) {
@@ -718,8 +861,11 @@ export class ToolExecutor {
     return CAMERA_ACTIONS.has(type);
   }
 
-  isMotionArmed() {
-    return Boolean(this.policy().cloudMotionArmed);
+  isMotionArmed(action = {}) {
+    const policy = this.policy();
+    return this.isLocalBrainAction(action)
+      ? Boolean(policy.localMotionArmed)
+      : Boolean(policy.cloudMotionArmed);
   }
 
   buildResult(status, detail = {}) {
@@ -784,12 +930,25 @@ export class ToolExecutor {
   }
 
   ensurePhysicalAllowed(action) {
-    if (!this.isMotionArmed()) {
+    if (!this.isMotionArmed(action)) {
       return this.buildResult("rejected", {
         action,
         executed: false,
         physical: true,
-        message: "Cloud motion is not armed in the browser UI."
+        message: `${this.policyLabel(action)} motion is not armed in the browser UI.`
+      });
+    }
+
+    if (
+      this.isLocalBrainAction(action) &&
+      action.autonomous === true &&
+      this.policy().allowAutonomousMovement !== true
+    ) {
+      return this.buildResult("rejected", {
+        action,
+        executed: false,
+        physical: true,
+        message: "Autonomous Local Brain movement is disabled in the browser UI."
       });
     }
 
@@ -820,6 +979,10 @@ export class ToolExecutor {
   }
 
   ensureNonPhysicalAllowed(action) {
+    if (this.isLocalBrainAction(action)) {
+      return null;
+    }
+
     if (this.policy().allowNonPhysical === false) {
       return this.buildResult("rejected", {
         action,
@@ -832,20 +995,52 @@ export class ToolExecutor {
     return null;
   }
 
-  ensureCloudCameraAllowed(action) {
-    if (!this.policy().cloudCameraAllowed) {
+  ensureCameraAllowed(action) {
+    const policy = this.policy();
+    const allowed = this.isLocalBrainAction(action)
+      ? policy.localCameraAllowed
+      : policy.cloudCameraAllowed;
+
+    if (!allowed) {
       return this.buildResult("rejected", {
         action,
         executed: false,
         physical: false,
-        message: "Cloud camera access is not allowed in the browser UI.",
+        message: `${this.policyLabel(action)} camera access is not allowed in the browser UI.`,
         detail: {
-          cloudCameraAllowed: false
+          cloudCameraAllowed: Boolean(policy.cloudCameraAllowed),
+          localCameraAllowed: Boolean(policy.localCameraAllowed)
         }
       });
     }
 
     return null;
+  }
+
+  isSpeechAllowed(action = {}) {
+    const policy = this.policy();
+
+    if (!this.isLocalBrainAction(action)) {
+      return policy.allowSpeak !== false;
+    }
+
+    if (policy.localSpeechAllowed === false) {
+      return false;
+    }
+
+    if (action.autonomous === true && policy.allowAutonomousSpeech === false) {
+      return false;
+    }
+
+    return true;
+  }
+
+  isLocalBrainAction(action = {}) {
+    return action?.source === "local_brain" || action?.source === "local";
+  }
+
+  policyLabel(action = {}) {
+    return this.isLocalBrainAction(action) ? "local" : "cloud";
   }
 
   resultFromLifeEngine(action, result, fallbackMessage) {
@@ -895,6 +1090,13 @@ export class ToolExecutor {
       allowSpeak: true,
       allowNonPhysical: true,
       cloudCameraAllowed: false,
+      source: "legacy",
+      localMotionArmed: false,
+      localCameraAllowed: false,
+      localSpeechAllowed: true,
+      autonomousMode: false,
+      allowAutonomousMovement: false,
+      allowAutonomousSpeech: true,
       ...(typeof this.getExecutionPolicy === "function" ? this.getExecutionPolicy() : {})
     };
   }
@@ -932,6 +1134,9 @@ function compactRuntimeContext(context = {}) {
     simulatorMode: Boolean(context.simulatorMode),
     cloudMotionArmed: Boolean(context.cloudMotionArmed),
     cloudCameraAllowed: Boolean(context.cloudCameraAllowed),
+    localPolicy: context.localPolicy ?? null,
+    localMotionArmed: Boolean(context.localMotionArmed ?? context.localPolicy?.localMotionArmed),
+    localCameraAllowed: Boolean(context.localCameraAllowed ?? context.localPolicy?.localCameraAllowed),
     recentLifeEvents: Array.isArray(context.recentLifeEvents)
       ? context.recentLifeEvents.slice(0, 8)
       : [],

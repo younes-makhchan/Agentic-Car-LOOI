@@ -102,6 +102,8 @@ export class LifeEngine {
     this.lastObstacleStopAt = 0;
     this.lastUserSeenAt = 0;
     this.limits = { ...DEFAULT_LIMITS };
+    this.macroSequencer = null;
+    this.embodiedActionRouter = null;
   }
 
   start() {
@@ -164,6 +166,7 @@ export class LifeEngine {
 
   setCalibration(calibration) {
     this.calibration = calibration;
+    this.macroSequencer?.setCalibration?.(calibration);
     const settings = calibration?.getSettings?.() ?? calibration ?? {};
     this.limits = {
       ...this.limits,
@@ -172,6 +175,35 @@ export class LifeEngine {
     };
     this.emitStatus();
     return this.getState();
+  }
+
+  setMacroSequencer(macroSequencer) {
+    this.macroSequencer = macroSequencer;
+    return this.getState();
+  }
+
+  setEmbodiedActionRouter(router) {
+    this.embodiedActionRouter = router;
+    return this.getState();
+  }
+
+  async requestMacro(name, options = {}) {
+    if (!this.macroSequencer?.playMacro) {
+      return {
+        ok: false,
+        executed: false,
+        reason: "macro_sequencer_unavailable"
+      };
+    }
+
+    return this.macroSequencer.playMacro(name, {
+      source: "life_engine",
+      allowMotion: options.allowMotion !== false,
+      allowSpeech: options.allowSpeech === true,
+      priority: options.priority,
+      reason: options.reason ?? name,
+      context: options.context ?? {}
+    });
   }
 
   setPersonalityProfile(profile) {
@@ -581,13 +613,14 @@ export class LifeEngine {
       };
     }
 
-    const result = await safeEnqueueMotion(
+      const result = await safeEnqueueMotion(
       {
         state: this.state,
         face: this.face,
         robotClient: this.robotClient,
         commandQueue: this.commandQueue,
         safetyGate: { validateMotionCommand },
+        macroSequencer: this.macroSequencer,
         limits: this.limits,
         calibration: this.calibration,
         logger: this.logger
@@ -813,6 +846,7 @@ export class LifeEngine {
 
   async executeBehavior(name, args = {}) {
     const validation = validateBehaviorRequest(name, args, this.state);
+    const requested = validation.name === this.state.requestedBehavior;
 
     if (!validation.allowed) {
       this.log(`Life behavior rejected (${validation.reason}): ${name}`, "warn");
@@ -844,6 +878,9 @@ export class LifeEngine {
       robotClient: this.robotClient,
       commandQueue: this.commandQueue,
       safetyGate: { validateMotionCommand },
+      macroSequencer: this.macroSequencer,
+      allowMotion: requested || validation.name === "scared_stop",
+      allowSpeech: false,
       limits: this.limits,
       calibration: this.calibration,
       personalityProfile: this.personalityProfile,

@@ -16,7 +16,8 @@ const EXPRESSION_PRESETS = {
   attentive: { eyeScaleY: 1.08, lidTilt: 0, glow: 0.24, browLift: 0.08 },
   sleepy: { eyeScaleY: 0.45, lidTilt: -0.04, glow: 0.08, browLift: -0.08 },
   scared: { eyeScaleY: 1.18, lidTilt: 0.18, glow: 0.34, browLift: 0.22 },
-  shy: { eyeScaleY: 0.72, lidTilt: -0.08, glow: 0.14, browLift: -0.02 }
+  shy: { eyeScaleY: 0.72, lidTilt: -0.08, glow: 0.14, browLift: -0.02 },
+  sad: { eyeScaleY: 0.62, lidTilt: -0.12, glow: 0.1, browLift: -0.08 }
 };
 
 const DIRECTION_VECTORS = {

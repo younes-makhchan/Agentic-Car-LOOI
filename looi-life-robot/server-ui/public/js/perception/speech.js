@@ -10,6 +10,15 @@ export class SpeechInput {
     this.continuous = continuous;
     this.interimResults = interimResults;
     this.listening = false;
+    this.alwaysListening = false;
+    this.manualStop = false;
+    this.autoRestartDelayMs = 300;
+    this.maxAutoRestartDelayMs = 3000;
+    this.restartBackoffMs = this.autoRestartDelayMs;
+    this.restartTimer = null;
+    this.lastStartAt = 0;
+    this.lastEndAt = 0;
+    this.permissionBlocked = false;
     this.finalCallbacks = new Set();
     this.interimCallbacks = new Set();
     this.errorCallbacks = new Set();
@@ -25,6 +34,7 @@ export class SpeechInput {
   }
 
   start() {
+    this.manualStop = false;
     if (!this.supported) {
       this.log("Speech recognition is not supported in this browser.", "warn");
       this.emitStatus({ error: "unsupported" });
@@ -38,6 +48,7 @@ export class SpeechInput {
     this.configureRecognition();
 
     try {
+      this.lastStartAt = Date.now();
       this.recognition.start();
     } catch (error) {
       this.emitError(error);
@@ -47,6 +58,10 @@ export class SpeechInput {
   }
 
   stop() {
+    this.manualStop = true;
+    this.alwaysListening = false;
+    clearTimeout(this.restartTimer);
+    this.restartTimer = null;
     if (!this.supported) {
       return this.getStatus();
     }
@@ -61,6 +76,10 @@ export class SpeechInput {
   }
 
   abort() {
+    this.manualStop = true;
+    this.alwaysListening = false;
+    clearTimeout(this.restartTimer);
+    this.restartTimer = null;
     if (!this.supported) {
       return this.getStatus();
     }
@@ -88,6 +107,28 @@ export class SpeechInput {
     this.configureRecognition();
   }
 
+  startAlwaysListening() {
+    this.alwaysListening = true;
+    this.manualStop = false;
+    this.permissionBlocked = false;
+    this.restartBackoffMs = this.autoRestartDelayMs;
+    this.setContinuous(true);
+    return this.start();
+  }
+
+  stopAlwaysListening() {
+    this.alwaysListening = false;
+    return this.stop();
+  }
+
+  setAlwaysListening(enabled) {
+    return enabled ? this.startAlwaysListening() : this.stopAlwaysListening();
+  }
+
+  isAlwaysListening() {
+    return this.alwaysListening;
+  }
+
   onFinal(callback) {
     return register(this.finalCallbacks, callback);
   }
@@ -111,6 +152,11 @@ export class SpeechInput {
       language: this.language,
       continuous: this.continuous,
       interimResults: this.interimResults,
+      alwaysListening: this.alwaysListening,
+      manualStop: this.manualStop,
+      restartBackoffMs: this.restartBackoffMs,
+      lastStartAt: this.lastStartAt,
+      lastEndAt: this.lastEndAt,
       secureContext: globalThis.isSecureContext !== false
     };
   }
@@ -125,11 +171,14 @@ export class SpeechInput {
     this.recognition.interimResults = this.interimResults;
     this.recognition.onstart = () => {
       this.listening = true;
+      this.restartBackoffMs = this.autoRestartDelayMs;
       this.emitStatus();
     };
     this.recognition.onend = () => {
       this.listening = false;
+      this.lastEndAt = Date.now();
       this.emitStatus();
+      this.scheduleAutoRestart();
     };
     this.recognition.onerror = (event) => {
       this.emitError(event?.error ? new Error(event.error) : new Error("speech_error"));
@@ -164,8 +213,41 @@ export class SpeechInput {
 
   emitError(error) {
     this.log(`Speech recognition error: ${error.message}`, "warn");
+    if (["not-allowed", "service-not-allowed", "permission denied"].includes(error.message)) {
+      this.permissionBlocked = true;
+      this.alwaysListening = false;
+    }
     this.errorCallbacks.forEach((callback) => callback(error));
     this.emitStatus({ error: error.message });
+  }
+
+  scheduleAutoRestart() {
+    clearTimeout(this.restartTimer);
+
+    if (
+      !this.alwaysListening ||
+      this.manualStop ||
+      this.permissionBlocked ||
+      !this.supported ||
+      this.listening
+    ) {
+      return;
+    }
+
+    const delay = Math.min(this.maxAutoRestartDelayMs, this.restartBackoffMs);
+    this.restartTimer = setTimeout(() => {
+      this.restartTimer = null;
+
+      if (!this.alwaysListening || this.manualStop || this.permissionBlocked || this.listening) {
+        return;
+      }
+
+      try {
+        this.start();
+      } finally {
+        this.restartBackoffMs = Math.min(this.maxAutoRestartDelayMs, this.restartBackoffMs * 1.5);
+      }
+    }, delay);
   }
 
   emitStatus(extra = {}) {

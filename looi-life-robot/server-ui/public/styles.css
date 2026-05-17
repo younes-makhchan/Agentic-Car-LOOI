@@ -95,6 +95,25 @@ body {
   border-color: rgba(144, 231, 255, 0.2);
 }
 
+.ears-card {
+  border-color: rgba(126, 224, 186, 0.22);
+}
+
+.ears-on .ears-card,
+.attention-active .ears-card {
+  border-color: rgba(126, 224, 186, 0.52);
+  box-shadow:
+    var(--shadow),
+    0 0 34px rgba(126, 224, 186, 0.08);
+}
+
+.stop-cooldown .ears-card {
+  border-color: rgba(255, 107, 107, 0.62);
+  box-shadow:
+    var(--shadow),
+    0 0 38px rgba(255, 107, 107, 0.1);
+}
+
 .camera-card {
   border-color: rgba(126, 224, 186, 0.2);
 }
@@ -107,19 +126,36 @@ body {
   border-color: rgba(255, 191, 92, 0.18);
 }
 
-.runtime-card {
-  border-color: rgba(97, 211, 255, 0.18);
-}
-
-.claw-bridge-card {
+.local-brain-card {
   border-color: rgba(144, 231, 255, 0.2);
 }
 
-.cloud-motion-armed .claw-bridge-card {
+.looi-mode-card {
+  border-color: rgba(126, 224, 186, 0.22);
+}
+
+.looi-mode-active .looi-mode-card {
+  border-color: rgba(126, 224, 186, 0.58);
+  box-shadow:
+    var(--shadow),
+    0 0 40px rgba(126, 224, 186, 0.1);
+}
+
+.macro-running .looi-mode-card {
+  border-color: rgba(97, 211, 255, 0.56);
+}
+
+.local-motion-armed .local-brain-card {
   border-color: rgba(255, 209, 102, 0.58);
   box-shadow:
     var(--shadow),
     0 0 38px rgba(255, 209, 102, 0.1);
+}
+
+.local-autonomous-mode .local-brain-card {
+  box-shadow:
+    var(--shadow),
+    0 0 42px rgba(97, 211, 255, 0.1);
 }
 
 .simulator-active .simulator-card {
@@ -127,13 +163,6 @@ body {
   box-shadow:
     var(--shadow),
     0 0 36px rgba(126, 224, 186, 0.08);
-}
-
-.cloud-camera-allowed .camera-card {
-  border-color: rgba(126, 224, 186, 0.58);
-  box-shadow:
-    var(--shadow),
-    0 0 38px rgba(126, 224, 186, 0.1);
 }
 
 .calibration-armed .calibration-card {
@@ -192,7 +221,13 @@ body {
   color: #b8f0db;
 }
 
-.cloud-warning {
+.local-brain-card h3,
+.looi-mode-card h3 {
+  margin: 1rem 0 0;
+  font-size: 1rem;
+}
+
+.legacy-warning {
   margin: 0.65rem 0 0;
   padding: 0.8rem 0.9rem;
   border-radius: 0.95rem;
@@ -232,10 +267,31 @@ body {
   color: #c8f5e4;
 }
 
-.bridge-policy-grid {
+.brain-policy-grid {
   margin-top: 0.85rem;
   display: grid;
   gap: 0.65rem;
+}
+
+.local-motion-arm-field {
+  border-color: rgba(255, 209, 102, 0.3);
+  background:
+    linear-gradient(180deg, rgba(255, 209, 102, 0.08), rgba(92, 54, 12, 0.1)),
+    rgba(6, 10, 17, 0.62);
+}
+
+.ears-toggle-field {
+  border-color: rgba(126, 224, 186, 0.28);
+  background:
+    linear-gradient(180deg, rgba(126, 224, 186, 0.08), rgba(12, 72, 48, 0.08)),
+    rgba(6, 10, 17, 0.62);
+}
+
+.looi-mode-toggle-field {
+  border-color: rgba(126, 224, 186, 0.32);
+  background:
+    linear-gradient(180deg, rgba(126, 224, 186, 0.1), rgba(12, 72, 48, 0.08)),
+    rgba(6, 10, 17, 0.62);
 }
 
 .checkbox-field {
@@ -255,19 +311,14 @@ body {
   accent-color: var(--glow);
 }
 
-.cloud-motion-state--disarmed {
+.local-brain-state--running,
+.local-server-state--available,
+.local-motion-state--disarmed {
   color: var(--success);
 }
 
-.cloud-motion-state--armed {
-  color: var(--warning);
-}
-
-.runtime-state--online {
-  color: var(--success);
-}
-
-.runtime-state--offline {
+.local-brain-state--stopped,
+.local-server-state--unavailable {
   color: var(--danger);
 }
 
@@ -275,17 +326,28 @@ body {
   color: var(--success);
 }
 
+.ears-state--on,
+.attention-state--active {
+  color: var(--success);
+}
+
+.ears-state--off {
+  color: var(--muted);
+}
+
+.attention-state--stop {
+  color: var(--danger);
+}
+
 .voice-state--warn {
   color: var(--warning);
 }
 
-.camera-state--active,
-.cloud-camera-state--allowed {
+.camera-state--active {
   color: var(--success);
 }
 
-.camera-state--warn,
-.cloud-camera-state--blocked {
+.camera-state--warn {
   color: var(--warning);
 }
 
@@ -328,8 +390,8 @@ body {
 
 #userInput,
 #esp32UrlInput,
-#runtimePairingCodeInput,
 #speechLanguageInput,
+#wakeNamesInput,
 #voiceSelect,
 .personality-card input[type="text"],
 .personality-card textarea,
@@ -344,8 +406,8 @@ button {
 
 #userInput,
 #esp32UrlInput,
-#runtimePairingCodeInput,
 #speechLanguageInput,
+#wakeNamesInput,
 #voiceSelect,
 .personality-card input[type="text"],
 .personality-card textarea,
@@ -363,8 +425,8 @@ button {
 
 #userInput:focus,
 #esp32UrlInput:focus,
-#runtimePairingCodeInput:focus,
 #speechLanguageInput:focus,
+#wakeNamesInput:focus,
 #voiceSelect:focus,
 .personality-card input[type="text"]:focus,
 .personality-card textarea:focus,
@@ -450,6 +512,11 @@ button {
 .transcript--interim {
   color: var(--muted);
   font-style: italic;
+}
+
+.transcript--ignored {
+  color: var(--muted);
+  opacity: 0.78;
 }
 
 .camera-preview-grid {
@@ -615,7 +682,11 @@ button:active {
   border-color: rgba(255, 209, 102, 0.72);
 }
 
-.cloud-motion-armed #cloudMotionArmButton {
+.local-motion-armed #localMotionArmedToggle {
+  outline: 2px solid rgba(255, 209, 102, 0.75);
+}
+
+.local-motion-armed .local-motion-arm-field {
   border-color: rgba(255, 107, 107, 0.65);
   background:
     linear-gradient(180deg, rgba(255, 209, 102, 0.22), rgba(255, 107, 107, 0.22)),
@@ -636,7 +707,10 @@ button:active {
   font-size: 0.92rem;
 }
 
-.claw-action-list {
+.local-brain-list,
+.local-event-list,
+.macro-history-list,
+.runtime-warning-list {
   margin-top: 0.85rem;
   display: grid;
   gap: 0.6rem;
@@ -644,32 +718,44 @@ button:active {
   overflow: auto;
 }
 
-.claw-action-item {
+.local-brain-item,
+.local-event-item,
+.macro-history-item,
+.runtime-warning-item {
   padding: 0.75rem;
   border-radius: 0.9rem;
   background: rgba(6, 10, 17, 0.72);
   border: 1px solid var(--line);
 }
 
-.claw-action-item--executing {
-  border-color: rgba(97, 211, 255, 0.36);
+.local-brain-item--skipped,
+.macro-history-item--partial {
+  opacity: 0.75;
 }
 
-.claw-action-item--completed {
-  border-color: rgba(126, 224, 186, 0.36);
+.runtime-warning-item--warn {
+  border-color: rgba(255, 191, 92, 0.28);
+  color: #f4d598;
 }
 
-.claw-action-item--rejected,
-.claw-action-item--failed {
-  border-color: rgba(255, 107, 107, 0.4);
+.local-event-item--p5 {
+  border-color: rgba(255, 107, 107, 0.42);
 }
 
-.claw-action-item strong {
+.local-event-item--p2 {
+  border-color: rgba(97, 211, 255, 0.32);
+}
+
+.local-brain-item strong,
+.local-event-item strong,
+.macro-history-item strong {
   display: block;
   color: var(--glow-strong);
 }
 
-.claw-action-item span {
+.local-brain-item span,
+.local-event-item span,
+.macro-history-item span {
   display: block;
   margin-top: 0.25rem;
   color: var(--muted);
@@ -874,7 +960,7 @@ body {
   letter-spacing: 0.08em;
 }
 
-.bridge-kimi-button {
+.local-brain-quick-button {
   border-color: rgba(126, 224, 186, 0.42);
   background:
     linear-gradient(180deg, rgba(126, 224, 186, 0.2), rgba(20, 90, 62, 0.18)),
@@ -884,7 +970,7 @@ body {
   letter-spacing: 0.06em;
 }
 
-.bridge-kimi-button--live {
+.local-brain-quick-button--live {
   border-color: rgba(126, 224, 186, 0.86);
   box-shadow:
     0 16px 38px rgba(0, 0, 0, 0.28),
@@ -979,7 +1065,7 @@ body {
   text-align: right;
 }
 
-#kimiVisionPreview {
+#localVisionPreview {
   display: block;
   width: 100%;
   aspect-ratio: 4 / 3;
@@ -991,7 +1077,7 @@ body {
     rgba(3, 5, 10, 0.92);
 }
 
-#kimiVisionDetail {
+#localVisionDetail {
   margin: 0.45rem 0 0;
   color: var(--muted);
   font-size: 0.72rem;
