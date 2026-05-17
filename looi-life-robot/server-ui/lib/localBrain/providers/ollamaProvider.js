@@ -134,6 +134,12 @@ async function fetchWithTimeout(url, { timeoutMs, ...options } = {}) {
       ...options,
       signal: controller.signal
     });
+  } catch (error) {
+    if (error?.name === "AbortError" || /aborted/i.test(error?.message ?? "")) {
+      throw new Error(`ollama_timeout_after_${timeoutMs}ms`);
+    }
+
+    throw error;
   } finally {
     clearTimeout(timeout);
   }

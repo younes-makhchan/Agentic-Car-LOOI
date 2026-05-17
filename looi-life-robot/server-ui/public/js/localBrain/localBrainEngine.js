@@ -547,7 +547,12 @@ export class LocalBrainEngine {
         };
       } catch (error) {
         lastError = error;
-        this.log(`Local Brain adapter failed: ${error.message}`, "warn");
+        this.log(
+          error.message === "brain_timeout" || /aborted/i.test(error.message)
+            ? `Local Brain primary timed out; using fallback if available. (${error.message})`
+            : `Local Brain adapter failed: ${error.message}`,
+          "warn"
+        );
       }
     }
 

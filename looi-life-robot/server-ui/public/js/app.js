@@ -1143,7 +1143,10 @@ async function init() {
     PUBLIC_CONFIG.conversationWindowMs ??
     speechGate.conversationWindowMs;
 
-  brainLatencyBudget = new BrainLatencyBudget();
+  brainLatencyBudget = new BrainLatencyBudget({
+    eventThoughtTimeoutMs: activeConfig.localBrainEventTimeoutMs ?? 12000,
+    autonomousThoughtTimeoutMs: activeConfig.localBrainAutonomousTimeoutMs ?? 20000
+  });
 
   bodyCalibration = new BodyCalibration({
     logger: (message, level = "info") => log(message, level)

@@ -61,6 +61,8 @@ const PUBLIC_CONFIG = {
   localBrainServerEnabled: process.env.LOCAL_BRAIN_ENABLED !== "false",
   localBrainProvider,
   localBrainModel,
+  localBrainEventTimeoutMs: Number(process.env.LOCAL_BRAIN_EVENT_TIMEOUT_MS || 12000),
+  localBrainAutonomousTimeoutMs: Number(process.env.LOCAL_BRAIN_AUTONOMOUS_TIMEOUT_MS || 20000),
   alwaysListeningDefault: false,
   audioLevelMonitorDefault: false,
   wakeNamesDefault: ["looi", "louie", "lui", "robot"],
