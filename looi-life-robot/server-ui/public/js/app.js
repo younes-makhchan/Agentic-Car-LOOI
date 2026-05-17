@@ -313,10 +313,7 @@ let idleMicroBehaviorEnabled = true;
 let attentionBodyTrackingEnabled = false;
 let keepRobotAwakeEnabled = false;
 let lastLogSignature = "";
-let lastLogAt = 0;
-let duplicateLogCount = 0;
-let duplicateLogTimer = null;
-const LOG_DEDUP_WINDOW_MS = 2500;
+const QUIET_IDLE_MACROS = new Set(["soft_idle", "soft_recenter", "thinking_pose"]);
 
 face = createFaceController(ui.canvas);
 face.setExpression("neutral");
@@ -3619,40 +3616,20 @@ function waitMs(ms) {
 }
 
 function log(message, level = "info") {
-  const signature = `${level}:${message}`;
-  const now = Date.now();
-
-  if (signature === lastLogSignature && now - lastLogAt < LOG_DEDUP_WINDOW_MS) {
-    duplicateLogCount += 1;
-    lastLogAt = now;
-    scheduleDuplicateLogSummary();
-    return;
+  if (shouldSuppressLogMessage(message, level)) {
+    return false;
   }
 
-  flushDuplicateLogSummary();
+  const signature = `${level}:${message}`;
+
+  if (signature === lastLogSignature) {
+    return false;
+  }
+
   lastLogSignature = signature;
-  lastLogAt = now;
 
   appendLogEntry(message, level);
-}
-
-function scheduleDuplicateLogSummary() {
-  globalThis.clearTimeout(duplicateLogTimer);
-  duplicateLogTimer = globalThis.setTimeout(() => {
-    flushDuplicateLogSummary();
-  }, LOG_DEDUP_WINDOW_MS);
-}
-
-function flushDuplicateLogSummary() {
-  if (duplicateLogCount <= 0) {
-    return;
-  }
-
-  const count = duplicateLogCount;
-  duplicateLogCount = 0;
-  globalThis.clearTimeout(duplicateLogTimer);
-  duplicateLogTimer = null;
-  appendLogEntry(`Repeated previous log ${count} more time${count === 1 ? "" : "s"}.`, "info");
+  return true;
 }
 
 function appendLogEntry(message, level = "info") {
@@ -3672,8 +3649,9 @@ function appendLogEntry(message, level = "info") {
 function traceLive(label, payload = {}, level = "info") {
   const compact = compactTracePayload(payload);
   const message = `[TRACE] ${label}: ${formatTracePayload(compact)}`;
-  log(message, level);
-  console.debug?.(`[LOOI TRACE] ${label}`, compact);
+  if (log(message, level)) {
+    console.debug?.(`[LOOI TRACE] ${label}`, compact);
+  }
 }
 
 function traceBrainThoughtResult(event = {}) {
@@ -3697,9 +3675,29 @@ function traceBrainThoughtResult(event = {}) {
 
 function traceMacroEvent(event = {}) {
   const payload = event.payload ?? {};
+  const macroName = payload.macro ?? payload.name;
+  const reason = payload.reason ?? payload.result?.reason;
+
+  if (
+    event.type === "macro_result" &&
+    QUIET_IDLE_MACROS.has(macroName) &&
+    ["macro_cooldown_active", "cooldown", "idle_micro_behavior"].includes(reason)
+  ) {
+    return;
+  }
+
+  if (
+    event.type === "macro_result" &&
+    QUIET_IDLE_MACROS.has(macroName) &&
+    payload.result == null &&
+    String(reason ?? "").includes("cooldown")
+  ) {
+    return;
+  }
+
   traceLive(`Macro ${event.type ?? "event"}`, {
-    macro: payload.macro ?? payload.name,
-    reason: payload.reason,
+    macro: macroName,
+    reason,
     source: payload.source,
     result: payload.result
       ? {
@@ -3711,6 +3709,20 @@ function traceMacroEvent(event = {}) {
         }
       : null
   });
+}
+
+function shouldSuppressLogMessage(message, level = "info") {
+  if (level === "error" || level === "warn") {
+    return false;
+  }
+
+  const text = String(message ?? "");
+
+  return (
+    /^Macro (soft_idle|soft_recenter|thinking_pose): (macro_cooldown_active|cooldown|idle_micro_behavior)$/.test(text) ||
+    /^\[TRACE\] Macro macro_result: .*"macro":"(soft_idle|soft_recenter|thinking_pose)".*"reason":"(macro_cooldown_active|cooldown|idle_micro_behavior)"/.test(text) ||
+    /^\[TRACE\] Macro macro_result: .*"macro":"(soft_idle|soft_recenter|thinking_pose)".*"result":null/.test(text)
+  );
 }
 
 function summarizeActions(actions = []) {
