@@ -12,7 +12,8 @@ const child = spawn(process.execPath, ["server.js"], {
     ROBOT_BRIDGE_ALLOW_UNAUTH_LOCAL: "true",
     ROBOT_BRIDGE_REQUIRE_HTTPS_FOR_EXTERNAL: "true",
     ROBOT_BRIDGE_PUBLIC_URL: "https://smoke.example",
-    ROBOT_BRIDGE_TOKEN: "smoke_token"
+    ROBOT_BRIDGE_TOKEN: "smoke_token",
+    ESP32_CONNECT_ON_START: "false"
   },
   stdio: ["ignore", "pipe", "pipe"]
 });

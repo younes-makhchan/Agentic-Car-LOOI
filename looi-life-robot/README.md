@@ -1037,3 +1037,77 @@ npm run smoke:kimi
 Never let Kimi directly control raw motor PWM.
 
 All physical movement must go through the Life Engine safety gate and ESP32 safety firmware.
+
+## ESP32 Server Gateway Mode
+
+The browser no longer needs to open `ws://ESP32_IP:81` directly. The laptop server owns the ESP32 WebSocket connection, and the phone browser talks to the server through normal HTTP/HTTPS API calls.
+
+This avoids browser mixed-content problems such as:
+
+```text
+HTTPS phone UI trying to open insecure ws://ESP32_IP:81
+```
+
+New path:
+
+```text
+Phone browser UI
+→ /api/esp32 on laptop server
+→ server WebSocket client
+→ ESP32 ws://ESP32_IP:81
+```
+
+The safety path is still preserved:
+
+```text
+Kimi/Cloud action
+→ phone runtime ToolExecutor
+→ LifeEngine
+→ SafetyGate
+→ CommandQueue
+→ server ESP32 gateway
+→ ESP32
+```
+
+The server gateway forwards commands approved by the phone runtime; Kimi still must not talk directly to ESP32.
+
+Configuration in `server-ui/.env`:
+
+```env
+ESP32_DEFAULT_WS_URL=ws://192.168.1.xx:81
+ESP32_CONNECT_ON_START=true
+ESP32_CONNECT_TIMEOUT_MS=8000
+ROBOT_ESP32_GATEWAY_ALLOW_PUBLIC=false
+```
+
+When `ESP32_CONNECT_ON_START=true`, the server connects to ESP32 before it starts listening. If ESP32 is not reachable, the server exits instead of starting in a broken state.
+
+Local/LAN phone access can use the gateway directly. If the phone UI is opened through a public ngrok URL, register the runtime first so the browser has a runtime token before connecting ESP32.
+
+Startup:
+
+```bash
+cd server-ui
+npm run dev
+```
+
+Expected success:
+
+```text
+[BOOT] Connecting to ESP32 before server start: ws://192.168.1.xx:81
+[BOOT] ESP32 connected: ws://192.168.1.xx:81
+LOOI Life Server listening on http://localhost:3000
+```
+
+Expected failure if ESP32 is offline or the IP is wrong:
+
+```text
+[BOOT] Server startup failed: Timed out connecting to ESP32 at ws://192.168.1.xx:81.
+```
+
+Testing:
+
+```bash
+cd server-ui
+npm run smoke:esp32
+```

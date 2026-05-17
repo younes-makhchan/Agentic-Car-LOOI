@@ -17,7 +17,8 @@ const child = spawn(process.execPath, ["server.js"], {
     ROBOT_REQUIRE_RUNTIME_AUTH: "true",
     ROBOT_RUNTIME_PAIRING_CODE: pairingCode,
     ROBOT_RUNTIME_HEARTBEAT_STALE_MS: "5000",
-    ROBOT_ACTION_WAIT_TIMEOUT_MS: "5000"
+    ROBOT_ACTION_WAIT_TIMEOUT_MS: "5000",
+    ESP32_CONNECT_ON_START: "false"
   },
   stdio: ["ignore", "pipe", "pipe"]
 });

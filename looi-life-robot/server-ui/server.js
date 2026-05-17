@@ -3,6 +3,7 @@ import dotenv from "dotenv";
 import express from "express";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { ESP32Gateway } from "./lib/esp32Gateway.js";
 import { LearnedPhraseStore } from "./lib/memory/learnedPhraseStore.js";
 import { MemoryStore, looksLikeSecret } from "./lib/memory/memoryStore.js";
 import { RobotActionQueue } from "./lib/robotBridge/actionQueue.js";
@@ -16,6 +17,12 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const port = Number(process.env.PORT || 3000);
+const esp32DefaultWsUrl = process.env.ESP32_DEFAULT_WS_URL || "ws://192.168.4.1:81";
+const esp32ConnectOnStart = process.env.ESP32_CONNECT_ON_START === "true";
+const esp32ConnectTimeoutMs = Number(process.env.ESP32_CONNECT_TIMEOUT_MS || 8000);
+const esp32Gateway = new ESP32Gateway({
+  connectTimeoutMs: esp32ConnectTimeoutMs
+});
 const robotActionQueue = new RobotActionQueue();
 const memoryStore = new MemoryStore();
 const learnedPhraseStore = new LearnedPhraseStore();
@@ -35,7 +42,9 @@ const requireHttpsForExternal =
 
 // Only public, browser-safe config lives here.
 const PUBLIC_CONFIG = {
-  defaultEsp32WsUrl: "ws://192.168.4.1:81",
+  defaultEsp32WsUrl: esp32DefaultWsUrl,
+  esp32ConnectionMode: "server_gateway",
+  esp32ConnectOnStart,
   maxSpeed: 0.4,
   maxDurationMs: 1000,
   robotBridgeEnabled: true,
@@ -66,6 +75,87 @@ app.get("/api/health", (_req, res) => {
 
 app.get("/api/config", (_req, res) => {
   res.json(PUBLIC_CONFIG);
+});
+
+app.get("/api/esp32/status", requireEsp32GatewayAccess, (req, res) => {
+  res.json({
+    ok: true,
+    ...esp32Gateway.getSnapshot({
+      since: req.query.since
+    })
+  });
+});
+
+app.get("/api/esp32/messages", requireEsp32GatewayAccess, (req, res) => {
+  res.json({
+    ok: true,
+    ...esp32Gateway.getSnapshot({
+      since: req.query.since
+    })
+  });
+});
+
+app.post("/api/esp32/connect", requireEsp32GatewayAccess, async (req, res) => {
+  try {
+    const status = await esp32Gateway.connect(
+      typeof req.body?.url === "string" ? req.body.url : esp32DefaultWsUrl,
+      {
+        timeoutMs: esp32ConnectTimeoutMs
+      }
+    );
+
+    res.json({
+      ok: true,
+      status,
+      telemetry: esp32Gateway.latestTelemetry,
+      config: esp32Gateway.latestConfig
+    });
+  } catch (error) {
+    res.status(502).json({
+      ok: false,
+      error: error.message,
+      status: esp32Gateway.getStatus()
+    });
+  }
+});
+
+app.post("/api/esp32/disconnect", requireEsp32GatewayAccess, (req, res) => {
+  const status = esp32Gateway.disconnect({
+    reason: req.body?.reason ?? "ui_disconnect"
+  });
+
+  res.json({
+    ok: true,
+    status
+  });
+});
+
+app.post("/api/esp32/send", requireEsp32GatewayAccess, (req, res) => {
+  try {
+    const payload = req.body?.payload;
+
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+      res.status(400).json({
+        ok: false,
+        error: "payload must be an object"
+      });
+      return;
+    }
+
+    const id = esp32Gateway.sendJson(payload);
+
+    res.json({
+      ok: true,
+      id,
+      status: esp32Gateway.getStatus()
+    });
+  } catch (error) {
+    res.status(409).json({
+      ok: false,
+      error: error.message,
+      status: esp32Gateway.getStatus()
+    });
+  }
 });
 
 app.get("/api/robot-bridge/health", (_req, res) => {
@@ -568,6 +658,24 @@ function requireMemoryAccess(req, res, next) {
   });
 }
 
+function requireEsp32GatewayAccess(req, res, next) {
+  if (
+    isLocalRequest(req) ||
+    isPrivateLanRequest(req) ||
+    verifyActualRuntimeToken(req) ||
+    process.env.ROBOT_ESP32_GATEWAY_ALLOW_PUBLIC === "true"
+  ) {
+    next();
+    return;
+  }
+
+  res.status(401).json({
+    ok: false,
+    error:
+      "Unauthorized ESP32 gateway request. Use local/LAN access or register the phone runtime first."
+  });
+}
+
 function verifyRobotBridgeAuth(req) {
   const localRequest = isLocalRequest(req);
 
@@ -604,6 +712,10 @@ function verifyRuntimeAuth(req) {
     return true;
   }
 
+  return verifyActualRuntimeToken(req);
+}
+
+function verifyActualRuntimeToken(req) {
   const runtimeToken = getRuntimeTokenFromRequest(req);
   const expectedBridgeToken = process.env.ROBOT_BRIDGE_TOKEN;
 
@@ -775,9 +887,24 @@ function rejectSecretLikeLearnedPhrase(entry = {}) {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  app.listen(port, () => {
-    console.log(`LOOI Life Server listening on http://localhost:${port}`);
+  startServer().catch((error) => {
+    console.error(`[BOOT] Server startup failed: ${error.message}`);
+    process.exit(1);
   });
 }
 
 export { app, robotActionQueue, robotEventQueue, verifyRobotBridgeAuth };
+
+async function startServer() {
+  if (esp32ConnectOnStart) {
+    console.log(`[BOOT] Connecting to ESP32 before server start: ${esp32DefaultWsUrl}`);
+    await esp32Gateway.connect(esp32DefaultWsUrl, {
+      timeoutMs: esp32ConnectTimeoutMs
+    });
+    console.log(`[BOOT] ESP32 connected: ${esp32DefaultWsUrl}`);
+  }
+
+  app.listen(port, () => {
+    console.log(`LOOI Life Server listening on http://localhost:${port}`);
+  });
+}

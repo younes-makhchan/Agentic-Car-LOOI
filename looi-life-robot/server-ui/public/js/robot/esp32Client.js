@@ -3,19 +3,30 @@ const MAX_SPEED = 0.4;
 const MAX_DURATION_MS = 1000;
 const MIN_DURATION_MS = 50;
 const MAX_RAMP_MS = 500;
+const POLL_INTERVAL_MS = 350;
+const READY_STATE = {
+  CONNECTING: 0,
+  OPEN: 1,
+  CLOSING: 2,
+  CLOSED: 3
+};
 
 let messageCounter = 0;
 
 export class ESP32Client {
-  constructor({ url = DEFAULT_URL, logger } = {}) {
+  constructor({ url = DEFAULT_URL, logger, apiBase = "/api/esp32", getAuthHeaders = () => ({}) } = {}) {
     this.url = url;
     this.logger = logger;
-    this.ws = null;
+    this.apiBase = apiBase;
+    this.getAuthHeaders = getAuthHeaders;
     this.connected = false;
+    this.readyState = READY_STATE.CLOSED;
     this.latestTelemetry = null;
     this.latestConfig = null;
     this.lastPongAt = null;
     this.lastMessageAt = null;
+    this.lastSeq = 0;
+    this.pollTimer = null;
     this.statusCallbacks = new Set();
     this.telemetryCallbacks = new Set();
     this.messageCallbacks = new Set();
@@ -25,146 +36,57 @@ export class ESP32Client {
   }
 
   connect(urlOverride) {
-    if (typeof WebSocket !== "function") {
-      return Promise.reject(new Error("WebSocket is not available in this browser."));
-    }
-
     const requestedUrl =
       typeof urlOverride === "string" && urlOverride.trim()
         ? urlOverride.trim()
         : this.url;
 
     this.url = requestedUrl;
+    this.readyState = READY_STATE.CONNECTING;
+    this.emitStatus();
+    this.log(`Asking server gateway to connect to ESP32 at ${this.url}...`);
 
-    if (
-      this.ws &&
-      this.ws.readyState === WebSocket.OPEN &&
-      this.connected &&
-      this.ws.url === requestedUrl
-    ) {
-      this.log(`ESP32 already connected at ${this.url}`);
-      this.emitStatus();
-      return Promise.resolve(this.getStatus());
-    }
-
-    if (
-      this.ws &&
-      (this.ws.readyState === WebSocket.CONNECTING ||
-        this.ws.readyState === WebSocket.OPEN)
-    ) {
-      this.disconnect();
-    }
-
-    return new Promise((resolve, reject) => {
-      let settled = false;
-      const ws = new WebSocket(this.url);
-
-      this.ws = ws;
-      this.connected = false;
-      this.emitStatus();
-      this.log(`Connecting to ESP32 at ${this.url}...`);
-
-      ws.addEventListener("open", () => {
-        this.connected = true;
-        this.emitStatus();
-        this.log(`Connected to ESP32 at ${this.url}`);
-
-        if (!settled) {
-          settled = true;
-          resolve(this.getStatus());
-        }
-
-        try {
-          this.ping();
-        } catch (error) {
-          this.log(`Initial ping failed: ${error.message}`, "warn");
-        }
-      });
-
-      ws.addEventListener("close", (event) => {
-        const wasConnected = this.connected;
-        const manualClose = ws.__manualClose === true;
-
+    return this.postGateway("/connect", { url: this.url })
+      .then((payload) => {
+        this.applySnapshot(payload);
+        this.startPolling();
+        this.log(`Server gateway connected to ESP32 at ${this.url}`);
+        this.ping();
+        return this.getStatus();
+      })
+      .catch((error) => {
         this.connected = false;
-        this.latestTelemetry = null;
-        this.latestConfig = null;
-        this.lastPongAt = null;
-
-        if (this.ws === ws) {
-          this.ws = null;
-        }
-
+        this.readyState = READY_STATE.CLOSED;
         this.emitStatus();
-        this.log(
-          `ESP32 socket closed${event?.code ? ` (${event.code})` : ""}${
-            event?.reason ? `: ${event.reason}` : "."
-          }`,
-          manualClose || wasConnected ? "info" : "warn"
-        );
-
-        if (!settled) {
-          settled = true;
-          reject(new Error(`Failed to connect to ${this.url}.`));
-        }
+        this.emitError({
+          type: "gateway_error",
+          message: error.message
+        });
+        throw error;
       });
-
-      ws.addEventListener("error", (event) => {
-        const errorPayload = {
-          type: "socket_error",
-          message: `WebSocket error while connecting to ${this.url}`,
-          event
-        };
-
-        this.emitError(errorPayload);
-        this.log(errorPayload.message, "error");
-
-        if (!settled) {
-          settled = true;
-          reject(new Error(errorPayload.message));
-        }
-      });
-
-      ws.addEventListener("message", (event) => {
-        this.handleMessage(event.data);
-      });
-    });
   }
 
   disconnect() {
-    if (!this.ws) {
-      this.connected = false;
-      this.latestTelemetry = null;
-      this.latestConfig = null;
-      this.lastPongAt = null;
-      this.emitStatus();
-      return;
-    }
-
-    const socket = this.ws;
+    this.stopPolling();
     this.connected = false;
-    socket.__manualClose = true;
+    this.readyState = READY_STATE.CLOSED;
     this.latestTelemetry = null;
     this.lastPongAt = null;
     this.emitStatus();
 
-    if (
-      socket.readyState === WebSocket.CONNECTING ||
-      socket.readyState === WebSocket.OPEN
-    ) {
-      socket.close(1000, "browser_disconnect");
-      return;
-    }
-
-    this.ws = null;
+    return this.postGateway("/disconnect", {
+      reason: "browser_disconnect"
+    }).catch((error) => {
+      this.log(`ESP32 gateway disconnect failed: ${error.message}`, "warn");
+    });
   }
 
   isConnected() {
-    return this.connected && this.ws?.readyState === WebSocket.OPEN;
+    return this.connected && this.readyState === READY_STATE.OPEN;
   }
 
   getStatus() {
-    const readyState =
-      this.ws?.readyState ?? (typeof WebSocket === "function" ? WebSocket.CLOSED : 3);
+    const readyState = this.readyState;
 
     return {
       url: this.url,
@@ -210,7 +132,7 @@ export class ESP32Client {
 
   sendJson(payload) {
     if (!this.isConnected()) {
-      throw new Error("ESP32 WebSocket is not connected.");
+      throw new Error("ESP32 server gateway is not connected.");
     }
 
     const message = { ...payload };
@@ -219,7 +141,19 @@ export class ESP32Client {
       message.id = createMessageId();
     }
 
-    this.ws.send(JSON.stringify(message));
+    this.postGateway("/send", {
+      payload: message
+    })
+      .then((snapshot) => this.applySnapshot(snapshot))
+      .catch((error) => {
+        this.emitError({
+          type: "gateway_error",
+          cmd: message.type,
+          message: error.message
+        });
+        this.log(`ESP32 gateway send failed: ${error.message}`, "error");
+      });
+
     return message.id;
   }
 
@@ -268,6 +202,115 @@ export class ESP32Client {
     });
   }
 
+  refreshStatus() {
+    return this.getGateway(`/status?since=${encodeURIComponent(this.lastSeq)}`).then((snapshot) => {
+      this.applySnapshot(snapshot);
+      if (this.isConnected()) {
+        this.startPolling();
+      }
+      return this.getStatus();
+    });
+  }
+
+  startPolling() {
+    if (this.pollTimer) {
+      return;
+    }
+
+    this.pollMessages();
+    this.pollTimer = globalThis.setInterval(() => {
+      this.pollMessages();
+    }, POLL_INTERVAL_MS);
+  }
+
+  stopPolling() {
+    globalThis.clearInterval(this.pollTimer);
+    this.pollTimer = null;
+  }
+
+  pollMessages() {
+    this.getGateway(`/messages?since=${encodeURIComponent(this.lastSeq)}`)
+      .then((snapshot) => this.applySnapshot(snapshot))
+      .catch((error) => {
+        this.log(`ESP32 gateway poll failed: ${error.message}`, "warn");
+      });
+  }
+
+  applySnapshot(snapshot = {}) {
+    const status = snapshot.status ?? snapshot;
+
+    if (status?.url) {
+      this.url = status.url;
+    }
+
+    this.connected = Boolean(status?.connected);
+    this.readyState = Number.isFinite(Number(status?.readyState))
+      ? Number(status.readyState)
+      : this.connected
+        ? READY_STATE.OPEN
+        : READY_STATE.CLOSED;
+    this.lastMessageAt = status?.lastMessageAt ?? this.lastMessageAt;
+    this.lastPongAt = status?.lastPongAt ?? this.lastPongAt;
+
+    if (snapshot.telemetry) {
+      this.latestTelemetry = snapshot.telemetry;
+      this.emitTelemetry(snapshot.telemetry);
+    }
+
+    if (snapshot.config) {
+      this.latestConfig = structuredCloneSafe(snapshot.config);
+      this.emitConfig(this.latestConfig, {
+        type: "config",
+        config: this.latestConfig
+      });
+    }
+
+    const messages = Array.isArray(snapshot.messages) ? snapshot.messages : [];
+    messages.forEach((entry) => {
+      this.lastSeq = Math.max(this.lastSeq, Number(entry.seq) || this.lastSeq);
+      this.handleMessageObject(entry.message);
+    });
+
+    if (Number.isFinite(Number(snapshot.latestSeq))) {
+      this.lastSeq = Math.max(this.lastSeq, Number(snapshot.latestSeq));
+    }
+
+    this.emitStatus();
+  }
+
+  async getGateway(path) {
+    const response = await fetch(`${this.apiBase}${path}`, {
+      headers: {
+        ...this.safeAuthHeaders()
+      }
+    });
+
+    return parseGatewayResponse(response);
+  }
+
+  async postGateway(path, body = {}) {
+    const response = await fetch(`${this.apiBase}${path}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...this.safeAuthHeaders()
+      },
+      body: JSON.stringify(body)
+    });
+
+    return parseGatewayResponse(response);
+  }
+
+  safeAuthHeaders() {
+    try {
+      const headers = this.getAuthHeaders();
+      return headers && typeof headers === "object" ? headers : {};
+    } catch (error) {
+      this.log(`ESP32 gateway auth headers unavailable: ${error.message}`, "warn");
+      return {};
+    }
+  }
+
   registerCallback(store, callback) {
     if (typeof callback !== "function") {
       return () => {};
@@ -309,6 +352,19 @@ export class ESP32Client {
       message = JSON.parse(rawMessage);
     } catch (error) {
       this.log(`Failed to parse ESP32 message: ${error.message}`, "warn");
+      return;
+    }
+
+    this.handleMessageObject(message);
+  }
+
+  handleMessageObject(message) {
+    if (!message || typeof message !== "object") {
+      return;
+    }
+
+    if (message.type === "gateway_status") {
+      this.log(`ESP32 gateway ${message.status}${message.url ? ` (${message.url})` : ""}`);
       return;
     }
 
@@ -376,21 +432,27 @@ function createMessageId() {
 }
 
 function getReadyStateLabel(readyState, connected) {
-  if (typeof WebSocket !== "function") {
-    return connected ? "connected" : "disconnected";
-  }
-
   if (connected) {
     return "connected";
   }
 
-  if (readyState === WebSocket.CONNECTING) {
+  if (readyState === READY_STATE.CONNECTING) {
     return "connecting";
   }
 
-  if (readyState === WebSocket.CLOSING) {
+  if (readyState === READY_STATE.CLOSING) {
     return "closing";
   }
 
   return "disconnected";
+}
+
+async function parseGatewayResponse(response) {
+  const payload = await response.json().catch(() => ({}));
+
+  if (!response.ok || payload.ok === false) {
+    throw new Error(payload.error ?? `ESP32 gateway HTTP ${response.status}`);
+  }
+
+  return payload;
 }

@@ -14,7 +14,8 @@ const child = spawn(process.execPath, ["server.js"], {
     ROBOT_BRIDGE_PUBLIC_URL: "https://smoke.example",
     ROBOT_BRIDGE_TOKEN: "smoke_bridge_token",
     ROBOT_REQUIRE_RUNTIME_AUTH: "false",
-    ROBOT_EVENT_WAIT_TIMEOUT_MS: "3000"
+    ROBOT_EVENT_WAIT_TIMEOUT_MS: "3000",
+    ESP32_CONNECT_ON_START: "false"
   },
   stdio: ["ignore", "pipe", "pipe"]
 });

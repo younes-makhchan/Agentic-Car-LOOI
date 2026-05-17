@@ -940,9 +940,22 @@ async function init() {
 
   realRobotClient = new ESP32Client({
     url: ui.esp32UrlInput.value,
-    logger: (message, level = "info") => log(message, level)
+    logger: (message, level = "info") => log(message, level),
+    getAuthHeaders: () => runtimeHeartbeat?.getAuthHeaders?.() ?? {}
   });
   registerRobotClientCallbacks(realRobotClient);
+  realRobotClient
+    .refreshStatus?.()
+    .then((status) => {
+      if (status.connected) {
+        log(`ESP32 server gateway already connected at ${status.url}`);
+        return applyCalibrationToRobot({ quiet: true });
+      }
+      return null;
+    })
+    .catch((error) => {
+      log(`ESP32 server gateway status unavailable: ${error.message}`, "warn");
+    });
 
   robotClient = realRobotClient;
   commandQueue = createCommandQueue(robotClient);
