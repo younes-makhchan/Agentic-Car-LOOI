@@ -7,6 +7,48 @@
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
+    <div id="runtimeGate" class="runtime-gate">
+      <div class="runtime-gate__card">
+        <p class="eyebrow">LOOI Runtime</p>
+        <h1>Wake Body</h1>
+        <p>
+          Register this phone as LOOI's runtime, enter full screen, and show the robot face.
+        </p>
+        <button id="productionStartButton" class="primary-button" type="button" disabled>
+          Register Runtime & Enter
+        </button>
+      </div>
+    </div>
+
+    <div class="production-actions" aria-label="Production controls">
+      <button id="productionStopButton" class="production-stop-button" type="button">
+        Stop
+      </button>
+      <button id="bridgeKimiButton" class="bridge-kimi-button" type="button" disabled>
+        Bridge Kimi
+      </button>
+      <button
+        id="settingsToggleButton"
+        class="settings-toggle-button"
+        type="button"
+        aria-label="Open settings"
+        aria-expanded="false"
+      >
+        ⚙
+      </button>
+    </div>
+
+    <button id="settingsBackdrop" class="settings-backdrop" type="button" aria-label="Close settings"></button>
+
+    <aside id="looiVisionWidget" class="looi-vision-widget" aria-live="polite">
+      <div class="looi-vision-widget__header">
+        <span>LOOI Eyes</span>
+        <strong id="kimiVisionState">camera off</strong>
+      </div>
+      <video id="kimiVisionPreview" autoplay playsinline muted></video>
+      <p id="kimiVisionDetail">Kimi receives metadata only unless Cloud Camera is allowed.</p>
+    </aside>
+
     <main class="app-shell">
       <section class="face-panel">
         <div class="face-frame">
@@ -14,7 +56,15 @@
         </div>
       </section>
 
-      <section class="control-panel">
+      <section id="settingsPanel" class="control-panel" aria-label="Settings and diagnostics">
+        <div class="settings-drawer-header">
+          <div>
+            <p class="eyebrow">LOOI Settings</p>
+            <h2>Diagnostics</h2>
+          </div>
+          <button id="settingsCloseButton" type="button" aria-label="Close settings">Close</button>
+        </div>
+
         <header class="panel-card title-card">
           <p class="eyebrow">Phone-Bodied Life Robot</p>
           <h1>LOOI Life Robot</h1>

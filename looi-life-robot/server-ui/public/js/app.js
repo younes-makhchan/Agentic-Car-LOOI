@@ -21,6 +21,17 @@ const DEFAULT_DURATION_MS = 400;
 
 const ui = {
   canvas: document.getElementById("faceCanvas"),
+  runtimeGate: document.getElementById("runtimeGate"),
+  productionStartButton: document.getElementById("productionStartButton"),
+  productionStopButton: document.getElementById("productionStopButton"),
+  bridgeKimiButton: document.getElementById("bridgeKimiButton"),
+  settingsToggleButton: document.getElementById("settingsToggleButton"),
+  settingsCloseButton: document.getElementById("settingsCloseButton"),
+  settingsBackdrop: document.getElementById("settingsBackdrop"),
+  settingsPanel: document.getElementById("settingsPanel"),
+  kimiVisionPreview: document.getElementById("kimiVisionPreview"),
+  kimiVisionState: document.getElementById("kimiVisionState"),
+  kimiVisionDetail: document.getElementById("kimiVisionDetail"),
   esp32Status: document.getElementById("esp32Status"),
   moodValue: document.getElementById("moodValue"),
   energyValue: document.getElementById("energyValue"),
@@ -232,6 +243,7 @@ let lastObservationEventAt = 0;
 let lastObservationSignature = "";
 let learnedPhraseCache = [];
 let lifeEventsEnabled = false;
+let settingsOpen = false;
 
 face = createFaceController(ui.canvas);
 face.setExpression("neutral");
@@ -246,6 +258,37 @@ updateCameraUi();
 updateCalibrationUi();
 updatePersonalityUi();
 updateLifeEventsUi();
+updateProductionChrome();
+
+ui.productionStartButton.addEventListener("click", () => {
+  startProductionRuntime().catch((error) => {
+    log(`Production runtime start failed: ${error.message}`, "error");
+    face.setExpression("scared");
+  });
+});
+
+ui.bridgeKimiButton.addEventListener("click", () => {
+  bridgeKimiProductionMode().catch((error) => {
+    log(`Bridge Kimi failed: ${error.message}`, "error");
+    face.setExpression("scared");
+  });
+});
+
+ui.productionStopButton.addEventListener("click", async () => {
+  await emergencyStop("production_top_stop", "Emergency stop sent from production controls.", "error");
+});
+
+ui.settingsToggleButton.addEventListener("click", () => {
+  setSettingsOpen(!settingsOpen);
+});
+
+ui.settingsCloseButton.addEventListener("click", () => {
+  setSettingsOpen(false);
+});
+
+ui.settingsBackdrop.addEventListener("click", () => {
+  setSettingsOpen(false);
+});
 
 ui.sendButton.addEventListener("click", handleSend);
 ui.userInput.addEventListener("keydown", (event) => {
@@ -1059,6 +1102,9 @@ async function init() {
   updatePersonalityUi();
   updateLifeEventsUi();
   updateClawBridgeStatus(clawBridgeClient);
+  ui.productionStartButton.disabled = false;
+  ui.bridgeKimiButton.disabled = false;
+  updateProductionChrome();
   renderClawActionList([]);
   refreshLearnedPhrases().catch((error) => {
     log(`Learned phrase cache unavailable: ${error.message}`, "warn");
@@ -1812,6 +1858,130 @@ async function registerRuntimeFromUi() {
   runtimeHeartbeat.start();
 }
 
+async function startProductionRuntime() {
+  await requestFullscreenSafe();
+
+  const runtimeInfo = runtimeHeartbeat?.getRuntimeInfo?.() ?? {};
+  if (!runtimeInfo.registered) {
+    await registerRuntimeFromUi();
+  } else if (!runtimeInfo.running) {
+    runtimeHeartbeat.start();
+    updateRuntimeUi();
+  }
+
+  if (realRobotClient?.refreshStatus) {
+    await realRobotClient.refreshStatus().catch((error) => {
+      log(`ESP32 gateway refresh failed: ${error.message}`, "warn");
+    });
+  }
+
+  if (robotClient?.isConnected?.()) {
+    await applyCalibrationToRobot({ quiet: true }).catch((error) => {
+      log(`Calibration apply during startup failed: ${error.message}`, "warn");
+    });
+  }
+
+  ui.runtimeGate.classList.add("runtime-gate--hidden");
+  document.body.classList.add("production-ready");
+  face.setExpression("curious");
+  log("Production runtime ready. LOOI face is live.");
+  updateProductionChrome();
+}
+
+async function bridgeKimiProductionMode() {
+  await startProductionRuntime();
+
+  cloudMotionArmed = true;
+  cloudCameraAllowed = true;
+  lifeEventsEnabled = true;
+  globalThis.localStorage?.setItem?.("looi.lifeEventsEnabled.v1", "true");
+
+  ui.cloudSpeakToggle.checked = true;
+  ui.cloudNonPhysicalToggle.checked = true;
+  ui.muteSpeechToggle.checked = false;
+  voiceOutput?.setMuted?.(false);
+
+  updateCloudExecutionUi();
+  updateCameraUi();
+
+  if (!clawBridgeClient?.isRunning?.()) {
+    clawBridgeClient?.start?.();
+  }
+
+  if (!lifeEventEmitter?.getStatus?.().running) {
+    lifeEventEmitter?.start?.();
+  }
+  updateLifeEventsUi();
+
+  speechInput?.setLanguage?.(ui.speechLanguageInput.value.trim() || "en-US");
+  speechInput?.setContinuous?.(true);
+  ui.continuousListeningToggle.checked = true;
+  speechInput?.start?.();
+
+  if (!cameraInput?.isRunning?.()) {
+    const cameraResult = await cameraInput?.openFrontCamera?.();
+    handleCameraCommandResult(cameraResult);
+  }
+
+  face.setExpression("happy");
+  log("Kimi bridged: motion armed, cloud camera allowed, speech enabled, listening started, camera opened.", "warn");
+  updateProductionChrome();
+}
+
+async function requestFullscreenSafe() {
+  const target = document.documentElement;
+
+  if (document.fullscreenElement || !target?.requestFullscreen) {
+    return;
+  }
+
+  try {
+    await target.requestFullscreen();
+  } catch (error) {
+    log(`Fullscreen request skipped: ${error.message}`, "warn");
+  }
+}
+
+function setSettingsOpen(open) {
+  settingsOpen = Boolean(open);
+  document.body.classList.toggle("settings-open", settingsOpen);
+  ui.settingsToggleButton.setAttribute("aria-expanded", String(settingsOpen));
+}
+
+function updateProductionChrome() {
+  const bridgeRunning = Boolean(clawBridgeClient?.isRunning?.());
+  const cameraStatus = cameraInput?.getCameraStatus?.() ?? {};
+  const runtimeInfo = runtimeHeartbeat?.getRuntimeInfo?.() ?? {};
+
+  ui.bridgeKimiButton.textContent =
+    bridgeRunning && cloudMotionArmed && cloudCameraAllowed
+      ? "Kimi Live"
+      : "Bridge Kimi";
+  ui.bridgeKimiButton.classList.toggle(
+    "bridge-kimi-button--live",
+    bridgeRunning && cloudMotionArmed && cloudCameraAllowed
+  );
+
+  if (runtimeInfo.registered) {
+    ui.productionStartButton.textContent = "Enter LOOI Face";
+  }
+
+  ui.kimiVisionState.textContent = cameraStatus.running
+    ? `${cameraStatus.facingMode ?? "camera"} live`
+    : "camera off";
+  ui.kimiVisionDetail.textContent = cloudCameraAllowed
+    ? "Kimi may request observations and small snapshots."
+    : "Kimi receives metadata only until Cloud Camera is allowed.";
+
+  if (ui.kimiVisionPreview && cameraInput?.stream) {
+    ui.kimiVisionPreview.srcObject = cameraInput.stream;
+  } else if (ui.kimiVisionPreview) {
+    ui.kimiVisionPreview.srcObject = null;
+  }
+
+  document.body.classList.toggle("kimi-bridged", bridgeRunning && cloudMotionArmed);
+}
+
 function runBoredScenario(message) {
   if (!lifeEngine) {
     return;
@@ -1937,6 +2107,7 @@ function updateClawBridgeStatus(status = {}) {
     ? `listening (${status.receivedCount ?? 0} received${status.processing ? ", processing" : ""})`
     : "stopped";
   updateRuntimeUi();
+  updateProductionChrome();
 }
 
 function renderClawActionList(actions = []) {
@@ -2206,6 +2377,7 @@ function updateCloudExecutionUi() {
   ui.cloudMotionState.classList.toggle("cloud-motion-state--armed", cloudMotionArmed);
   ui.cloudMotionState.classList.toggle("cloud-motion-state--disarmed", !cloudMotionArmed);
   document.body.classList.toggle("cloud-motion-armed", cloudMotionArmed);
+  updateProductionChrome();
 }
 
 function updateRuntimeUi(status = runtimeHeartbeat?.getRuntimeInfo?.()) {
@@ -2234,6 +2406,7 @@ function updateRuntimeUi(status = runtimeHeartbeat?.getRuntimeInfo?.()) {
   ui.runtimeOnlineState.textContent = online ? "online" : "offline";
   ui.runtimeOnlineState.classList.toggle("runtime-state--online", online);
   ui.runtimeOnlineState.classList.toggle("runtime-state--offline", !online);
+  updateProductionChrome();
 }
 
 function updateVoiceUi() {
@@ -2267,6 +2440,7 @@ function updateVoiceUi() {
   ui.voiceSupportState.classList.toggle("voice-state--warn", !voiceStatus.supported || voiceStatus.muted);
   ui.speakingState.textContent = String(Boolean(voiceStatus.speaking || lifeEngine?.getState?.().isSpeaking));
   ui.muteSpeechToggle.checked = Boolean(voiceStatus.muted);
+  updateProductionChrome();
 }
 
 function updateCameraUi(status = cameraInput?.getCameraStatus?.()) {
@@ -2316,6 +2490,7 @@ function updateCameraUi(status = cameraInput?.getCameraStatus?.()) {
     ? "Block Cloud Camera"
     : "Allow Cloud Camera";
   document.body.classList.toggle("cloud-camera-allowed", cloudCameraAllowed);
+  updateProductionChrome();
 }
 
 function setupVoiceList() {
