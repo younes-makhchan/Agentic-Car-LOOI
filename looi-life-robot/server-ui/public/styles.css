@@ -87,6 +87,112 @@ body {
   backdrop-filter: blur(12px);
 }
 
+.title-card {
+  order: 1;
+}
+
+.settings-nav {
+  order: 2;
+  position: sticky;
+  top: 4.6rem;
+  z-index: 3;
+  display: flex;
+  gap: 0.45rem;
+  padding: 0.55rem;
+  overflow-x: auto;
+  border: 1px solid rgba(122, 193, 255, 0.16);
+  border-radius: 1rem;
+  background: rgba(5, 8, 16, 0.94);
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.22);
+  -webkit-overflow-scrolling: touch;
+}
+
+.settings-nav a {
+  flex: 0 0 auto;
+  padding: 0.52rem 0.68rem;
+  border: 1px solid rgba(122, 193, 255, 0.16);
+  border-radius: 0.75rem;
+  background: rgba(8, 13, 23, 0.78);
+  color: var(--text);
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.settings-nav a:hover,
+.settings-nav a:focus-visible {
+  border-color: rgba(144, 231, 255, 0.5);
+  color: var(--glow-strong);
+}
+
+.control-panel > [id] {
+  scroll-margin-top: 8rem;
+}
+
+.settings-section-status {
+  order: 3;
+}
+
+.settings-section-robot-body {
+  order: 4;
+}
+
+.settings-section-telemetry {
+  order: 5;
+}
+
+.simulator-card {
+  order: 6;
+}
+
+.local-brain-card {
+  order: 7;
+}
+
+.ears-card {
+  order: 8;
+}
+
+.looi-mode-card {
+  order: 9;
+}
+
+.camera-card {
+  order: 10;
+}
+
+.voice-card {
+  order: 11;
+}
+
+.settings-section-movement {
+  order: 12;
+}
+
+.calibration-card {
+  order: 13;
+}
+
+.settings-section-life {
+  order: 14;
+}
+
+.settings-section-face-demo {
+  order: 15;
+}
+
+.settings-section-scenarios {
+  order: 16;
+}
+
+.personality-card {
+  order: 17;
+}
+
+.log-card {
+  order: 18;
+}
+
 .simulator-card {
   border-color: rgba(126, 224, 186, 0.16);
 }
@@ -876,14 +982,18 @@ body {
   position: fixed;
   top: 0;
   right: 0;
-  z-index: 45;
+  z-index: 70;
   width: min(430px, 94vw);
   height: 100dvh;
   display: grid;
+  grid-auto-rows: min-content;
   gap: 1rem;
   align-content: start;
-  padding: 1rem;
-  overflow: auto;
+  padding: 1rem 1rem max(2rem, env(safe-area-inset-bottom));
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
   background: rgba(5, 8, 16, 0.94);
   border-left: 1px solid rgba(122, 193, 255, 0.18);
   box-shadow: -24px 0 70px rgba(0, 0, 0, 0.48);
@@ -922,7 +1032,7 @@ body {
 .settings-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 39;
+  z-index: 60;
   display: none;
   min-height: 0;
   padding: 0;
@@ -931,8 +1041,27 @@ body {
   background: rgba(0, 0, 0, 0.36);
 }
 
+.settings-backdrop:hover,
+.settings-backdrop:active {
+  transform: none;
+  border-color: transparent;
+  background: rgba(0, 0, 0, 0.36);
+}
+
 .settings-open .settings-backdrop {
   display: block;
+}
+
+.settings-open .production-actions {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-0.5rem);
+}
+
+.settings-open .looi-vision-widget {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(0.5rem);
 }
 
 .production-actions {
@@ -943,6 +1072,9 @@ body {
   display: flex;
   gap: 0.65rem;
   align-items: center;
+  transition:
+    opacity 140ms ease,
+    transform 140ms ease;
 }
 
 .production-actions button {
@@ -1047,6 +1179,9 @@ body {
   background: rgba(5, 8, 16, 0.78);
   box-shadow: 0 18px 45px rgba(0, 0, 0, 0.38);
   backdrop-filter: blur(14px);
+  transition:
+    opacity 140ms ease,
+    transform 140ms ease;
 }
 
 .looi-vision-widget__header {
@@ -1085,6 +1220,12 @@ body {
 }
 
 @media (max-width: 560px) {
+  .control-panel {
+    width: 100vw;
+    padding: 0.85rem 0.85rem max(2rem, env(safe-area-inset-bottom));
+    border-left: 0;
+  }
+
   .production-actions {
     left: max(0.75rem, env(safe-area-inset-left));
     right: max(0.75rem, env(safe-area-inset-right));

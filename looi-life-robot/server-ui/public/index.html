@@ -74,7 +74,20 @@
           </p>
         </header>
 
-        <section class="panel-card">
+        <nav class="settings-nav" aria-label="Settings sections">
+          <a href="#settingsStatus">Status</a>
+          <a href="#settingsRobotBody">Body</a>
+          <a href="#settingsLocalBrain">Brain</a>
+          <a href="#settingsEars">Ears</a>
+          <a href="#settingsLooiMode">LOOI</a>
+          <a href="#settingsCamera">Camera</a>
+          <a href="#settingsVoice">Voice</a>
+          <a href="#settingsMovement">Move</a>
+          <a href="#settingsCalibration">Tune</a>
+          <a href="#settingsLog">Log</a>
+        </nav>
+
+        <section id="settingsStatus" class="panel-card settings-section-status">
           <h2>Status</h2>
           <div class="status-grid">
             <div class="status-row">
@@ -124,7 +137,7 @@
           </div>
         </section>
 
-        <section class="panel-card">
+        <section id="settingsLifeEngine" class="panel-card settings-section-life">
           <h2>Life Engine</h2>
           <p class="panel-note">
             Local instincts only: mood, attention, drives, face, and safe body language.
@@ -149,7 +162,7 @@
           </div>
         </section>
 
-        <section class="panel-card personality-card">
+        <section id="settingsPersonality" class="panel-card personality-card">
           <h2>Personality / Memory</h2>
           <p class="panel-note">
             Personality changes local body behavior and gives the Local Brain context.
@@ -303,7 +316,7 @@
           </label>
         </section>
 
-        <section class="panel-card simulator-card">
+        <section id="settingsSimulator" class="panel-card simulator-card">
           <h2>Simulator</h2>
           <div class="status-grid">
             <div class="status-row">
@@ -319,7 +332,7 @@
           </div>
         </section>
 
-        <section class="panel-card calibration-card">
+        <section id="settingsCalibration" class="panel-card calibration-card">
           <h2>Body Tuning / Calibration</h2>
           <p class="safety-note">
             Lift wheels before calibration tests. Emergency Stop always works.
@@ -439,7 +452,7 @@
           </div>
         </section>
 
-        <section class="panel-card voice-card">
+        <section id="settingsVoice" class="panel-card voice-card">
           <h2>Voice</h2>
           <p class="panel-note">
             Voice transcripts are published to the local event bus. Stop phrases remain
@@ -515,7 +528,7 @@
           </div>
         </section>
 
-        <section class="panel-card ears-card">
+        <section id="settingsEars" class="panel-card ears-card">
           <h2>Always Listening / Ears</h2>
           <p class="panel-note">
             The robot can hear continuously, but it only thinks when speech is relevant.
@@ -592,7 +605,7 @@
           </div>
         </section>
 
-        <section class="panel-card camera-card">
+        <section id="settingsCamera" class="panel-card camera-card">
           <h2>Camera / Eyes</h2>
           <p class="panel-note">
             The camera runs locally in the browser. Local Brain camera actions are blocked
@@ -673,7 +686,7 @@
           </div>
         </section>
 
-        <section class="panel-card local-brain-card">
+        <section id="settingsLocalBrain" class="panel-card local-brain-card">
           <h2>Local Brain</h2>
           <p class="panel-note">
             Local Brain can think continuously, but physical motion is blocked until
@@ -773,7 +786,7 @@
           <div id="localEventList" class="local-event-list" aria-live="polite"></div>
         </section>
 
-        <section class="panel-card looi-mode-card">
+        <section id="settingsLooiMode" class="panel-card looi-mode-card">
           <h2>Embodiment / LOOI Mode</h2>
           <p class="panel-note">
             LOOI Mode uses expressive motion macros, face/body synchronization,
@@ -861,7 +874,7 @@
           <div id="runtimeWarningsList" class="runtime-warning-list" aria-live="polite"></div>
         </section>
 
-        <section class="panel-card">
+        <section id="settingsRobotBody" class="panel-card settings-section-robot-body">
           <h2>Robot Body</h2>
           <p class="safety-note">
             Safety: lift the wheels before the first movement test.
@@ -890,7 +903,7 @@
           </div>
         </section>
 
-        <section class="panel-card">
+        <section id="settingsMovement" class="panel-card settings-section-movement">
           <h2>Manual Movement Test</h2>
           <div class="slider-grid">
             <label class="slider-field" for="speedSlider">
@@ -937,7 +950,7 @@
           </div>
         </section>
 
-        <section class="panel-card">
+        <section id="settingsTelemetry" class="panel-card settings-section-telemetry">
           <h2>Telemetry</h2>
           <div class="status-grid telemetry-grid">
             <div class="status-row">
@@ -975,7 +988,7 @@
           </div>
         </section>
 
-        <section class="panel-card">
+        <section id="settingsScenarios" class="panel-card settings-section-scenarios">
           <h2>Scenario Tests</h2>
           <p class="panel-note">
             These simulate local Life Engine reactions only. External cloud is not involved.
@@ -1008,7 +1021,7 @@
           </div>
         </section>
 
-        <section class="panel-card">
+        <section id="settingsFaceDemo" class="panel-card settings-section-face-demo">
           <h2>Face & Demo</h2>
           <div class="input-row">
             <input
@@ -1028,7 +1041,7 @@
           </div>
         </section>
 
-        <section class="panel-card log-card">
+        <section id="settingsLog" class="panel-card log-card">
           <h2>Log</h2>
           <div id="logPanel" class="log-panel" aria-live="polite"></div>
         </section>

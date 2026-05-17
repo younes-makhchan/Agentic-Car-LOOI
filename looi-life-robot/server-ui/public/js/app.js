@@ -601,9 +601,10 @@ ui.allowAutonomousSpeechToggle.addEventListener("change", () => {
 });
 
 ui.startLocalBrainButton.addEventListener("click", () => {
-  localBrainEngine?.start?.();
-  syncAutonomousScheduler();
-  updateLocalBrainUi();
+  startLocalBrainProductionMode().catch((error) => {
+    log(`Local Brain live startup failed: ${error.message}`, "error");
+    face.setExpression("scared");
+  });
 });
 
 ui.stopLocalBrainButton.addEventListener("click", () => {
@@ -2303,17 +2304,43 @@ async function startProductionRuntime() {
 
 async function startLocalBrainProductionMode() {
   await startProductionRuntime();
+  await ensureOfficialRobotConnection();
 
   patchBrainPolicy({
     localBrainEnabled: true,
+    autonomousMode: true,
+    localMotionArmed: true,
+    localCameraAllowed: true,
     localSpeechAllowed: true,
+    allowAutonomousMovement: true,
     allowAutonomousSpeech: true
   });
+
   lifeEventsEnabled = true;
   globalThis.localStorage?.setItem?.("looi.lifeEventsEnabled.v1", "true");
 
   ui.muteSpeechToggle.checked = false;
   voiceOutput?.setMuted?.(false);
+
+  looiModeEnabled = true;
+  idleMicroBehaviorEnabled = true;
+  attentionBodyTrackingEnabled = true;
+  keepRobotAwakeEnabled = true;
+  if (ui.looiModeToggle) ui.looiModeToggle.checked = true;
+  if (ui.idleMicroBehaviorToggle) ui.idleMicroBehaviorToggle.checked = true;
+  if (ui.attentionBodyTrackingToggle) ui.attentionBodyTrackingToggle.checked = true;
+  if (ui.keepRobotAwakeToggle) ui.keepRobotAwakeToggle.checked = true;
+
+  performanceMonitor?.start?.();
+  idleMicroBehavior?.start?.();
+  attentionMotorController?.setBodyTrackingEnabled?.(true);
+  attentionMotorController?.start?.();
+  reliabilityManager?.start?.();
+  wakeLockManager?.request?.().catch((error) => {
+    keepRobotAwakeEnabled = false;
+    if (ui.keepRobotAwakeToggle) ui.keepRobotAwakeToggle.checked = false;
+    log(`Wake lock unavailable: ${error.message}`, "warn");
+  });
 
   updateLocalBrainUi();
   updateCameraUi();
@@ -2331,10 +2358,68 @@ async function startLocalBrainProductionMode() {
   ui.alwaysListeningToggle.checked = true;
   speechInput?.startAlwaysListening?.();
 
+  ui.audioLevelMonitorToggle.checked = true;
+  setAudioLevelMonitorEnabled(true).catch((error) => {
+    ui.audioLevelMonitorToggle.checked = false;
+    log(`Audio activity monitor unavailable: ${error.message}`, "warn");
+    updateAlwaysListeningUi();
+  });
+
+  await openCameraFromUi("user").catch((error) => {
+    log(`Camera startup skipped: ${error.message}`, "warn");
+  });
+
+  voiceOutput?.speak?.({
+    text: "I'm awake.",
+    tone: "happy",
+    interrupt: true
+  });
+
   face.setExpression("happy");
-  log("Local Brain live: speech/listening started. Motion and camera remain controlled by their safety toggles.", "warn");
+  log("Local Brain Live started: brain, ears, speech, camera, LOOI mode, movement permissions, and autonomous mode are enabled.", "warn");
   updateAlwaysListeningUi();
+  updateEmbodimentUi();
   updateProductionChrome();
+}
+
+async function ensureOfficialRobotConnection() {
+  if (!robotClient) {
+    log("Robot client is still initializing; live mode will continue without body connection for now.", "warn");
+    return;
+  }
+
+  if (simulatorMode) {
+    if (!robotClient.isConnected?.()) {
+      await robotClient.connect();
+    }
+    await applyCalibrationToRobot({ quiet: true }).catch((error) => {
+      log(`Simulator calibration apply failed: ${error.message}`, "warn");
+    });
+    return;
+  }
+
+  if (realRobotClient?.refreshStatus) {
+    await realRobotClient.refreshStatus().catch((error) => {
+      log(`ESP32 gateway refresh failed: ${error.message}`, "warn");
+    });
+  }
+
+  if (!realRobotClient?.isConnected?.()) {
+    const nextUrl = ui.esp32UrlInput.value.trim() || activeConfig.defaultEsp32WsUrl;
+    await realRobotClient.connect(nextUrl).catch((error) => {
+      log(`ESP32 gateway is not connected yet: ${error.message}`, "warn");
+    });
+  }
+
+  if (realRobotClient?.isConnected?.()) {
+    setActiveRobotClient(realRobotClient);
+    await applyCalibrationToRobot({ quiet: true }).catch((error) => {
+      log(`Calibration apply during live startup failed: ${error.message}`, "warn");
+    });
+    log("ESP32 server gateway is attached for live mode.");
+  } else {
+    log("Live mode started without ESP32 body connection. Commands will wait until the server gateway is connected.", "warn");
+  }
 }
 
 async function requestFullscreenSafe() {
