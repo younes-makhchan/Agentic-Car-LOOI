@@ -48,6 +48,46 @@ export class MockProvider {
       });
     }
 
+    if (/\b(move|go|drive|roll)\s+(forward|forwards|ahead|straight)\b|\bforward a little\b/.test(text)) {
+      return movementResponse({
+        policy,
+        text: "Moving forward a little.",
+        action: { type: "drive", args: { linear: 0.12, angular: 0, durationMs: 350 } },
+        blockedEmotion: "attentive",
+        reason: "drive forward request"
+      });
+    }
+
+    if (/\b(move|drive|roll)\s+(back|backward|backwards|reverse)\b|\breverse a little\b/.test(text)) {
+      return movementResponse({
+        policy,
+        text: "Moving back a little.",
+        action: { type: "drive", args: { linear: -0.12, angular: 0, durationMs: 350 } },
+        blockedEmotion: "shy",
+        reason: "drive backward request"
+      });
+    }
+
+    if (/\b(turn|rotate)\s+left\b/.test(text)) {
+      return movementResponse({
+        policy,
+        text: "Turning left a little.",
+        action: { type: "drive", args: { linear: 0, angular: -0.12, durationMs: 320 } },
+        blockedEmotion: "curious",
+        reason: "turn left request"
+      });
+    }
+
+    if (/\b(turn|rotate)\s+right\b/.test(text)) {
+      return movementResponse({
+        policy,
+        text: "Turning right a little.",
+        action: { type: "drive", args: { linear: 0, angular: 0.12, durationMs: 320 } },
+        blockedEmotion: "curious",
+        reason: "turn right request"
+      });
+    }
+
     if (/\bgive me (space|room)\b|\bgo back\b|\bback up\b|\bnot too close\b/.test(text)) {
       return response({
         text: policy.localMotionArmed ? "I'll give you room." : null,
@@ -114,6 +154,34 @@ function response({ text = null, actions = [], reason = "mock", confidence = 0.8
     reason,
     confidence
   };
+}
+
+function movementResponse({ policy, text, action, blockedEmotion, reason }) {
+  if (!policy.localMotionArmed) {
+    return response({
+      text: policy.localSpeechAllowed === false ? null : "My body is not armed yet.",
+      actions: [
+        { type: "express", args: { emotion: blockedEmotion, intensity: 0.55 } },
+        ...(policy.localSpeechAllowed === false
+          ? []
+          : [{ type: "speak", args: { text: "My body is not armed yet.", tone: "soft" } }])
+      ],
+      reason: `${reason} blocked by policy`,
+      confidence: 0.84
+    });
+  }
+
+  return response({
+    text: policy.localSpeechAllowed === false ? null : text,
+    actions: [
+      action,
+      ...(policy.localSpeechAllowed === false
+        ? []
+        : [{ type: "speak", args: { text, tone: "soft" } }])
+    ],
+    reason,
+    confidence: 0.88
+  });
 }
 
 function latestText(context = {}) {

@@ -1,6 +1,26 @@
 const DEFAULT_ROBOT_NAMES = ["looi", "louie", "lui", "robot"];
 const DIRECT_COMMAND_PATTERNS = [
   {
+    action: "drive",
+    regex: /\b(move|go|drive|roll)\s+(forward|forwards|ahead|straight)\b|\bforward a little\b/,
+    args: { linear: 0.12, angular: 0, durationMs: 350 }
+  },
+  {
+    action: "drive",
+    regex: /\b(move|drive|roll)\s+(back|backward|backwards|reverse)\b|\breverse a little\b/,
+    args: { linear: -0.12, angular: 0, durationMs: 350 }
+  },
+  {
+    action: "drive",
+    regex: /\b(turn|rotate)\s+left\b/,
+    args: { linear: 0, angular: -0.12, durationMs: 320 }
+  },
+  {
+    action: "drive",
+    regex: /\b(turn|rotate)\s+right\b/,
+    args: { linear: 0, angular: 0.12, durationMs: 320 }
+  },
+  {
     action: "approach_user",
     regex: /\b(come here|come closer|come to me)\b/,
     args: { style: "gentle", distance: "short" }

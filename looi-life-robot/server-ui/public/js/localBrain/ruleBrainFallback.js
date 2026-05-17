@@ -27,6 +27,22 @@ export class RuleBrainFallback {
       return "direct_command_approach";
     }
 
+    if (/\b(move|go|drive|roll)\s+(forward|forwards|ahead|straight)\b|\bforward a little\b/.test(normalized)) {
+      return "direct_command_drive_forward";
+    }
+
+    if (/\b(move|drive|roll)\s+(back|backward|backwards|reverse)\b|\breverse a little\b/.test(normalized)) {
+      return "direct_command_drive_backward";
+    }
+
+    if (/\b(turn|rotate)\s+left\b/.test(normalized)) {
+      return "direct_command_turn_left";
+    }
+
+    if (/\b(turn|rotate)\s+right\b/.test(normalized)) {
+      return "direct_command_turn_right";
+    }
+
     if (/\bgive me (space|room)\b|\bgo back\b|\bback up\b|\bnot too close\b/.test(normalized)) {
       return "direct_command_retreat";
     }
@@ -100,6 +116,58 @@ export class RuleBrainFallback {
               reason: "User asked LOOI to come closer."
             }
           ],
+          reason: classification,
+          confidence: 0.86
+        });
+      case "direct_command_drive_forward":
+        return this.motionResponse({
+          policy,
+          text: "Moving forward a little.",
+          action: {
+            type: "drive",
+            args: { linear: 0.12, angular: 0, durationMs: 350 },
+            reason: "User asked for a small forward body movement."
+          },
+          blockedEmotion: "attentive",
+          reason: classification,
+          confidence: 0.88
+        });
+      case "direct_command_drive_backward":
+        return this.motionResponse({
+          policy,
+          text: "Moving back a little.",
+          action: {
+            type: "drive",
+            args: { linear: -0.12, angular: 0, durationMs: 350 },
+            reason: "User asked for a small backward body movement."
+          },
+          blockedEmotion: "shy",
+          reason: classification,
+          confidence: 0.88
+        });
+      case "direct_command_turn_left":
+        return this.motionResponse({
+          policy,
+          text: "Turning left a little.",
+          action: {
+            type: "drive",
+            args: { linear: 0, angular: -0.12, durationMs: 320 },
+            reason: "User asked for a small left turn."
+          },
+          blockedEmotion: "curious",
+          reason: classification,
+          confidence: 0.86
+        });
+      case "direct_command_turn_right":
+        return this.motionResponse({
+          policy,
+          text: "Turning right a little.",
+          action: {
+            type: "drive",
+            args: { linear: 0, angular: 0.12, durationMs: 320 },
+            reason: "User asked for a small right turn."
+          },
+          blockedEmotion: "curious",
           reason: classification,
           confidence: 0.86
         });
@@ -241,6 +309,50 @@ export class RuleBrainFallback {
           confidence: 0.35
         });
     }
+  }
+
+  motionResponse({ policy, text, action, blockedEmotion, reason, confidence }) {
+    if (!policy.localMotionArmed) {
+      return brainResponse({
+        text: policy.localSpeechAllowed === false ? null : "My body is not armed yet.",
+        actions: [
+          {
+            type: "express",
+            args: { emotion: blockedEmotion, intensity: 0.55 },
+            reason: "User asked for movement while local motion is disarmed."
+          },
+          ...(policy.localSpeechAllowed === false
+            ? []
+            : [
+                {
+                  type: "speak",
+                  args: { text: "My body is not armed yet.", tone: "soft" },
+                  reason: "Explain motion safety gate briefly."
+                }
+              ])
+        ],
+        reason: `${reason}_motion_disarmed`,
+        confidence
+      });
+    }
+
+    return brainResponse({
+      text: policy.localSpeechAllowed === false ? null : text,
+      actions: [
+        action,
+        ...(policy.localSpeechAllowed === false
+          ? []
+          : [
+              {
+                type: "speak",
+                args: { text, tone: "soft" },
+                reason: "Acknowledge direct movement command briefly."
+              }
+            ])
+      ],
+      reason,
+      confidence
+    });
   }
 }
 

@@ -29,6 +29,10 @@ const liveGate = new SpeechGate({
 const liveGreeting = liveGate.processTranscript({ text: "hi can you me", confidence: 1 });
 assert.equal(liveGreeting.accepted, true);
 assert.equal(liveGreeting.shouldTriggerBrain, true);
+const liveMoveForward = liveGate.processTranscript({ text: "move forward", confidence: 1 });
+assert.equal(liveMoveForward.classification, "direct_to_robot");
+assert.equal(liveMoveForward.suggestedIntent.action, "drive");
+assert.equal(liveMoveForward.suggestedIntent.args.linear > 0, true);
 
 const attention = new AttentionSystem({ logger: () => {} });
 attention.wake("smoke", 1000);

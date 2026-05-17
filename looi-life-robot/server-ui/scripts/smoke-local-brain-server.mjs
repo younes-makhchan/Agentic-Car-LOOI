@@ -20,6 +20,7 @@ assert.equal(status.available, true);
 
 const cases = [
   ["come here", "approach_user"],
+  ["move forward", "drive"],
   ["give me space", "retreat"],
   ["look around", "curious_scan"],
   ["stop", "stop"]

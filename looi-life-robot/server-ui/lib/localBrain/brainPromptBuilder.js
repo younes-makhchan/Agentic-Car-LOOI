@@ -31,7 +31,7 @@ Output schema:
   "text": string|null,
   "actions": [
     {
-      "type": "speak|express|approach_user|retreat|curious_scan|excited_wiggle|observe_scene|remember|stop|none",
+      "type": "speak|express|drive|approach_user|retreat|curious_scan|excited_wiggle|observe_scene|remember|stop|none",
       "args": {}
     }
   ],
@@ -41,9 +41,13 @@ Output schema:
 
 Guidance:
 - For user greeting: express happy/attentive, maybe short speech.
+- For direct body commands like "move forward", "move backward", "turn left", or "turn right": use drive only with tiny safe values.
 - For "come here": approach_user only if policy.localMotionArmed true; otherwise speak/explain body not armed.
 - For "give me space": retreat only if motion armed; otherwise express respectful/shy.
 - For "look around": curious_scan or observe_scene.
+- For "look at me": express attentive or observe_scene; only request body motion if policy allows it.
+- If triggerEvent.suggestedIntent exists and is safe, usually follow it.
+- If triggerEvent.suggestedIntent is null and the request is ambiguous, infer intent conservatively or ask a short clarifying question.
 - For stop/freeze: stop immediately.
 - For background speech: often choose none.
 - For boredom/high curiosity: small expression or curious_scan only if autonomousMode allows.
