@@ -14,7 +14,10 @@
     "smoke:voice": "node scripts/smoke-voice.mjs",
     "smoke:camera": "node scripts/smoke-camera.mjs",
     "smoke:calibration": "node scripts/smoke-calibration.mjs",
-    "smoke:personality": "node scripts/smoke-memory-personality.mjs"
+    "smoke:personality": "node scripts/smoke-memory-personality.mjs",
+    "kimi:agent": "node scripts/run-kimi-agent.mjs",
+    "kimi:agent:once": "node scripts/run-kimi-agent.mjs --once",
+    "smoke:kimi": "node scripts/smoke-kimi-agent.mjs"
   },
   "dependencies": {
     "cors": "^2.8.5",

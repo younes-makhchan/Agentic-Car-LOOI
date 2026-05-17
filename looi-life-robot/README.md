@@ -288,6 +288,19 @@ export ROBOT_BRIDGE_PUBLIC_URL="https://your-public-url.example"
 export ROBOT_BRIDGE_TOKEN="same-token-from-env"
 ```
 
+If the public URL is ngrok, every KimiClaw/OpenClaw bridge request must include this header:
+
+```http
+ngrok-skip-browser-warning: true
+```
+
+Use it together with:
+
+```http
+Authorization: Bearer ROBOT_BRIDGE_TOKEN
+Content-Type: application/json
+```
+
 Check runtime status:
 
 ```bash
@@ -514,6 +527,7 @@ Cloud-style test:
 curl -X POST "$ROBOT_BRIDGE_PUBLIC_URL/api/robot-bridge/actions" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $ROBOT_BRIDGE_TOKEN" \
+  -H "ngrok-skip-browser-warning: true" \
   -d '{"source":"kimi_claw_cloud","type":"approach_user","args":{"style":"happy","distance":"short"},"reason":"cloud test"}'
 ```
 
@@ -915,6 +929,107 @@ You can run the personality smoke check:
 ```bash
 cd server-ui
 npm run smoke:personality
+```
+
+## Step 13: Production Kimi Agent
+
+The production Kimi path runs on the laptop/server, not in the phone browser. The Kimi API key stays in `server-ui/.env`. Kimi reads robot events from the local bridge, decides safe high-level actions, and writes those actions back into the bridge. The phone browser still claims and executes actions through ToolExecutor, LifeEngine, SafetyGate, CommandQueue, and ESP32.
+
+Flow:
+
+```text
+phone voice/text/camera/life event
+→ server robot event inbox
+→ laptop Kimi agent
+→ Kimi API
+→ safe high-level bridge actions
+→ phone browser runtime
+→ ESP32
+```
+
+Setup:
+
+1. Edit `server-ui/.env`.
+2. Set `KIMI_API_KEY` to your Moonshot/Kimi API key.
+3. Keep `KIMI_BASE_URL=https://api.moonshot.ai/v1`.
+4. Keep `KIMI_MODEL=kimi-k2.6` unless you intentionally change models.
+5. For local private Wi-Fi testing only, `ROBOT_BRIDGE_ALLOW_UNAUTH_LAN=true` is convenient.
+6. Do not expose the server publicly while LAN unauth is enabled.
+
+If the bridge URL uses ngrok, KimiClaw or any helper calling the bridge must always send:
+
+```http
+ngrok-skip-browser-warning: true
+```
+
+The production `npm run kimi:agent` runner includes this header automatically.
+
+Run:
+
+```bash
+cd server-ui
+npm run dev
+```
+
+In the phone UI:
+
+1. Connect ESP32.
+2. Start Voice if you want speech events.
+3. Start KimiClaw Bridge.
+4. Register/start runtime heartbeat if runtime auth is enabled.
+5. Keep Cloud Motion disarmed for the first test.
+6. Keep Cloud Camera disallowed unless you intentionally test camera actions.
+
+In a second terminal:
+
+```bash
+cd server-ui
+npm run kimi:agent
+```
+
+One-shot test mode:
+
+```bash
+cd server-ui
+npm run kimi:agent:once
+```
+
+Dry-run mode, no Kimi API call:
+
+```bash
+cd server-ui
+node scripts/run-kimi-agent.mjs --dry-run --once
+```
+
+Testing flow:
+
+1. Start server with `npm run dev`.
+2. Open phone UI.
+3. Connect ESP32.
+4. Start KimiClaw Bridge.
+5. Start the Kimi agent in a second terminal.
+6. Say or type `hello looi`.
+7. Kimi should usually enqueue a short `speak` or `express` action.
+8. Say `come here` while Cloud Motion is OFF.
+9. Movement should be rejected or avoided.
+10. Arm Cloud Motion only when supervised.
+11. Say `come here` again.
+12. Movement should still be short, calibrated, and safety-gated.
+
+Safety:
+
+- Kimi never receives raw motor PWM access.
+- Kimi never talks directly to ESP32.
+- Server never moves the robot directly.
+- Phone browser remains the runtime that executes actions safely.
+- Cloud Motion and Cloud Camera remain manually controlled.
+- Do not paste API keys into chat or memory.
+
+You can run the Kimi agent smoke check without calling Kimi:
+
+```bash
+cd server-ui
+npm run smoke:kimi
 ```
 
 ## Safety Rule

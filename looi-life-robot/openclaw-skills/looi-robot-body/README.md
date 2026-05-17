@@ -183,3 +183,20 @@ node scripts/send_robot_action.mjs --add-learned-phrase --phrase "give me room" 
 ```
 
 Never publish this skill with real tokens.
+## Ngrok Bridge Header
+
+If the robot bridge is exposed through ngrok, every bridge API request must include:
+
+```http
+ngrok-skip-browser-warning: true
+```
+
+Use it together with the normal bridge headers:
+
+```http
+Authorization: Bearer ROBOT_BRIDGE_TOKEN
+Content-Type: application/json
+ngrok-skip-browser-warning: true
+```
+
+This avoids ngrok returning its browser warning HTML page instead of the robot bridge JSON response.
