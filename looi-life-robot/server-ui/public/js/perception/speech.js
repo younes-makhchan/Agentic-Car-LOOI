@@ -18,6 +18,12 @@ export class SpeechInput {
     this.restartTimer = null;
     this.lastStartAt = 0;
     this.lastEndAt = 0;
+    this.lastResultAt = 0;
+    this.finalResultCount = 0;
+    this.interimResultCount = 0;
+    this.startAttemptCount = 0;
+    this.lastError = null;
+    this.lastErrorAt = 0;
     this.permissionBlocked = false;
     this.finalCallbacks = new Set();
     this.interimCallbacks = new Set();
@@ -49,6 +55,7 @@ export class SpeechInput {
 
     try {
       this.lastStartAt = Date.now();
+      this.startAttemptCount += 1;
       this.recognition.start();
     } catch (error) {
       this.emitError(error);
@@ -157,6 +164,13 @@ export class SpeechInput {
       restartBackoffMs: this.restartBackoffMs,
       lastStartAt: this.lastStartAt,
       lastEndAt: this.lastEndAt,
+      lastResultAt: this.lastResultAt,
+      finalResultCount: this.finalResultCount,
+      interimResultCount: this.interimResultCount,
+      startAttemptCount: this.startAttemptCount,
+      lastError: this.lastError,
+      lastErrorAt: this.lastErrorAt,
+      permissionBlocked: this.permissionBlocked,
       secureContext: globalThis.isSecureContext !== false
     };
   }
@@ -171,6 +185,8 @@ export class SpeechInput {
     this.recognition.interimResults = this.interimResults;
     this.recognition.onstart = () => {
       this.listening = true;
+      this.lastError = null;
+      this.lastErrorAt = 0;
       this.restartBackoffMs = this.autoRestartDelayMs;
       this.emitStatus();
     };
@@ -204,16 +220,23 @@ export class SpeechInput {
       };
 
       if (result.isFinal) {
+        this.finalResultCount += 1;
+        this.lastResultAt = Date.now();
         this.finalCallbacks.forEach((callback) => callback(payload));
       } else {
+        this.interimResultCount += 1;
+        this.lastResultAt = Date.now();
         this.interimCallbacks.forEach((callback) => callback(payload));
       }
     }
   }
 
   emitError(error) {
-    this.log(`Speech recognition error: ${error.message}`, "warn");
-    if (["not-allowed", "service-not-allowed", "permission denied"].includes(error.message)) {
+    const message = error?.message ?? String(error ?? "speech_error");
+    this.lastError = message;
+    this.lastErrorAt = Date.now();
+    this.log(`Speech recognition error: ${message}`, "warn");
+    if (["not-allowed", "service-not-allowed", "permission denied"].includes(message)) {
       this.permissionBlocked = true;
       this.alwaysListening = false;
     }

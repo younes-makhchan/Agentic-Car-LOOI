@@ -602,6 +602,7 @@ ui.allowAutonomousSpeechToggle.addEventListener("change", () => {
 });
 
 ui.startLocalBrainButton.addEventListener("click", () => {
+  primeLiveInputsFromUserGesture();
   startLocalBrainProductionMode().catch((error) => {
     log(`Local Brain live startup failed: ${error.message}`, "error");
     face.setExpression("scared");
@@ -673,9 +674,11 @@ ui.startListeningButton.addEventListener("click", () => {
   if (ui.alwaysListeningToggle.checked) {
     ui.continuousListeningToggle.checked = true;
     speechInput.startAlwaysListening();
+    logSpeechStartStatus("Manual always-listening start");
   } else {
     speechInput.setContinuous(ui.continuousListeningToggle.checked);
     speechInput.start();
+    logSpeechStartStatus("Manual listening start");
   }
   updateAlwaysListeningUi();
 });
@@ -2361,6 +2364,7 @@ async function startLocalBrainProductionMode() {
   ui.continuousListeningToggle.checked = true;
   ui.alwaysListeningToggle.checked = true;
   speechInput?.startAlwaysListening?.();
+  logSpeechStartStatus("Live listening start");
   attentionSystem?.wake?.("live_start", activeConfig.conversationWindowMs ?? 30000);
   speechGate?.openAttentionWindow?.("live_start");
 
@@ -2386,6 +2390,53 @@ async function startLocalBrainProductionMode() {
   updateAlwaysListeningUi();
   updateEmbodimentUi();
   updateProductionChrome();
+}
+
+function primeLiveInputsFromUserGesture() {
+  primeSpeechFromUserGesture();
+  primeCameraFromUserGesture();
+}
+
+function primeSpeechFromUserGesture() {
+  if (!speechInput) {
+    log("Speech input is still initializing.", "warn");
+    return;
+  }
+
+  speechInput.setLanguage?.(ui.speechLanguageInput.value.trim() || "en-US");
+  speechInput.setContinuous?.(true);
+  ui.continuousListeningToggle.checked = true;
+  ui.alwaysListeningToggle.checked = true;
+  const status = speechInput.startAlwaysListening?.();
+  logSpeechStartStatus("Live tap speech prime", status);
+  updateVoiceUi();
+  updateAlwaysListeningUi();
+}
+
+function primeCameraFromUserGesture() {
+  if (!cameraInput || cameraInput.getCameraStatus?.().running) {
+    return;
+  }
+
+  cameraInput.startCamera?.({ facingMode: "user" })
+    .then(handleCameraCommandResult)
+    .catch((error) => {
+      log(`Camera permission prime failed: ${error.message}`, "warn");
+    });
+}
+
+function logSpeechStartStatus(label, status = speechInput?.getStatus?.()) {
+  if (!status) {
+    return;
+  }
+
+  const state = status.supported
+    ? status.listening
+      ? "listening"
+      : "start requested"
+    : "unsupported";
+  const error = status.lastError ? ` error=${status.lastError}` : "";
+  log(`${label}: ${state}${error}`);
 }
 
 async function ensureOfficialRobotConnection() {
@@ -3244,15 +3295,19 @@ function updateVoiceUi() {
   };
 
   ui.speechSupportState.textContent = speechStatus.supported
-    ? speechStatus.listening
+    ? speechStatus.lastError
+      ? `error: ${speechStatus.lastError}`
+      : speechStatus.listening
       ? "listening"
       : "supported"
     : "unsupported";
   ui.speechSupportState.classList.toggle("voice-state--active", speechStatus.listening);
-  ui.speechSupportState.classList.toggle("voice-state--warn", !speechStatus.supported);
-  ui.speechSecureWarning.textContent = speechStatus.secureContext
-    ? "Microphone access may require user permission."
-    : "Speech recognition usually requires HTTPS or localhost.";
+  ui.speechSupportState.classList.toggle("voice-state--warn", !speechStatus.supported || Boolean(speechStatus.lastError));
+  ui.speechSecureWarning.textContent = speechStatus.lastError
+    ? `Speech error: ${speechStatus.lastError}. Check microphone permission for this site on the phone.`
+    : speechStatus.secureContext
+      ? `Microphone access may require user permission. Results: ${speechStatus.finalResultCount ?? 0} final / ${speechStatus.interimResultCount ?? 0} interim.`
+      : "Speech recognition usually requires HTTPS or localhost.";
   ui.voiceSupportState.textContent = voiceStatus.supported
     ? voiceStatus.muted
       ? "muted"
