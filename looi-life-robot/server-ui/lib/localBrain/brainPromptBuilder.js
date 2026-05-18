@@ -1,11 +1,29 @@
 import { MOVEMENT_PROMPT_LIST } from "../../public/js/embodiment/movementCatalog.js";
 
-export const LOCAL_BRAIN_SERVER_SYSTEM_PROMPT = `You are LOOI's action selector, not a chatbot.
-Return ONLY minified JSON. No markdown. No extra keys.
-Schema: {"text":string|null,"action":{"type":"perform","args":object},"reason":string,"confidence":number}
-perform args: {"speech":{"text":"short sentence","tone":"soft|happy|curious|serious|shy|playful"},"movement":[],"iterateMovement":false,"timing":"parallel|sequence"}.
-Movement names you may choose: ${MOVEMENT_PROMPT_LIST}.
-Rules: choose one perform action only. movement grammar: [] or ["allowed_movement_name"] or ["allowed_movement_name","allowed_movement_name",...]. Every movement item must be an exact name from the allowed list, for example ["gentle_wiggle","move_forward_tiny"]. Reply briefly or use empty speech. Use [] or ["still"] when no movement fits. stop/freeze/don't move => [] or ["still"]. Runtime enforces safety after your reply. Never raw PWM/motors/code/network/files.`;
+export const LOCAL_BRAIN_SERVER_SYSTEM_PROMPT = `
+
+<system>
+You are LOOI: a small embodied companion with wheels, phone face, camera, mic, and speaker.
+Be curious, gentle, playful, brief, and respectful.
+Allowed movement names: ${MOVEMENT_PROMPT_LIST}.
+
+Rules:
+- Return one action object only: type "perform".
+- Use speech only when useful; silence is valid.
+- movement grammar: [] or ["allowed_movement_name"] or ["allowed_movement_name","allowed_movement_name",...].
+- Every movement item must be an exact allowed movement name.
+- Examples: [], ["move_forward_tiny"], ["gentle_wiggle","move_forward_tiny"].
+- Use [] or ["still"] when no movement fits.
+- Stop/freeze/don't move => movement [] or ["still"] and brief acknowledgement if useful.
+- Do not pretend to see if camera is off.
+- Do not mention JSON, tools, or internal state.
+- Be You and Do What you want
+<important>
+Return ONLY strict JSON in this exact shape:
+{"text":string|null,"action":{"type":"perform","args":{"speech":{"text":string,"tone":"soft|happy|curious|serious|shy|playful"},"movement":[""|"movement1"|"movement1,...,movementN"],"timing":"parallel|sequence","iterateMovement":boolean}},"reason":string,"confidence":number}
+</important>
+</system>
+`;
 
 export function buildLocalBrainMessages(context = {}) {
   const compactContext = buildCompactBrainContext(context);
@@ -33,13 +51,7 @@ export function buildCompactBrainContext(context = {}) {
     input: dropEmpty({
       type: shortValue(trigger.type, 40),
       text: shortValue(trigger.normalizedText ?? trigger.text, 220),
-      classification: shortValue(trigger.classification, 40),
-      accepted: boolOrUndefined(trigger.accepted),
-      triggerBrain: boolOrUndefined(trigger.shouldTriggerBrain),
-      openAttention: boolOrUndefined(trigger.shouldOpenAttention),
-      immediateStop: boolOrUndefined(trigger.shouldImmediateStop),
-      gateReason: shortValue(trigger.gateReason, 80),
-      suggestedIntent: compactSuggestedIntent(trigger.suggestedIntent)
+      immediateStop: boolOrUndefined(trigger.shouldImmediateStop)
     }),
     life: dropEmpty({
       mood: shortValue(life.mood, 32),
@@ -57,38 +69,6 @@ export function buildCompactBrainContext(context = {}) {
     memory: compactMemory(memory),
     recent: recentEvents.slice(0, 2).map(compactRecentEvent).filter(Boolean)
   });
-}
-
-function compactSuggestedIntent(intent = null) {
-  if (!intent || typeof intent !== "object") {
-    return undefined;
-  }
-
-  return dropEmpty({
-    action: shortValue(intent.action, 50),
-    confidence: round01(intent.confidence),
-    args: compactArgs(intent.args)
-  });
-}
-
-function compactArgs(args = null) {
-  if (!args || typeof args !== "object" || Array.isArray(args)) {
-    return undefined;
-  }
-
-  const result = {};
-
-  for (const [key, value] of Object.entries(args).slice(0, 8)) {
-    if (value === null || value === undefined) {
-      continue;
-    }
-
-    if (["string", "number", "boolean"].includes(typeof value)) {
-      result[key] = typeof value === "string" ? shortValue(value, 80) : value;
-    }
-  }
-
-  return Object.keys(result).length ? result : undefined;
 }
 
 function compactMemory(memory = null) {
@@ -126,9 +106,7 @@ function compactRecentEvent(event = null) {
 
   return dropEmpty({
     type: shortValue(event.type, 40),
-    text: shortValue(event.normalizedText ?? event.text, 120),
-    classification: shortValue(event.classification, 40),
-    intent: shortValue(event.suggestedIntent?.action, 40)
+    text: shortValue(event.normalizedText ?? event.text, 120)
   });
 }
 

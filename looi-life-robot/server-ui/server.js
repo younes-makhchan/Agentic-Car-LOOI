@@ -942,24 +942,7 @@ function summarizeTriggerEvent(event = null) {
   return {
     type: event.type ?? null,
     text: shortServerLogText(payload.text ?? event.text ?? "", 240),
-    classification: event.classification ?? payload.classification ?? null,
-    accepted: event.accepted ?? payload.accepted,
-    shouldTriggerBrain: event.shouldTriggerBrain ?? payload.shouldTriggerBrain,
-    shouldOpenAttention: event.shouldOpenAttention ?? payload.shouldOpenAttention,
-    shouldImmediateStop: event.shouldImmediateStop ?? payload.shouldImmediateStop,
-    suggestedIntent: summarizeSuggestedIntent(event.suggestedIntent ?? payload.suggestedIntent)
-  };
-}
-
-function summarizeSuggestedIntent(intent = null) {
-  if (!intent || typeof intent !== "object") {
-    return null;
-  }
-
-  return {
-    action: intent.action ?? null,
-    confidence: intent.confidence,
-    args: redactAndCompact(intent.args)
+    shouldImmediateStop: event.shouldImmediateStop ?? payload.shouldImmediateStop
   };
 }
 

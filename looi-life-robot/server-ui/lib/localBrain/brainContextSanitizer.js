@@ -163,29 +163,8 @@ function compactEvent(event) {
   return {
     type: shortText(value.type, 80),
     text: shortText(payload.text ?? value.text ?? payload.lifeEventType ?? payload.originalType, 500),
-    timestamp: shortText(value.timestamp, 80),
-    priority: safeNumber(value.priority, 0),
-    source: shortText(value.source ?? payload.source, 80),
-    classification: shortText(payload.classification ?? payload.speechClassification, 80),
-    accepted: typeof payload.accepted === "boolean" ? payload.accepted : null,
-    shouldTriggerBrain: typeof payload.shouldTriggerBrain === "boolean" ? payload.shouldTriggerBrain : null,
-    shouldOpenAttention: typeof payload.shouldOpenAttention === "boolean" ? payload.shouldOpenAttention : null,
     shouldImmediateStop: typeof payload.shouldImmediateStop === "boolean" ? payload.shouldImmediateStop : null,
-    gateReason: shortText(payload.gateReason ?? payload.reason, 160),
-    normalizedText: shortText(payload.normalizedText, 500),
-    suggestedIntent: compactSuggestedIntent(payload.suggestedIntent)
-  };
-}
-
-function compactSuggestedIntent(intent) {
-  if (!isPlainObject(intent)) {
-    return null;
-  }
-
-  return {
-    action: shortText(intent.action, 80),
-    confidence: finiteOrNull(intent.confidence),
-    args: isPlainObject(intent.args) ? removeSecretsAndLargeFields(intent.args) : {}
+    normalizedText: shortText(payload.normalizedText, 500)
   };
 }
 

@@ -234,14 +234,6 @@ function summarizeContext(context = {}) {
     reason: context.reason,
     triggerType: trigger.type ?? null,
     triggerText: shortLogText(trigger.text ?? ""),
-    classification: trigger.classification ?? null,
-    suggestedIntent: trigger.suggestedIntent
-      ? {
-          action: trigger.suggestedIntent.action,
-          confidence: trigger.suggestedIntent.confidence,
-          args: trigger.suggestedIntent.args
-        }
-      : null,
     life: context.lifeState
       ? {
           mood: context.lifeState.mood,

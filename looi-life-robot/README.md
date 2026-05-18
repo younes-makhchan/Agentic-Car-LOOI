@@ -353,8 +353,7 @@ looi-life-robot/
             │   ├── mockBrainAdapter.js
             │   ├── ruleBrainFallback.js
             │   ├── actionParser.js
-            │   ├── brainPolicy.js
-            │   └── brainPrompt.js
+            │   └── brainPolicy.js
             ├── life/
             │   ├── state.js
             │   ├── lifeEngine.js
