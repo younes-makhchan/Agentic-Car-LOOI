@@ -603,6 +603,39 @@
               <p id="lastIgnoredTranscript" class="transcript transcript--ignored">--</p>
             </div>
           </div>
+          <h3>Speech Recognition Diagnostics</h3>
+          <div class="status-grid">
+            <div class="status-row">
+              <span>Recognition support</span>
+              <strong id="speechRecognitionSupportDetail">--</strong>
+            </div>
+            <div class="status-row">
+              <span>Recognition state</span>
+              <strong id="speechRecognitionStateDetail">--</strong>
+            </div>
+            <div class="status-row">
+              <span>Recognition attempts</span>
+              <strong id="speechRecognitionAttemptCount">0</strong>
+            </div>
+            <div class="status-row">
+              <span>Recognition results</span>
+              <strong id="speechRecognitionResultCount">0 final / 0 interim</strong>
+            </div>
+            <div class="status-row">
+              <span>Last recognition result</span>
+              <strong id="speechRecognitionLastResult">--</strong>
+            </div>
+            <div class="status-row">
+              <span>Last recognition error</span>
+              <strong id="speechRecognitionLastError">--</strong>
+            </div>
+          </div>
+          <div id="speechRecognitionDebugLog" class="speech-debug-log" aria-live="polite">
+            <div class="speech-debug-entry">
+              <strong>No speech recognition events yet</strong>
+              <span>Start listening, then speak near the phone.</span>
+            </div>
+          </div>
         </section>
 
         <section id="settingsCamera" class="panel-card camera-card">

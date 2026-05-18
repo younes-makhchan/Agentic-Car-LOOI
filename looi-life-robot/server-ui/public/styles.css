@@ -1436,7 +1436,8 @@ button:active {
 .local-brain-list,
 .local-event-list,
 .macro-history-list,
-.runtime-warning-list {
+.runtime-warning-list,
+.speech-debug-log {
   margin-top: 0.85rem;
   display: grid;
   gap: 0.6rem;
@@ -1447,7 +1448,8 @@ button:active {
 .local-brain-item,
 .local-event-item,
 .macro-history-item,
-.runtime-warning-item {
+.runtime-warning-item,
+.speech-debug-entry {
   padding: 0.75rem;
   border-radius: 0.9rem;
   background: rgba(6, 10, 17, 0.72);
@@ -1472,16 +1474,31 @@ button:active {
   border-color: rgba(97, 211, 255, 0.32);
 }
 
+.speech-debug-entry--error {
+  border-color: rgba(255, 107, 107, 0.42);
+}
+
+.speech-debug-entry--final,
+.speech-debug-entry--interim {
+  border-color: rgba(126, 224, 186, 0.32);
+}
+
+.speech-debug-entry--start_ok {
+  border-color: rgba(97, 211, 255, 0.32);
+}
+
 .local-brain-item strong,
 .local-event-item strong,
-.macro-history-item strong {
+.macro-history-item strong,
+.speech-debug-entry strong {
   display: block;
   color: var(--glow-strong);
 }
 
 .local-brain-item span,
 .local-event-item span,
-.macro-history-item span {
+.macro-history-item span,
+.speech-debug-entry span {
   display: block;
   margin-top: 0.25rem;
   color: var(--muted);

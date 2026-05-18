@@ -25,6 +25,7 @@ export class SpeechInput {
     this.lastError = null;
     this.lastErrorAt = 0;
     this.permissionBlocked = false;
+    this.debugEvents = [];
     this.finalCallbacks = new Set();
     this.interimCallbacks = new Set();
     this.errorCallbacks = new Set();
@@ -32,6 +33,7 @@ export class SpeechInput {
     const Recognition = globalThis.SpeechRecognition ?? globalThis.webkitSpeechRecognition;
     this.supported = typeof Recognition === "function";
     this.recognition = this.supported ? new Recognition() : null;
+    this.recordDebug("init", this.supported ? "SpeechRecognition supported." : "SpeechRecognition unsupported.");
     this.configureRecognition();
   }
 
@@ -43,11 +45,13 @@ export class SpeechInput {
     this.manualStop = false;
     if (!this.supported) {
       this.log("Speech recognition is not supported in this browser.", "warn");
+      this.recordDebug("unsupported", "Speech recognition is not supported in this browser.");
       this.emitStatus({ error: "unsupported" });
       return this.getStatus();
     }
 
     if (this.listening) {
+      this.recordDebug("start_skip", "Already listening.");
       return this.getStatus();
     }
 
@@ -56,6 +60,7 @@ export class SpeechInput {
     try {
       this.lastStartAt = Date.now();
       this.startAttemptCount += 1;
+      this.recordDebug("start", `Starting recognition attempt ${this.startAttemptCount}.`);
       this.recognition.start();
     } catch (error) {
       this.emitError(error);
@@ -171,6 +176,7 @@ export class SpeechInput {
       lastError: this.lastError,
       lastErrorAt: this.lastErrorAt,
       permissionBlocked: this.permissionBlocked,
+      debugEvents: this.getDebugEvents({ limit: 8 }),
       secureContext: globalThis.isSecureContext !== false
     };
   }
@@ -188,11 +194,13 @@ export class SpeechInput {
       this.lastError = null;
       this.lastErrorAt = 0;
       this.restartBackoffMs = this.autoRestartDelayMs;
+      this.recordDebug("start_ok", "Recognition started.");
       this.emitStatus();
     };
     this.recognition.onend = () => {
       this.listening = false;
       this.lastEndAt = Date.now();
+      this.recordDebug("end", this.alwaysListening ? "Recognition ended; restart may follow." : "Recognition ended.");
       this.emitStatus();
       this.scheduleAutoRestart();
     };
@@ -222,10 +230,12 @@ export class SpeechInput {
       if (result.isFinal) {
         this.finalResultCount += 1;
         this.lastResultAt = Date.now();
+        this.recordDebug("final", text);
         this.finalCallbacks.forEach((callback) => callback(payload));
       } else {
         this.interimResultCount += 1;
         this.lastResultAt = Date.now();
+        this.recordDebug("interim", text);
         this.interimCallbacks.forEach((callback) => callback(payload));
       }
     }
@@ -235,6 +245,7 @@ export class SpeechInput {
     const message = error?.message ?? String(error ?? "speech_error");
     this.lastError = message;
     this.lastErrorAt = Date.now();
+    this.recordDebug("error", message);
     this.log(`Speech recognition error: ${message}`, "warn");
     if (["not-allowed", "service-not-allowed", "permission denied"].includes(message)) {
       this.permissionBlocked = true;
@@ -242,6 +253,20 @@ export class SpeechInput {
     }
     this.errorCallbacks.forEach((callback) => callback(error));
     this.emitStatus({ error: error.message });
+  }
+
+  getDebugEvents({ limit = 20 } = {}) {
+    const max = Math.max(1, Math.min(50, Number(limit) || 20));
+    return this.debugEvents.slice(0, max).map((event) => ({ ...event }));
+  }
+
+  recordDebug(type, message) {
+    this.debugEvents.unshift({
+      type,
+      message: String(message ?? "").slice(0, 240),
+      timestamp: new Date().toISOString()
+    });
+    this.debugEvents.length = Math.min(50, this.debugEvents.length);
   }
 
   scheduleAutoRestart() {

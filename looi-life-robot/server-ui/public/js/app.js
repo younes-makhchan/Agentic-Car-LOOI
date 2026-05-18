@@ -120,6 +120,13 @@ const ui = {
   lastSpeechClassification: document.getElementById("lastSpeechClassification"),
   lastAcceptedTranscript: document.getElementById("lastAcceptedTranscript"),
   lastIgnoredTranscript: document.getElementById("lastIgnoredTranscript"),
+  speechRecognitionSupportDetail: document.getElementById("speechRecognitionSupportDetail"),
+  speechRecognitionStateDetail: document.getElementById("speechRecognitionStateDetail"),
+  speechRecognitionAttemptCount: document.getElementById("speechRecognitionAttemptCount"),
+  speechRecognitionResultCount: document.getElementById("speechRecognitionResultCount"),
+  speechRecognitionLastResult: document.getElementById("speechRecognitionLastResult"),
+  speechRecognitionLastError: document.getElementById("speechRecognitionLastError"),
+  speechRecognitionDebugLog: document.getElementById("speechRecognitionDebugLog"),
   wakeNamesInput: document.getElementById("wakeNamesInput"),
   saveWakeNamesButton: document.getElementById("saveWakeNamesButton"),
   audioLevelMonitorToggle: document.getElementById("audioLevelMonitorToggle"),
@@ -3250,6 +3257,8 @@ function updateAlwaysListeningUi() {
       : "--";
   }
 
+  updateSpeechRecognitionDiagnostics(speechStatus);
+
   if (ui.audioLevelMonitorToggle) {
     ui.audioLevelMonitorToggle.checked = Boolean(audioStatus.running);
   }
@@ -3280,6 +3289,78 @@ function updateAlwaysListeningUi() {
   document.body.classList.toggle("ears-on", Boolean(speechStatus.alwaysListening || speechStatus.listening));
   document.body.classList.toggle("attention-active", ["attentive", "conversation", "busy"].includes(attentionStatus.mode));
   document.body.classList.toggle("stop-cooldown", attentionStatus.mode === "stop_cooldown");
+}
+
+function updateSpeechRecognitionDiagnostics(speechStatus = speechInput?.getStatus?.() ?? {}) {
+  if (ui.speechRecognitionSupportDetail) {
+    ui.speechRecognitionSupportDetail.textContent = speechStatus.supported
+      ? speechStatus.secureContext
+        ? "supported + secure"
+        : "supported, insecure context"
+      : "unsupported";
+  }
+
+  if (ui.speechRecognitionStateDetail) {
+    ui.speechRecognitionStateDetail.textContent = speechStatus.listening
+      ? "listening"
+      : speechStatus.alwaysListening
+        ? `waiting restart (${speechStatus.restartBackoffMs ?? 0}ms)`
+        : "stopped";
+  }
+
+  if (ui.speechRecognitionAttemptCount) {
+    ui.speechRecognitionAttemptCount.textContent = String(speechStatus.startAttemptCount ?? 0);
+  }
+
+  if (ui.speechRecognitionResultCount) {
+    ui.speechRecognitionResultCount.textContent =
+      `${speechStatus.finalResultCount ?? 0} final / ${speechStatus.interimResultCount ?? 0} interim`;
+  }
+
+  if (ui.speechRecognitionLastResult) {
+    ui.speechRecognitionLastResult.textContent = speechStatus.lastResultAt
+      ? `${Math.max(0, Math.round((Date.now() - Number(speechStatus.lastResultAt)) / 1000))}s ago`
+      : "--";
+  }
+
+  if (ui.speechRecognitionLastError) {
+    ui.speechRecognitionLastError.textContent = speechStatus.lastError
+      ? `${speechStatus.lastError}${speechStatus.lastErrorAt ? ` · ${Math.max(0, Math.round((Date.now() - Number(speechStatus.lastErrorAt)) / 1000))}s ago` : ""}`
+      : "--";
+    ui.speechRecognitionLastError.classList.toggle("voice-state--warn", Boolean(speechStatus.lastError));
+  }
+
+  renderSpeechRecognitionDebugLog(speechStatus.debugEvents ?? []);
+}
+
+function renderSpeechRecognitionDebugLog(events = []) {
+  if (!ui.speechRecognitionDebugLog) {
+    return;
+  }
+
+  ui.speechRecognitionDebugLog.replaceChildren();
+
+  if (!events.length) {
+    const empty = document.createElement("div");
+    empty.className = "speech-debug-entry";
+    empty.innerHTML = "<strong>No speech recognition events yet</strong><span>Start listening, then speak near the phone.</span>";
+    ui.speechRecognitionDebugLog.append(empty);
+    return;
+  }
+
+  events.slice(0, 8).forEach((event) => {
+    const item = document.createElement("div");
+    item.className = `speech-debug-entry speech-debug-entry--${event.type ?? "event"}`;
+
+    const title = document.createElement("strong");
+    title.textContent = `${event.type ?? "event"} · ${event.timestamp ? new Date(event.timestamp).toLocaleTimeString() : "--"}`;
+
+    const detail = document.createElement("span");
+    detail.textContent = event.message ?? "";
+
+    item.append(title, detail);
+    ui.speechRecognitionDebugLog.append(item);
+  });
 }
 
 function updateVoiceUi() {
