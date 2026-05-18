@@ -18,7 +18,11 @@ assert.equal(speechGate.processTranscript({ text: "LOOI come here", confidence: 
 speechGate.openAttentionWindow("smoke");
 assert.equal(speechGate.processTranscript({ text: "come here", confidence: 1 }).classification, "direct_to_robot");
 speechGate.closeAttentionWindow("smoke");
-assert.ok(["possible_direct_command", "background"].includes(speechGate.processTranscript({ text: "come here", confidence: 1 }).classification));
+assert.equal(speechGate.processTranscript({ text: "come here", confidence: 1 }).classification, "direct_to_robot");
+const openSpeech = speechGate.processTranscript({ text: "people talking about water", confidence: 1 });
+assert.equal(openSpeech.classification, "open_speech");
+assert.equal(openSpeech.accepted, true);
+assert.equal(openSpeech.shouldTriggerBrain, true);
 const liveGate = new SpeechGate({
   logger: () => {},
   getContext: () => ({
@@ -157,8 +161,8 @@ engineBus.publish("camera_observation", {
 await wait(20);
 assert.equal(adapterCalls, 0);
 engineBus.publish("user_speech", {
-  text: "looi hello",
-  classification: "direct_to_robot",
+  text: "random room speech",
+  classification: "open_speech",
   accepted: true,
   shouldTriggerBrain: true
 });

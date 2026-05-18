@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { AttentionMotorController } from "../public/js/embodiment/attentionMotorController.js";
+import { normalizeBodyLanguage } from "../public/js/embodiment/bodyLanguageNormalizer.js";
 import { EmbodiedActionRouter } from "../public/js/embodiment/embodiedActionRouter.js";
 import { IdleMicroBehavior } from "../public/js/embodiment/idleMicroBehavior.js";
 import {
@@ -46,6 +47,7 @@ macros.forEach((macro) => {
 
 const faceEvents = [];
 const motions = [];
+const spoken = [];
 const stops = [];
 const lifeState = {
   mood: "neutral",
@@ -100,8 +102,17 @@ const commandQueue = {
     return false;
   }
 };
+const voiceOutput = {
+  async speak(payload) {
+    spoken.push(payload);
+    await wait(20);
+    return { executed: true, payload };
+  },
+  cancel() {}
+};
 const sequencer = new MotionMacroSequencer({
   face: lifeEngine.face,
+  voiceOutput,
   commandQueue,
   lifeEngine,
   logger: () => {}
@@ -150,6 +161,7 @@ const stopSequencer = new MotionMacroSequencer({
 const stopResult = await stopSequencer.playMacro("scared_stop", { allowMotion: false });
 assert.equal(stopResult.ok, true);
 assert.equal(stops.length > 0, true);
+lifeState.stopRespectUntil = 0;
 
 const scheduler = new PriorityScheduler();
 const order = [];
@@ -178,6 +190,7 @@ await low;
 
 const routerSequencer = new MotionMacroSequencer({
   face: lifeEngine.face,
+  voiceOutput,
   commandQueue,
   lifeEngine,
   logger: () => {}
@@ -196,6 +209,98 @@ const stop = router.mapActionToMacro({ type: "stop", args: {} });
 assert.equal(stop.macroObject.name, "scared_stop");
 const unknown = router.mapActionToMacro({ type: "raw_pwm", args: {} });
 assert.equal(unknown.ok, false);
+
+const bodyLanguage = normalizeBodyLanguage(["wiggle", "look up", "invented dance"], { iterate: true });
+assert.equal(bodyLanguage.entries.some((entry) => entry.name === "tiny_wiggle"), true);
+assert.equal(bodyLanguage.entries.some((entry) => entry.name === "look_up"), true);
+assert.equal(bodyLanguage.ignored.includes("invented dance"), true);
+assert.equal(bodyLanguage.frames.filter((frame) => frame.type === "motion").length > 0, true);
+
+const performSpeechOnly = router.mapActionToMacro({
+  type: "perform",
+  args: {
+    speech: { text: "Hi there.", tone: "happy" },
+    bodyLanguage: [],
+    movement: { intent: "none" },
+    timing: "parallel"
+  }
+});
+assert.equal(performSpeechOnly.macroObject.name, "perform_embodied");
+assert.equal(validateMacro(performSpeechOnly.macroObject).ok, true);
+
+const performDisarmed = await router.execute({
+  type: "perform",
+  args: {
+    speech: { text: "I can wiggle softly.", tone: "happy" },
+    bodyLanguage: ["wiggle"],
+    iterateBodyLanguage: true,
+    movement: { intent: "none" },
+    timing: "parallel"
+  },
+  source: "local_brain"
+}, {
+  allowMotion: false,
+  allowSpeech: true,
+  reason: "smoke_perform_disarmed"
+});
+assert.equal(performDisarmed.ok, true);
+assert.equal(performDisarmed.result.partial, true);
+assert.equal(performDisarmed.result.skippedFrames.includes("motion_not_allowed"), true);
+assert.equal(spoken.some((entry) => entry.text === "I can wiggle softly."), true);
+
+const performArmed = await router.execute({
+  type: "perform",
+  args: {
+    speech: { text: "Coming closer.", tone: "happy" },
+    bodyLanguage: ["tiny forward"],
+    movement: { intent: "approach_user", style: "gentle" },
+    timing: "parallel"
+  },
+  source: "local_brain"
+}, {
+  allowMotion: true,
+  allowSpeech: true,
+  reason: "smoke_perform_armed"
+});
+assert.equal(performArmed.ok, true);
+assert.equal(motions.some((motion) => motion.label === "perform_approach_user"), true);
+
+const interruptPerformSequencer = new MotionMacroSequencer({
+  face: lifeEngine.face,
+  voiceOutput: {
+    async speak(payload) {
+      spoken.push(payload);
+      await wait(160);
+      return { executed: true, payload };
+    },
+    cancel() {}
+  },
+  commandQueue,
+  lifeEngine,
+  logger: () => {}
+});
+const interruptRouter = new EmbodiedActionRouter({
+  macroSequencer: interruptPerformSequencer,
+  lifeEngine,
+  logger: () => {}
+});
+const runningPerform = interruptRouter.execute({
+  type: "perform",
+  args: {
+    speech: { text: "This should be interrupted.", tone: "soft" },
+    bodyLanguage: ["wiggle"],
+    iterateBodyLanguage: true,
+    timing: "parallel"
+  },
+  source: "local_brain"
+}, {
+  allowMotion: true,
+  allowSpeech: true,
+  reason: "smoke_perform_interrupt"
+});
+setTimeout(() => interruptPerformSequencer.interrupt("smoke_perform_stop", 100), 20);
+const interruptedPerform = await runningPerform;
+assert.equal(interruptedPerform.result.interrupted, true);
 
 const idle = new IdleMicroBehavior({
   lifeEngine,

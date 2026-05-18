@@ -82,6 +82,24 @@ assert.match(fireworksStatus.details.error, /FIREWORKS_API_KEY/);
 
 assert.deepEqual(parseBrainResponse({ text: null, actions: [] }).actions, []);
 assert.equal(parseBrainResponse('{"actions":[{"type":"express","args":{"emotion":"happy"}}]}').actions[0].type, "express");
+const performResponse = normalizeBrainResponse(parseBrainResponse({
+  actions: [
+    {
+      type: "perform",
+      args: {
+        speech: { text: "I can come closer.", tone: "happy" },
+        bodyLanguage: ["wiggle", "tiny forward"],
+        iterateBodyLanguage: true,
+        movement: { intent: "approach_user", style: "gentle" },
+        timing: "parallel"
+      }
+    }
+  ]
+}), { provider: "test", model: "test" });
+assert.equal(performResponse.ok, true);
+assert.equal(performResponse.actions[0].type, "perform");
+assert.equal(performResponse.actions[0].args.speech.text, "I can come closer.");
+assert.equal(performResponse.actions[0].args.bodyLanguage[0], "wiggle");
 assert.equal(stripMarkdownCodeFence("```json\n{\"ok\":true}\n```"), '{"ok":true}');
 assert.equal(parseBrainResponse("```json\n{\"actions\":[{\"type\":\"stop\",\"args\":{}}]}\n```").actions[0].type, "stop");
 const invalid = normalizeBrainResponse(parseBrainResponse("not json"), { provider: "test", model: "test" });

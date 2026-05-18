@@ -77,7 +77,8 @@ export class AttentionSystem {
       "direct_to_robot",
       "possible_direct_command",
       "question",
-      "social_comment"
+      "social_comment",
+      "open_speech"
     ].includes(classification) || ["attentive", "conversation"].includes(this.mode);
   }
 

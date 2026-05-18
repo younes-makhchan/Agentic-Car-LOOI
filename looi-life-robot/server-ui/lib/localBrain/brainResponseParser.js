@@ -1,6 +1,7 @@
 export const LOCAL_BRAIN_ALLOWED_ACTIONS = new Set([
   "none",
   "speak",
+  "perform",
   "express",
   "drive",
   "stop",

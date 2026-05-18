@@ -184,7 +184,7 @@ npm run smoke:local-brain-server
 
 ## Local-First Step 3: Always-Listening Local Mind Runtime
 
-The browser mic can now behave like robot ears. Always listening does not mean always thinking: `SpeechGate` filters transcripts, wake names open an attention window, background speech is ignored, and stop/freeze bypasses the model for immediate local stop handling.
+The browser mic can now behave like robot ears. Current test mode sends every non-empty final transcript to the Local Brain so the LLM can decide whether to act, speak, or return `none`. Wake names still open an attention window, deterministic intents still attach a suggested action, and stop/freeze bypasses the model for immediate local stop handling.
 
 Runtime flow:
 
@@ -203,7 +203,7 @@ microphone / typed text / camera / life events
 Safety rules:
 - Local Motion Armed is false by default.
 - Allow Autonomous Movement is false by default.
-- Speech recognition can restart automatically, but model calls only happen for relevant speech/events.
+- Speech recognition can restart automatically; non-empty speech is sent to the Local Brain, while autonomous/camera events do not call the LLM by default.
 - Stop/freeze/don't move is handled immediately without waiting for the model.
 - Physical motion still requires Local Motion Armed and goes through `ToolExecutor`.
 - Autonomous physical movement also requires Allow Autonomous Movement.
@@ -222,11 +222,12 @@ Simulator test:
 10. Type or say `come here` again and confirm simulator approach behavior.
 11. Type or say `stop` and confirm immediate stop without model delay.
 
-Background speech test:
+Open speech test:
 
 1. Close/let expire the attention window.
 2. Say an unrelated phrase.
-3. Confirm classification is background/noise and no model call is made.
+3. Confirm classification is `open_speech` and the Local Brain receives it.
+4. Confirm the model may choose `none` if no action is needed.
 
 Autonomous test:
 

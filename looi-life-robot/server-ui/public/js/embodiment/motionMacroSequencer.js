@@ -121,11 +121,20 @@ export class MotionMacroSequencer {
         this.activeFrame = frameResult.frame;
         const result = await this.applyFrame(frameResult.frame, context);
 
+        if (Array.isArray(result.skippedFrames) && result.skippedFrames.length) {
+          skippedFrames.push(...result.skippedFrames);
+          partial = true;
+        }
+
+        if (result.partial) {
+          partial = true;
+        }
+
         if (result.skipped) {
           skippedFrames.push(result.reason ?? result.type ?? frameResult.frame.type);
           partial = true;
         } else {
-          executedFrames += 1;
+          executedFrames += Number(result.executedFrames ?? 1);
         }
 
         if (result.interrupted || token !== this.playToken) {
@@ -212,6 +221,8 @@ export class MotionMacroSequencer {
         return this.applyMotionFrame(frame, context);
       case "speech":
         return this.applySpeechFrame(frame, context);
+      case "composite":
+        return this.applyCompositeFrame(frame, context);
       case "event":
         return this.applyEventFrame(frame, context);
       case "pause":
@@ -299,6 +310,58 @@ export class MotionMacroSequencer {
     }
 
     return { ok: true, type: "speech", detail: result };
+  }
+
+  async applyCompositeFrame(frame, context) {
+    const children = Array.isArray(frame.frames) ? frame.frames : [];
+    if (children.length === 0) {
+      return { ok: true, skipped: true, type: "composite", reason: "composite_empty" };
+    }
+
+    const runChild = async (child) => {
+      const normalized = normalizeMacroFrame(child);
+      if (!normalized.ok) {
+        return { ok: true, skipped: true, type: "composite_child", reason: normalized.error };
+      }
+      return this.applyFrame(normalized.frame, context);
+    };
+
+    const results = [];
+
+    if (frame.mode === "parallel") {
+      results.push(...(await Promise.all(children.map((child) => runChild(child)))));
+    } else {
+      for (const child of children) {
+        const result = await runChild(child);
+        results.push(result);
+        if (result.interrupted || context.token !== this.playToken) {
+          break;
+        }
+      }
+    }
+
+    const skippedFrames = results
+      .filter((result) => result.skipped || result.partial || result.skippedFrames?.length)
+      .flatMap((result) => result.skippedFrames?.length
+        ? result.skippedFrames
+        : [result.reason ?? result.type ?? "composite_child_skipped"]);
+    const interrupted = results.some((result) => result.interrupted) || context.token !== this.playToken;
+    const executedFrames = results.reduce((total, result) => {
+      if (result.skipped) {
+        return total;
+      }
+      return total + Number(result.executedFrames ?? 1);
+    }, 0);
+
+    return {
+      ok: true,
+      type: "composite",
+      executedFrames,
+      skippedFrames,
+      partial: skippedFrames.length > 0,
+      interrupted,
+      reason: interrupted ? "interrupted" : skippedFrames.length ? "partial" : "completed"
+    };
   }
 
   async applyPauseFrame(frame, context) {

@@ -7,6 +7,7 @@ const PHYSICAL_ACTIONS = new Set([
 ]);
 
 const ACTION_TYPES = new Set([
+  "perform",
   "speak",
   "express",
   "drive",
@@ -140,6 +141,8 @@ export class ToolExecutor {
 
   async executeTool(type, args = {}, action = {}) {
     switch (type) {
+      case "perform":
+        return this.executePerform(args, action);
       case "speak":
         return this.executeSpeak(args, action);
       case "express":
@@ -178,6 +181,39 @@ export class ToolExecutor {
           message: `Unknown action type: ${type}`
         });
     }
+  }
+
+  async executePerform(args = {}, action = {}) {
+    const normalizedArgs = normalizePerformArgs(args);
+    const wantsMotion = performRequestsMotion(normalizedArgs);
+    const motionPermission = this.performMotionPermission(action, wantsMotion);
+    const allowSpeech = !normalizedArgs.speech?.text || this.isSpeechAllowed(action);
+
+    this.log(
+      `STEP 4 PERFORM_PLAN speech=${Boolean(normalizedArgs.speech?.text)} bodyLanguage=${safeStringify(normalizedArgs.bodyLanguage)} movement=${safeStringify(normalizedArgs.movement)} motionAllowed=${motionPermission.allowed}${motionPermission.reason ? ` reason=${motionPermission.reason}` : ""}`
+    );
+
+    const routed = await this.executeEmbodiedRoute(action, {
+      physical: wantsMotion,
+      allowMotion: motionPermission.allowed,
+      allowSpeech,
+      allowCamera: false,
+      args: normalizedArgs
+    });
+    if (routed) {
+      return routed;
+    }
+
+    if (normalizedArgs.speech?.text) {
+      return this.executeSpeak(normalizedArgs.speech, action);
+    }
+
+    return this.buildResult("rejected", {
+      action,
+      executed: false,
+      physical: wantsMotion,
+      message: "Perform action could not be routed."
+    });
   }
 
   async executeSpeak(args = {}, action = {}) {
@@ -860,6 +896,35 @@ export class ToolExecutor {
     return PHYSICAL_ACTIONS.has(type);
   }
 
+  performMotionPermission(action = {}, requested = false) {
+    if (!requested) {
+      return { allowed: false, reason: "motion_not_requested" };
+    }
+
+    if (!this.isMotionArmed(action)) {
+      return { allowed: false, reason: `${this.policyLabel(action)}_motion_not_armed` };
+    }
+
+    if (
+      this.isLocalBrainAction(action) &&
+      action.autonomous === true &&
+      this.policy().allowAutonomousMovement !== true
+    ) {
+      return { allowed: false, reason: "autonomous_movement_disabled" };
+    }
+
+    const stopRespectUntil = Number(this.lifeEngine?.getState?.().stopRespectUntil || 0);
+    if (stopRespectUntil > Date.now()) {
+      return { allowed: false, reason: "stop_cooldown_active" };
+    }
+
+    if (!this.robotClient?.isConnected?.()) {
+      return { allowed: false, reason: "robot_not_connected" };
+    }
+
+    return { allowed: true, reason: "ok" };
+  }
+
   isCameraAction(type) {
     return CAMERA_ACTIONS.has(type);
   }
@@ -1224,6 +1289,57 @@ function normalizeShortText(value, maxLength) {
 
 function normalizeDirection(direction) {
   return ["left", "right", "both", "center"].includes(direction) ? direction : "center";
+}
+
+function normalizePerformArgs(args = {}) {
+  const speech = args.speech && typeof args.speech === "object" && !Array.isArray(args.speech)
+    ? args.speech
+    : {};
+  const movement = args.movement && typeof args.movement === "object" && !Array.isArray(args.movement)
+    ? args.movement
+    : {};
+  const expression = args.expression && typeof args.expression === "object" && !Array.isArray(args.expression)
+    ? args.expression
+    : {};
+  const timing = ["parallel", "sequence"].includes(args.timing) ? args.timing : "parallel";
+  const bodyLanguage = Array.isArray(args.bodyLanguage)
+    ? args.bodyLanguage
+    : args.bodyLanguage
+      ? [args.bodyLanguage]
+      : [];
+
+  return {
+    speech: {
+      text: normalizeShortText(speech.text ?? args.text, 240),
+      tone: normalizeShortText(speech.tone ?? args.tone, 40) || "soft"
+    },
+    expression: {
+      emotion: normalizeShortText(expression.emotion ?? args.emotion, 40),
+      intensity: clampNumber(expression.intensity ?? args.intensity, 0, 1.5, 0.8)
+    },
+    bodyLanguage: bodyLanguage
+      .map((entry) => normalizeShortText(entry, 80))
+      .filter(Boolean)
+      .slice(0, 6),
+    iterateBodyLanguage: args.iterateBodyLanguage === true,
+    movement: {
+      intent: normalizeShortText(movement.intent ?? movement.action ?? args.intent, 60) || "none",
+      style: normalizeShortText(movement.style ?? args.style, 40) || "gentle",
+      direction: normalizeShortText(movement.direction ?? args.direction, 40)
+    },
+    timing
+  };
+}
+
+function performRequestsMotion(args = {}) {
+  const movementIntent = args.movement?.intent;
+  if (movementIntent && movementIntent !== "none") {
+    return true;
+  }
+
+  return (args.bodyLanguage ?? []).some((entry) =>
+    /\b(wiggle|nod|yes|no|shake|forward|back|backward|turn|left|right|shift|scan|around)\b/i.test(entry)
+  );
 }
 
 function normalizeMemoryType(memoryType) {

@@ -152,16 +152,9 @@ export function classifySpeech(text, context = {}) {
   const attentionWindowOpen = Boolean(context.attentionWindowOpen);
   const directIntent = inferSuggestedIntent(textWithoutName || normalizedText);
   const isTyped = source === "typed";
-  const lifeState = context.lifeState ?? {};
-  const userVisible = Boolean(lifeState.userVisible);
-  const userNear = ["near", "medium", "close"].includes(String(lifeState.userDistance ?? "").toLowerCase());
-  const liveMindActive = Boolean(
-    context.localPolicy?.localBrainEnabled &&
-    (context.speechStatus?.alwaysListening || context.speechStatus?.listening)
-  );
 
-  if (!normalizedText || confidence < 0.15) {
-    return result("noise", false, "low", false, false, false, normalizedText, "empty_or_low_confidence");
+  if (!normalizedText) {
+    return result("noise", false, "low", false, false, false, normalizedText, "empty_transcript");
   }
 
   if (isLocalStopPhrase(normalizedText)) {
@@ -169,7 +162,7 @@ export function classifySpeech(text, context = {}) {
   }
 
   if (hasWakeName && !textWithoutName) {
-    return result("wake_name", true, "high", false, true, false, normalizedText, "wake_name_only");
+    return result("wake_name", true, "high", true, true, false, normalizedText, "wake_name_only");
   }
 
   if (hasWakeName) {
@@ -186,63 +179,56 @@ export function classifySpeech(text, context = {}) {
     );
   }
 
-  if (attentionWindowOpen || isTyped) {
-    if (directIntent || looksLikeQuestion(normalizedText) || looksSocial(normalizedText)) {
-      return result(
-        directIntent ? "direct_to_robot" : looksLikeQuestion(normalizedText) ? "question" : "social_comment",
-        true,
-        "normal",
-        true,
-        true,
-        false,
-        normalizedText,
-        attentionWindowOpen ? "attention_window_open" : "typed_input",
-        directIntent
-      );
-    }
-  }
-
-  if (
-    liveMindActive &&
-    confidence >= 0.45 &&
-    (startsWithGreeting(normalizedText) || looksLikeQuestion(normalizedText) || looksLikeAssistantRequest(normalizedText))
-  ) {
+  if (directIntent) {
     return result(
-      directIntent ? "direct_to_robot" : looksLikeQuestion(normalizedText) ? "question" : "social_comment",
+      "direct_to_robot",
       true,
       "normal",
       true,
-      true,
+      attentionWindowOpen || isTyped,
       false,
       normalizedText,
-      "live_mind_social_or_request",
+      directIntent.action === "greeting" ? "direct_greeting" : "direct_intent",
       directIntent
     );
   }
 
-  if ((userVisible || userNear) && directIntent && confidence >= 0.45) {
+  if (looksLikeQuestion(normalizedText) || looksLikeAssistantRequest(normalizedText)) {
     return result(
-      "possible_direct_command",
+      looksLikeQuestion(normalizedText) ? "question" : "direct_to_robot",
       true,
       "normal",
       true,
-      false,
+      attentionWindowOpen || isTyped,
       false,
       normalizedText,
-      "visible_user_possible_command",
-      directIntent
+      looksLikeQuestion(normalizedText) ? "question_to_llm" : "assistant_request_to_llm"
     );
   }
 
-  if (directIntent && isTyped) {
-    return result("direct_to_robot", true, "normal", true, true, false, normalizedText, "typed_direct_command", directIntent);
+  if (looksSocial(normalizedText)) {
+    return result(
+      "social_comment",
+      true,
+      "normal",
+      true,
+      attentionWindowOpen || isTyped,
+      false,
+      normalizedText,
+      "social_speech_to_llm"
+    );
   }
 
-  if (confidence < 0.45) {
-    return result("noise", false, "low", false, false, false, normalizedText, "low_confidence_background");
-  }
-
-  return result("background", false, "low", false, false, false, normalizedText, "not_addressed_to_robot");
+  return result(
+    "open_speech",
+    true,
+    confidence < 0.45 ? "low" : "normal",
+    true,
+    attentionWindowOpen || isTyped,
+    false,
+    normalizedText,
+    confidence < 0.45 ? "low_confidence_sent_to_llm" : "speech_sent_to_llm"
+  );
 }
 
 export function normalizeSpeechText(text) {
@@ -330,10 +316,6 @@ function looksLikeQuestion(text) {
 
 function looksSocial(text) {
   return /\b(hello|hi|hey|good morning|good night|thank you|thanks)\b/.test(normalizeSpeechText(text));
-}
-
-function startsWithGreeting(text) {
-  return /^(hello|hi|hey|good morning|good night)\b/.test(normalizeSpeechText(text));
 }
 
 function looksLikeAssistantRequest(text) {

@@ -1744,7 +1744,7 @@ async function handleGatedTranscript(transcript = {}) {
 
   if (
     gateResult.accepted &&
-    ["direct_to_robot", "possible_direct_command", "question", "social_comment"].includes(gateResult.classification)
+    ["direct_to_robot", "possible_direct_command", "question", "social_comment", "open_speech"].includes(gateResult.classification)
   ) {
     attentionSystem?.enterConversation?.(
       gateResult.classification,
@@ -2038,13 +2038,14 @@ function parseWakeNames(value) {
 
 function fallbackGateResult(text, source = "speech") {
   const typed = source === "typed";
+  const stopPhrase = isLocalStopPhrase(text);
   return {
-    accepted: typed,
-    classification: typed ? "direct_to_robot" : "background",
-    priority: typed ? "normal" : "low",
-    shouldTriggerBrain: typed,
+    accepted: true,
+    classification: stopPhrase ? "safety_stop" : typed ? "direct_to_robot" : "open_speech",
+    priority: stopPhrase ? "critical" : typed ? "normal" : "low",
+    shouldTriggerBrain: !stopPhrase,
     shouldOpenAttention: typed,
-    shouldImmediateStop: isLocalStopPhrase(text),
+    shouldImmediateStop: stopPhrase,
     normalizedText: String(text ?? "").trim().toLowerCase(),
     reason: "speech_gate_unavailable",
     suggestedIntent: null

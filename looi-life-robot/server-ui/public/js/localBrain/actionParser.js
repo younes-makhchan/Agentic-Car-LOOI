@@ -1,6 +1,7 @@
 export const LOCAL_BRAIN_ALLOWED_ACTIONS = new Set([
   "none",
   "speak",
+  "perform",
   "express",
   "drive",
   "stop",
@@ -27,7 +28,16 @@ const RAW_MOTOR_KEYS = new Set([
   "leftMotor",
   "rightMotor",
   "motor_pwm",
-  "motorPwm"
+  "motorPwm",
+  "code",
+  "command",
+  "shell",
+  "exec",
+  "network",
+  "url",
+  "file",
+  "path",
+  "filesystem"
 ]);
 
 export function parseBrainResponse(raw) {
@@ -120,7 +130,7 @@ export function validateBrainAction(action) {
   if (unsafeKey) {
     return {
       ok: false,
-      error: `Raw motor/PWM field is not allowed: ${unsafeKey}`
+      error: `Unsafe action field is not allowed: ${unsafeKey}`
     };
   }
 

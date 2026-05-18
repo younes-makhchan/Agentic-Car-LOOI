@@ -349,6 +349,21 @@ export function normalizeMacroFrame(frame = {}) {
     normalized.payload = frame.payload && typeof frame.payload === "object" ? { ...frame.payload } : {};
   }
 
+  if (type === "composite") {
+    normalized.mode = frame.mode === "parallel" ? "parallel" : "sequence";
+    normalized.frames = Array.isArray(frame.frames)
+      ? frame.frames
+          .slice(0, 12)
+          .map((child) => normalizeMacroFrame(child))
+          .filter((child) => child.ok)
+          .map((child) => child.frame)
+      : [];
+
+    if (normalized.frames.length === 0) {
+      return { ok: false, error: "composite_frame_requires_children" };
+    }
+  }
+
   return { ok: true, frame: normalized };
 }
 
