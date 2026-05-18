@@ -181,12 +181,12 @@ engine.setAdapter({
     };
   }
 });
-const rejected = await engine.thinkNow("manual", {
+const disarmed = await engine.thinkNow("manual", {
   type: "user_text",
   payload: { text: "come here", accepted: true, shouldTriggerBrain: true }
 });
-assert.equal(rejected.results[0].status, "rejected");
-assert.equal(rejected.results[0].physical, true);
+assert.equal(disarmed.results[0].status, "completed");
+assert.equal(disarmed.results[0].type, "perform");
 
 engine.setAdapter({
   async isAvailable() {
@@ -203,7 +203,7 @@ engine.setAdapter({
 });
 const stopped = await engine.thinkNow("manual");
 assert.equal(stopped.results[0].status, "completed");
-assert.equal(executedActions.some((action) => action.type === "stop"), true);
+assert.equal(executedActions.some((action) => action.type === "perform" && action.args.movement.includes("still")), true);
 engine.stop();
 
 policy = {

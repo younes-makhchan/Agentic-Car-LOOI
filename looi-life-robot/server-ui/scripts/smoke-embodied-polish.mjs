@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { AttentionMotorController } from "../public/js/embodiment/attentionMotorController.js";
-import { normalizeBodyLanguage } from "../public/js/embodiment/bodyLanguageNormalizer.js";
+import { compileMovementFrames } from "../public/js/embodiment/movementCatalog.js";
 import { EmbodiedActionRouter } from "../public/js/embodiment/embodiedActionRouter.js";
 import { IdleMicroBehavior } from "../public/js/embodiment/idleMicroBehavior.js";
 import {
@@ -210,31 +210,54 @@ assert.equal(stop.macroObject.name, "scared_stop");
 const unknown = router.mapActionToMacro({ type: "raw_pwm", args: {} });
 assert.equal(unknown.ok, false);
 
-const bodyLanguage = normalizeBodyLanguage(["wiggle", "look up", "invented dance"], { iterate: true });
-assert.equal(bodyLanguage.entries.some((entry) => entry.name === "tiny_wiggle"), true);
-assert.equal(bodyLanguage.entries.some((entry) => entry.name === "look_up"), true);
-assert.equal(bodyLanguage.ignored.includes("invented dance"), true);
-assert.equal(bodyLanguage.frames.filter((frame) => frame.type === "motion").length > 0, true);
+const movementPlan = compileMovementFrames(["excited_wiggle", "look_up", "invented_dance"], { iterate: true });
+assert.equal(movementPlan.names.includes("excited_wiggle"), true);
+assert.equal(movementPlan.names.includes("look_up"), true);
+assert.equal(movementPlan.ignored.includes("invented_dance"), true);
+assert.equal(movementPlan.frames.filter((frame) => frame.type === "motion").length > 0, true);
+const canonicalMovement = compileMovementFrames(["excited_wiggle", "move_forward_tiny"], { iterate: false });
+assert.equal(canonicalMovement.names.includes("excited_wiggle"), true);
+assert.equal(canonicalMovement.names.includes("move_forward_tiny"), true);
 
 const performSpeechOnly = router.mapActionToMacro({
   type: "perform",
   args: {
     speech: { text: "Hi there.", tone: "happy" },
-    bodyLanguage: [],
-    movement: { intent: "none" },
+    movement: ["still"],
     timing: "parallel"
   }
 });
 assert.equal(performSpeechOnly.macroObject.name, "perform_embodied");
 assert.equal(validateMacro(performSpeechOnly.macroObject).ok, true);
 
+const performNewMovementShape = router.mapActionToMacro({
+  type: "perform",
+  args: {
+    speech: { text: "I can wiggle.", tone: "happy" },
+    movement: ["gentle_wiggle", "look_up"],
+    iterateMovement: true,
+    timing: "parallel"
+  }
+});
+assert.equal(performNewMovementShape.macroObject.name, "perform_embodied");
+assert.equal(validateMacro(performNewMovementShape.macroObject).ok, true);
+
+const movementOnly = router.mapActionToMacro({
+  type: "movement",
+  args: {
+    movement: ["excited_wiggle", "move_backward_tiny"],
+    timing: "sequence"
+  }
+});
+assert.equal(movementOnly.macroObject.name, "movement_embodied");
+assert.equal(validateMacro(movementOnly.macroObject).ok, true);
+
 const performDisarmed = await router.execute({
   type: "perform",
   args: {
     speech: { text: "I can wiggle softly.", tone: "happy" },
-    bodyLanguage: ["wiggle"],
-    iterateBodyLanguage: true,
-    movement: { intent: "none" },
+    movement: ["gentle_wiggle"],
+    iterateMovement: true,
     timing: "parallel"
   },
   source: "local_brain"
@@ -252,8 +275,7 @@ const performArmed = await router.execute({
   type: "perform",
   args: {
     speech: { text: "Coming closer.", tone: "happy" },
-    bodyLanguage: ["tiny forward"],
-    movement: { intent: "approach_user", style: "gentle" },
+    movement: ["move_forward_tiny"],
     timing: "parallel"
   },
   source: "local_brain"
@@ -263,7 +285,7 @@ const performArmed = await router.execute({
   reason: "smoke_perform_armed"
 });
 assert.equal(performArmed.ok, true);
-assert.equal(motions.some((motion) => motion.label === "perform_approach_user"), true);
+assert.equal(motions.some((motion) => motion.label === "perform_tiny_forward"), true);
 
 const interruptPerformSequencer = new MotionMacroSequencer({
   face: lifeEngine.face,
@@ -288,8 +310,8 @@ const runningPerform = interruptRouter.execute({
   type: "perform",
   args: {
     speech: { text: "This should be interrupted.", tone: "soft" },
-    bodyLanguage: ["wiggle"],
-    iterateBodyLanguage: true,
+    movement: ["excited_wiggle"],
+    iterateMovement: true,
     timing: "parallel"
   },
   source: "local_brain"

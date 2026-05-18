@@ -1,3 +1,5 @@
+import { movementRequestsMotion } from "../embodiment/movementCatalog.js";
+
 const PHYSICAL_ACTIONS = new Set([
   "drive",
   "approach_user",
@@ -9,6 +11,7 @@ const PHYSICAL_ACTIONS = new Set([
 const ACTION_TYPES = new Set([
   "perform",
   "speak",
+  "movement",
   "express",
   "drive",
   "stop",
@@ -145,6 +148,8 @@ export class ToolExecutor {
         return this.executePerform(args, action);
       case "speak":
         return this.executeSpeak(args, action);
+      case "movement":
+        return this.executeMovement(args, action);
       case "express":
         return this.executeExpress(args, action);
       case "drive":
@@ -190,7 +195,7 @@ export class ToolExecutor {
     const allowSpeech = !normalizedArgs.speech?.text || this.isSpeechAllowed(action);
 
     this.log(
-      `STEP 4 PERFORM_PLAN speech=${Boolean(normalizedArgs.speech?.text)} bodyLanguage=${safeStringify(normalizedArgs.bodyLanguage)} movement=${safeStringify(normalizedArgs.movement)} motionAllowed=${motionPermission.allowed}${motionPermission.reason ? ` reason=${motionPermission.reason}` : ""}`
+      `STEP 4 PERFORM_PLAN speech=${Boolean(normalizedArgs.speech?.text)} movement=${safeStringify(normalizedArgs.movement)} motionAllowed=${motionPermission.allowed}${motionPermission.reason ? ` reason=${motionPermission.reason}` : ""}`
     );
 
     const routed = await this.executeEmbodiedRoute(action, {
@@ -213,6 +218,34 @@ export class ToolExecutor {
       executed: false,
       physical: wantsMotion,
       message: "Perform action could not be routed."
+    });
+  }
+
+  async executeMovement(args = {}, action = {}) {
+    const normalizedArgs = sanitizeMovementActionArgs(args);
+    const wantsMotion = performRequestsMotion(normalizedArgs);
+    const motionPermission = this.performMotionPermission(action, wantsMotion);
+
+    this.log(
+      `STEP 4 MOVEMENT_PLAN movement=${safeStringify(normalizedArgs.movement)} motionAllowed=${motionPermission.allowed}${motionPermission.reason ? ` reason=${motionPermission.reason}` : ""}`
+    );
+
+    const routed = await this.executeEmbodiedRoute(action, {
+      physical: wantsMotion,
+      allowMotion: motionPermission.allowed,
+      allowSpeech: false,
+      allowCamera: false,
+      args: normalizedArgs
+    });
+    if (routed) {
+      return routed;
+    }
+
+    return this.buildResult("rejected", {
+      action,
+      executed: false,
+      physical: wantsMotion,
+      message: "Movement action could not be routed."
     });
   }
 
@@ -1295,18 +1328,11 @@ function normalizePerformArgs(args = {}) {
   const speech = args.speech && typeof args.speech === "object" && !Array.isArray(args.speech)
     ? args.speech
     : {};
-  const movement = args.movement && typeof args.movement === "object" && !Array.isArray(args.movement)
-    ? args.movement
-    : {};
   const expression = args.expression && typeof args.expression === "object" && !Array.isArray(args.expression)
     ? args.expression
     : {};
   const timing = ["parallel", "sequence"].includes(args.timing) ? args.timing : "parallel";
-  const bodyLanguage = Array.isArray(args.bodyLanguage)
-    ? args.bodyLanguage
-    : args.bodyLanguage
-      ? [args.bodyLanguage]
-      : [];
+  const movement = readMovementNames(args.movement);
 
   return {
     speech: {
@@ -1317,29 +1343,45 @@ function normalizePerformArgs(args = {}) {
       emotion: normalizeShortText(expression.emotion ?? args.emotion, 40),
       intensity: clampNumber(expression.intensity ?? args.intensity, 0, 1.5, 0.8)
     },
-    bodyLanguage: bodyLanguage
+    movement: movement
       .map((entry) => normalizeShortText(entry, 80))
       .filter(Boolean)
       .slice(0, 6),
-    iterateBodyLanguage: args.iterateBodyLanguage === true,
-    movement: {
-      intent: normalizeShortText(movement.intent ?? movement.action ?? args.intent, 60) || "none",
-      style: normalizeShortText(movement.style ?? args.style, 40) || "gentle",
-      direction: normalizeShortText(movement.direction ?? args.direction, 40)
-    },
+    iterateMovement: args.iterateMovement === true,
     timing
   };
 }
 
+function sanitizeMovementActionArgs(args = {}) {
+  const movement = readMovementNames(args.movement)
+    .map((entry) => normalizeShortText(entry, 80))
+    .filter(Boolean)
+    .slice(0, 6);
+
+  return {
+    movement,
+    iterateMovement: args.iterateMovement === true || args.iterate === true,
+    timing: ["parallel", "sequence"].includes(args.timing) ? args.timing : "sequence"
+  };
+}
+
 function performRequestsMotion(args = {}) {
-  const movementIntent = args.movement?.intent;
-  if (movementIntent && movementIntent !== "none") {
-    return true;
+  const movementList = Array.isArray(args.movement) ? args.movement : [];
+  return movementRequestsMotion(movementList, {
+    iterate: args.iterateMovement === true || args.iterate === true
+  });
+}
+
+function readMovementNames(input) {
+  if (input && typeof input === "object" && !Array.isArray(input)) {
+    return [];
   }
 
-  return (args.bodyLanguage ?? []).some((entry) =>
-    /\b(wiggle|nod|yes|no|shake|forward|back|backward|turn|left|right|shift|scan|around)\b/i.test(entry)
-  );
+  const values = Array.isArray(input) ? input : input ? [input] : [];
+  return values
+    .flatMap((value) => String(value ?? "").split(","))
+    .map((value) => value.trim())
+    .filter(Boolean);
 }
 
 function normalizeMemoryType(memoryType) {

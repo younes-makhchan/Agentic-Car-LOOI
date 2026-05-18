@@ -1,8 +1,9 @@
 import { PRIORITY_LEVELS } from "./priorityScheduler.js";
-import { normalizeBodyLanguage } from "./bodyLanguageNormalizer.js";
+import { compileMovementFrames } from "./movementCatalog.js";
 
 const ROUTED_ACTIONS = new Set([
   "perform",
+  "movement",
   "express",
   "speak",
   "drive",
@@ -47,6 +48,11 @@ export class EmbodiedActionRouter {
         return {
           ok: true,
           macroObject: buildPerformMacro(args, context, (message, level) => this.log(message, level))
+        };
+      case "movement":
+        return {
+          ok: true,
+          macroObject: buildMovementMacro(args, context, (message, level) => this.log(message, level))
         };
       case "express":
         return {
@@ -236,7 +242,7 @@ function priorityForAction(action, context) {
 }
 
 function isPhysicalAction(type) {
-  return ["perform", "drive", "approach_user", "retreat", "curious_scan", "excited_wiggle"].includes(type);
+  return ["perform", "movement", "drive", "approach_user", "retreat", "curious_scan", "excited_wiggle"].includes(type);
 }
 
 function buildPerformMacro(args = {}, context = {}, log = () => {}) {
@@ -248,11 +254,11 @@ function buildPerformMacro(args = {}, context = {}, log = () => {}) {
   const expression = normalizeExpression(
     args.expression?.emotion ?? args.emotion ?? toneToExpression(tone)
   );
-  const bodyLanguage = normalizeBodyLanguage(args.bodyLanguage ?? [], {
-    iterate: args.iterateBodyLanguage === true
+  const movementNames = uniqueNames(readMovementNames(args.movement));
+  const movement = compileMovementFrames(movementNames, {
+    iterate: args.iterateMovement === true
   });
-  const movementFrames = movementToFrames(args.movement ?? {}, context);
-  const bodyFrames = [...bodyLanguage.frames, ...movementFrames].slice(0, 16);
+  const movementFrames = movement.frames.slice(0, 16);
   const timing = args.timing === "sequence" ? "sequence" : "parallel";
   const frames = [
     {
@@ -264,8 +270,8 @@ function buildPerformMacro(args = {}, context = {}, log = () => {}) {
     }
   ];
 
-  if (bodyLanguage.ignored.length) {
-    log(`Perform ignored unknown bodyLanguage: ${bodyLanguage.ignored.join(", ")}`, "warn");
+  if (movement.ignored.length) {
+    log(`Perform ignored unknown movement: ${movement.ignored.join(", ")}`, "warn");
   }
 
   if (speech.text && timing === "parallel") {
@@ -281,23 +287,23 @@ function buildPerformMacro(args = {}, context = {}, log = () => {}) {
           expression,
           durationMs: fallbackSpeechDurationMs(speech.text)
         },
-        ...(bodyFrames.length
+        ...(movementFrames.length
           ? [{
               type: "composite",
               mode: "sequence",
               durationMs: 0,
-              frames: bodyFrames
+              frames: movementFrames
             }]
           : [])
       ]
     });
   } else {
-    if (bodyFrames.length) {
+    if (movementFrames.length) {
       frames.push({
         type: "composite",
         mode: "sequence",
         durationMs: 0,
-        frames: bodyFrames
+        frames: movementFrames
       });
     }
 
@@ -323,16 +329,50 @@ function buildPerformMacro(args = {}, context = {}, log = () => {}) {
 
   return {
     name: "perform_embodied",
-    description: "LLM-selected speech, expression, and safe body-language choreography.",
+    description: "LLM-selected speech, expression, and safe movement choreography.",
     priority: context.priority ?? PRIORITY_LEVELS.local_brain_action,
     interruptible: true,
     requiresMotion: false,
     cooldownMs: 0,
-    tags: ["perform", "speech", "body-language"],
+    tags: ["perform", "speech", "movement"],
     frames,
     metadata: {
-      ignoredBodyLanguage: bodyLanguage.ignored,
-      normalizedBodyLanguage: bodyLanguage.entries.map((entry) => entry.name)
+      ignoredMovement: movement.ignored,
+      movement: movement.names
+    }
+  };
+}
+
+function buildMovementMacro(args = {}, context = {}, log = () => {}) {
+  const movementNames = readMovementNames(args.movement);
+  const movement = compileMovementFrames(movementNames, {
+    iterate: args.iterateMovement === true || args.iterate === true
+  });
+  const frames = movement.frames.length
+    ? [{
+        type: "composite",
+        mode: "sequence",
+        durationMs: 0,
+        frames: movement.frames
+      }]
+    : [{ type: "pause", durationMs: 40, allowSkip: true }];
+
+  if (movement.ignored.length) {
+    log(`Movement ignored unknown entries: ${movement.ignored.join(", ")}`, "warn");
+  }
+
+  return {
+    name: "movement_embodied",
+    description: "LLM-selected safe movement.",
+    priority: context.priority ?? PRIORITY_LEVELS.local_brain_action,
+    interruptible: true,
+    requiresMotion: movement.requestedMotion,
+    cooldownMs: 0,
+    tags: ["movement"],
+    frames,
+    metadata: {
+      ignoredMovement: movement.ignored,
+      movement: movement.names
     }
   };
 }
@@ -344,94 +384,29 @@ function normalizeSpeech(value = {}) {
   };
 }
 
-function movementToFrames(movement = {}, context = {}) {
-  const intent = String(movement.intent ?? movement.action ?? "none").trim().toLowerCase();
-  const style = String(movement.style ?? "gentle").trim().toLowerCase();
-
-  switch (intent) {
-    case "approach_user":
-    case "approach":
-      return [
-        frameFace(style === "happy" ? "happy" : "attentive", 0.82, "center", 60),
-        frameMotion(0.12, style === "happy" ? 0.015 : 0, 340, "perform_approach_user")
-      ];
-    case "retreat":
-    case "give_space":
-    case "give me space":
-      return [
-        frameFace("shy", 0.78, "down", 70),
-        frameMotion(-0.11, 0.01, 300, "perform_retreat")
-      ];
-    case "curious_scan":
-    case "scan":
-    case "look_around":
-    case "look around":
-      return [
-        frameFace("curious", 0.84, "left", 90),
-        frameMotion(0, -0.08, 130, "perform_scan_left"),
-        frameFace("curious", 0.84, "right", 90),
-        frameMotion(0, 0.08, 130, "perform_scan_right")
-      ];
-    case "excited_wiggle":
-    case "wiggle":
-      return [
-        frameFace("happy", 0.9, "center", 50),
-        frameMotion(0, -0.08, 105, "perform_excited_wiggle_left"),
-        frameMotion(0, 0.08, 105, "perform_excited_wiggle_right")
-      ];
-    case "drive":
-    case "move":
-      return directionToTinyDriveFrames(movement.direction, context);
-    case "none":
-    case "":
-      return [];
-    default:
-      return [];
+function readMovementNames(input) {
+  if (input && typeof input === "object" && !Array.isArray(input)) {
+    return [];
   }
+
+  const values = Array.isArray(input) ? input : input ? [input] : [];
+  return values
+    .flatMap((value) => String(value ?? "").split(","))
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .slice(0, 8);
 }
 
-function directionToTinyDriveFrames(direction) {
-  const value = String(direction ?? "").trim().toLowerCase();
-  if (["forward", "front", "ahead"].includes(value)) {
-    return [frameMotion(0.06, 0, 140, "perform_tiny_drive_forward")];
-  }
-
-  if (["back", "backward", "behind"].includes(value)) {
-    return [frameMotion(-0.06, 0, 140, "perform_tiny_drive_back")];
-  }
-
-  if (value === "left") {
-    return [frameMotion(0, -0.07, 130, "perform_tiny_drive_left")];
-  }
-
-  if (value === "right") {
-    return [frameMotion(0, 0.07, 130, "perform_tiny_drive_right")];
-  }
-
-  return [];
-}
-
-function frameFace(expression, intensity, eyeDirection, durationMs) {
-  return {
-    type: "face",
-    expression,
-    intensity,
-    eyeDirection,
-    durationMs,
-    allowSkip: true
-  };
-}
-
-function frameMotion(linear, angular, durationMs, label) {
-  return {
-    type: "motion",
-    linear,
-    angular,
-    durationMs,
-    rampMs: 110,
-    label,
-    allowSkip: true
-  };
+function uniqueNames(values = []) {
+  const seen = new Set();
+  return values.filter((value) => {
+    const key = String(value).trim().toLowerCase();
+    if (!key || seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
 }
 
 function normalizeExpression(expression) {

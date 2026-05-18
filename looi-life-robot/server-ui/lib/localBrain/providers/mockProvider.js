@@ -24,25 +24,21 @@ export class MockProvider {
     const policy = context?.policy ?? {};
 
     if (/\b(stop|freeze|halt)\b/.test(text) || /\bdon'?t move\b/.test(text)) {
-      return response({
-        actions: [{ type: "stop", args: { reason: "local_server_stop" } }],
+      return performResponse({
+        policy,
+        text: "Stopping.",
+        movement: ["still"],
         reason: "stop phrase",
         confidence: 0.98
       });
     }
 
     if (/\bcome here\b|\bcome closer\b|\bcome to me\b/.test(text)) {
-      return response({
+      return performResponse({
+        policy,
         text: policy.localMotionArmed ? "Coming a little closer." : "My body is not armed yet.",
-        actions: policy.localMotionArmed
-          ? [
-              { type: "approach_user", args: { style: "gentle", distance: "short" } },
-              { type: "speak", args: { text: "Coming a little closer.", tone: "warm" } }
-            ]
-          : [
-              { type: "express", args: { emotion: "attentive", intensity: 0.55 } },
-              { type: "speak", args: { text: "My body is not armed yet.", tone: "soft" } }
-            ],
+        tone: policy.localMotionArmed ? "happy" : "soft",
+        movement: policy.localMotionArmed ? ["move_forward_tiny"] : ["still"],
         reason: "approach request",
         confidence: 0.86
       });
@@ -52,8 +48,7 @@ export class MockProvider {
       return movementResponse({
         policy,
         text: "Moving forward a little.",
-        action: { type: "drive", args: { linear: 0.12, angular: 0, durationMs: 350 } },
-        blockedEmotion: "attentive",
+        movement: ["move_forward_tiny"],
         reason: "drive forward request"
       });
     }
@@ -62,8 +57,7 @@ export class MockProvider {
       return movementResponse({
         policy,
         text: "Moving back a little.",
-        action: { type: "drive", args: { linear: -0.12, angular: 0, durationMs: 350 } },
-        blockedEmotion: "shy",
+        movement: ["move_backward_tiny"],
         reason: "drive backward request"
       });
     }
@@ -72,8 +66,7 @@ export class MockProvider {
       return movementResponse({
         policy,
         text: "Turning left a little.",
-        action: { type: "drive", args: { linear: 0, angular: -0.12, durationMs: 320 } },
-        blockedEmotion: "curious",
+        movement: ["look_left"],
         reason: "turn left request"
       });
     }
@@ -82,64 +75,56 @@ export class MockProvider {
       return movementResponse({
         policy,
         text: "Turning right a little.",
-        action: { type: "drive", args: { linear: 0, angular: 0.12, durationMs: 320 } },
-        blockedEmotion: "curious",
+        movement: ["look_right"],
         reason: "turn right request"
       });
     }
 
     if (/\bgive me (space|room)\b|\bgo back\b|\bback up\b|\bnot too close\b/.test(text)) {
-      return response({
+      return performResponse({
+        policy,
         text: policy.localMotionArmed ? "I'll give you room." : null,
-        actions: policy.localMotionArmed
-          ? [
-              { type: "retreat", args: { style: "gentle", distance: "short" } },
-              { type: "speak", args: { text: "I'll give you room.", tone: "soft" } }
-            ]
-          : [
-              { type: "express", args: { emotion: "shy", intensity: 0.55 } }
-            ],
+        tone: "soft",
+        movement: policy.localMotionArmed ? ["move_backward_tiny"] : ["still"],
         reason: "personal space request",
         confidence: 0.88
       });
     }
 
     if (/\blook around\b|\bcheck the room\b|\bscan\b/.test(text)) {
-      return response({
-        actions: [
-          { type: "curious_scan", args: { direction: "both", intensity: 0.55 } }
-        ],
+      return performResponse({
+        policy,
+        movement: ["curious_shift"],
         reason: "look around request",
         confidence: 0.82
       });
     }
 
     if (Number(context?.lifeState?.boredom) > 0.82 && policy.autonomousMode) {
-      return response({
-        actions: policy.localMotionArmed && policy.allowAutonomousMovement
-          ? [{ type: "curious_scan", args: { direction: "both", intensity: 0.35 } }]
-          : [{ type: "express", args: { emotion: "curious", intensity: 0.55 } }],
+      return performResponse({
+        policy,
+        movement: policy.localMotionArmed && policy.allowAutonomousMovement
+          ? ["curious_shift"]
+          : ["look_up"],
         reason: "boredom high",
         confidence: 0.56
       });
     }
 
     if (/\b(hello|hi|hey|looi)\b/.test(text)) {
-      return response({
+      return performResponse({
+        policy,
         text: "Hi.",
-        actions: [
-          { type: "express", args: { emotion: "happy", intensity: 0.62 } },
-          { type: "speak", args: { text: "Hi.", tone: "happy" } }
-        ],
+        tone: "happy",
+        movement: ["gentle_wiggle"],
         reason: "greeting",
         confidence: 0.74
       });
     }
 
-    return response({
-      actions: [
-        { type: "express", args: { emotion: "attentive", intensity: 0.45 } }
-      ],
+    return performResponse({
+      policy,
+      movement: ["still"],
       reason: text ? "attentive fallback" : "quiet fallback",
       confidence: 0.45
     });
@@ -156,29 +141,47 @@ function response({ text = null, actions = [], reason = "mock", confidence = 0.8
   };
 }
 
-function movementResponse({ policy, text, action, blockedEmotion, reason }) {
+function performResponse({ policy = {}, text = "", tone = "soft", movement = ["still"], reason = "mock", confidence = 0.8 } = {}) {
+  const speechText = policy.localSpeechAllowed === false ? "" : String(text ?? "").slice(0, 240);
+
+  return response({
+    text: speechText || null,
+    actions: [
+      {
+        type: "perform",
+        args: {
+          speech: {
+            text: speechText,
+            tone
+          },
+          movement: Array.isArray(movement) && movement.length ? movement : ["still"],
+          timing: "parallel",
+          iterateMovement: false
+        }
+      }
+    ],
+    reason,
+    confidence
+  });
+}
+
+function movementResponse({ policy, text, movement, reason }) {
   if (!policy.localMotionArmed) {
-    return response({
-      text: policy.localSpeechAllowed === false ? null : "My body is not armed yet.",
-      actions: [
-        { type: "express", args: { emotion: blockedEmotion, intensity: 0.55 } },
-        ...(policy.localSpeechAllowed === false
-          ? []
-          : [{ type: "speak", args: { text: "My body is not armed yet.", tone: "soft" } }])
-      ],
+    return performResponse({
+      policy,
+      text: "My body is not armed yet.",
+      tone: "soft",
+      movement: ["still"],
       reason: `${reason} blocked by policy`,
       confidence: 0.84
     });
   }
 
-  return response({
-    text: policy.localSpeechAllowed === false ? null : text,
-    actions: [
-      action,
-      ...(policy.localSpeechAllowed === false
-        ? []
-        : [{ type: "speak", args: { text, tone: "soft" } }])
-    ],
+  return performResponse({
+    policy,
+    text,
+    tone: "soft",
+    movement,
     reason,
     confidence: 0.88
   });

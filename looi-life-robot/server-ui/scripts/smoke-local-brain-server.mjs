@@ -19,11 +19,11 @@ assert.equal(status.provider, "mock");
 assert.equal(status.available, true);
 
 const cases = [
-  ["come here", "approach_user"],
-  ["move forward", "drive"],
-  ["give me space", "retreat"],
-  ["look around", "curious_scan"],
-  ["stop", "stop"]
+  ["come here", "move_forward_tiny"],
+  ["move forward", "move_forward_tiny"],
+  ["give me space", "move_backward_tiny"],
+  ["look around", "curious_shift"],
+  ["stop", "still"]
 ];
 
 for (const [text, expectedAction] of cases) {
@@ -45,7 +45,8 @@ for (const [text, expectedAction] of cases) {
 
   assert.equal(response.ok, true);
   assert.equal(response.provider, "mock");
-  assert.equal(response.actions.some((action) => action.type === expectedAction), true);
+  assert.equal(response.actions[0].type, "perform");
+  assert.equal(response.actions[0].args.movement.includes(expectedAction), true);
 }
 
 const fallbackServer = createLocalBrainServerFromEnv({
@@ -88,9 +89,8 @@ const performResponse = normalizeBrainResponse(parseBrainResponse({
       type: "perform",
       args: {
         speech: { text: "I can come closer.", tone: "happy" },
-        bodyLanguage: ["wiggle", "tiny forward"],
-        iterateBodyLanguage: true,
-        movement: { intent: "approach_user", style: "gentle" },
+        movement: ["excited_wiggle", "move_forward_tiny"],
+        iterateMovement: true,
         timing: "parallel"
       }
     }
@@ -99,7 +99,22 @@ const performResponse = normalizeBrainResponse(parseBrainResponse({
 assert.equal(performResponse.ok, true);
 assert.equal(performResponse.actions[0].type, "perform");
 assert.equal(performResponse.actions[0].args.speech.text, "I can come closer.");
-assert.equal(performResponse.actions[0].args.bodyLanguage[0], "wiggle");
+assert.equal(performResponse.actions[0].args.movement[0], "excited_wiggle");
+const movementResponse = normalizeBrainResponse(parseBrainResponse({
+  actions: [
+    {
+      type: "movement",
+      args: {
+        movement: ["excited_wiggle", "move_forward_tiny"],
+        iterateMovement: false,
+        timing: "sequence"
+      }
+    }
+  ]
+}), { provider: "test", model: "test" });
+assert.equal(movementResponse.ok, true);
+assert.equal(movementResponse.actions[0].type, "perform");
+assert.equal(movementResponse.actions[0].args.movement[0], "excited_wiggle");
 assert.equal(stripMarkdownCodeFence("```json\n{\"ok\":true}\n```"), '{"ok":true}');
 assert.equal(parseBrainResponse("```json\n{\"actions\":[{\"type\":\"stop\",\"args\":{}}]}\n```").actions[0].type, "stop");
 const invalid = normalizeBrainResponse(parseBrainResponse("not json"), { provider: "test", model: "test" });
@@ -175,7 +190,8 @@ try {
   const thinkPayload = await thinkResponse.json();
   assert.equal(thinkResponse.ok, true);
   assert.equal(thinkPayload.ok, true);
-  assert.equal(thinkPayload.actions.some((action) => action.type === "approach_user"), true);
+  assert.equal(thinkPayload.actions[0].type, "perform");
+  assert.equal(thinkPayload.actions[0].args.movement.includes("move_forward_tiny"), true);
 
   const chatResponse = await fetch(`${baseUrl}/api/local-brain/chat`, {
     method: "POST",
@@ -189,7 +205,8 @@ try {
   });
   const chatPayload = await chatResponse.json();
   assert.equal(chatResponse.ok, true);
-  assert.equal(chatPayload.actions.some((action) => action.type === "curious_scan"), true);
+  assert.equal(chatPayload.actions[0].type, "perform");
+  assert.equal(chatPayload.actions[0].args.movement.includes("curious_shift"), true);
 } finally {
   await new Promise((resolve) => server.close(resolve));
 }

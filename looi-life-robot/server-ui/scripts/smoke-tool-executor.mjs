@@ -240,6 +240,30 @@ const speakResult = await executor.executeBridgeAction({
 assert.equal(speakResult.status, "completed");
 assert.equal(speakResult.physical, false);
 
+const routedMovements = [];
+executor.setEmbodiedActionRouter({
+  async execute(action, context) {
+    routedMovements.push({ action, context });
+    return {
+      ok: true,
+      status: "completed",
+      macro: "movement_embodied",
+      result: { executed: true }
+    };
+  }
+});
+const faceOnlyMovement = await executor.executeBridgeAction({
+  id: "movement_face_1",
+  source: "test",
+  type: "movement",
+  args: {
+    movement: ["look_up"]
+  }
+});
+assert.equal(faceOnlyMovement.status, "completed");
+assert.equal(routedMovements.at(-1).context.allowMotion, false);
+executor.setEmbodiedActionRouter(null);
+
 const curiousDisarmed = await executor.executeBridgeAction({
   id: "curious_1",
   source: "test",
@@ -278,6 +302,29 @@ assert.equal(stopResult.executed, true);
 assert.deepEqual(stops, ["smoke_stop"]);
 
 policy.cloudMotionArmed = true;
+executor.setEmbodiedActionRouter({
+  async execute(action, context) {
+    routedMovements.push({ action, context });
+    return {
+      ok: true,
+      status: "completed",
+      macro: "movement_embodied",
+      result: { executed: true }
+    };
+  }
+});
+const physicalMovement = await executor.executeBridgeAction({
+  id: "movement_physical_1",
+  source: "test",
+  type: "movement",
+  args: {
+    movement: ["move_forward_tiny"]
+  }
+});
+assert.equal(physicalMovement.status, "completed");
+assert.equal(routedMovements.at(-1).context.allowMotion, true);
+executor.setEmbodiedActionRouter(null);
+
 const armedApproach = await executor.executeBridgeAction({
   id: "approach_2",
   source: "test",

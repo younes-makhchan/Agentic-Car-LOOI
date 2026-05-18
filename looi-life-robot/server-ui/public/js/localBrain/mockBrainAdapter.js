@@ -291,11 +291,79 @@ function response({ text = null, actions = [], reason = "mock", confidence = 0.8
     ok: true,
     source: "mock",
     text,
-    actions,
+    actions: normalizeOfficialActions(actions),
     reason,
     confidence,
     shouldRemember: false
   };
+}
+
+function normalizeOfficialActions(actions = []) {
+  const list = Array.isArray(actions) ? actions : [];
+  const speechAction = list.find((action) => action?.type === "speak");
+  const movementAction = list.find((action) => action?.type !== "speak") ?? speechAction;
+
+  return [
+    {
+      type: "perform",
+      args: {
+        speech: speechForAction(speechAction),
+        movement: movementForAction(movementAction),
+        timing: "parallel",
+        iterateMovement: false
+      },
+      reason: movementAction?.reason ?? speechAction?.reason
+    }
+  ];
+}
+
+function speechForAction(action = {}) {
+  if (action.type !== "speak") {
+    return { text: "", tone: "soft" };
+  }
+
+  return {
+    text: typeof action.args?.text === "string" ? action.args.text.slice(0, 240) : "",
+    tone: typeof action.args?.tone === "string" ? action.args.tone.slice(0, 40) : "soft"
+  };
+}
+
+function movementForAction(action = {}) {
+  switch (action.type) {
+    case "approach_user":
+      return ["move_forward_tiny"];
+    case "retreat":
+      return ["move_backward_tiny"];
+    case "curious_scan":
+      return ["curious_shift"];
+    case "excited_wiggle":
+      return ["excited_wiggle"];
+    case "drive":
+      return movementForDrive(action.args);
+    case "express":
+    case "observe_scene":
+      return ["look_up"];
+    case "speak":
+    case "stop":
+    case "none":
+    default:
+      return ["still"];
+  }
+}
+
+function movementForDrive(args = {}) {
+  const linear = Number(args.linear);
+  const angular = Number(args.angular);
+
+  if (Number.isFinite(linear) && Math.abs(linear) >= Math.abs(angular || 0) && Math.abs(linear) > 0.001) {
+    return linear > 0 ? ["move_forward_tiny"] : ["move_backward_tiny"];
+  }
+
+  if (Number.isFinite(angular) && Math.abs(angular) > 0.001) {
+    return angular < 0 ? ["look_left"] : ["look_right"];
+  }
+
+  return ["still"];
 }
 
 function movementResponse({ policy, text, action, blockedEmotion, reason }) {

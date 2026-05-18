@@ -2,6 +2,7 @@ export const LOCAL_BRAIN_ALLOWED_ACTIONS = new Set([
   "none",
   "speak",
   "perform",
+  "movement",
   "express",
   "drive",
   "stop",
@@ -168,12 +169,114 @@ export function validateBrainAction(action) {
     };
   }
 
+  const officialAction = normalizeOfficialPerformAction(type, args);
+
   return {
     ok: true,
-    action: {
-      type,
-      args: sanitizeArgs(args)
-    }
+    action: officialAction
+  };
+}
+
+function normalizeOfficialPerformAction(type, args = {}) {
+  if (type === "perform") {
+    return {
+      type: "perform",
+      args: sanitizePerformArgs(args)
+    };
+  }
+
+  if (type === "movement") {
+    return {
+      type: "perform",
+      args: sanitizePerformArgs({
+        speech: { text: "", tone: "soft" },
+        movement: args.movement,
+        timing: args.timing,
+        iterateMovement: args.iterateMovement
+      })
+    };
+  }
+
+  if (type === "speak") {
+    return {
+      type: "perform",
+      args: sanitizePerformArgs({
+        speech: { text: args.text, tone: args.tone },
+        movement: ["still"],
+        timing: "parallel",
+        iterateMovement: false
+      })
+    };
+  }
+
+  return {
+    type: "perform",
+    args: sanitizePerformArgs({
+      speech: { text: "", tone: "soft" },
+      movement: movementForLegacyAction(type, args),
+      timing: "parallel",
+      iterateMovement: false
+    })
+  };
+}
+
+function movementForLegacyAction(type, args = {}) {
+  switch (type) {
+    case "approach_user":
+      return ["move_forward_tiny"];
+    case "retreat":
+      return ["move_backward_tiny"];
+    case "curious_scan":
+      return ["curious_shift"];
+    case "excited_wiggle":
+      return ["excited_wiggle"];
+    case "drive":
+      return movementForDrive(args);
+    case "express":
+    case "observe_scene":
+      return ["look_up"];
+    case "stop":
+    case "none":
+    default:
+      return ["still"];
+  }
+}
+
+function movementForDrive(args = {}) {
+  const linear = Number(args.linear);
+  const angular = Number(args.angular);
+
+  if (Number.isFinite(linear) && Math.abs(linear) >= Math.abs(angular || 0) && Math.abs(linear) > 0.001) {
+    return linear > 0 ? ["move_forward_tiny"] : ["move_backward_tiny"];
+  }
+
+  if (Number.isFinite(angular) && Math.abs(angular) > 0.001) {
+    return angular < 0 ? ["look_left"] : ["look_right"];
+  }
+
+  return ["still"];
+}
+
+function sanitizePerformArgs(args = {}) {
+  const speech = args.speech && typeof args.speech === "object" && !Array.isArray(args.speech)
+    ? sanitizeArgs(args.speech)
+    : {};
+  const movement = Array.isArray(args.movement)
+    ? args.movement
+        .slice(0, 6)
+        .filter((item) => typeof item === "string")
+        .map((item) => item.slice(0, 80))
+    : [];
+  const timing = args.timing === "sequence" ? "sequence" : "parallel";
+
+  return {
+    speech: {
+      text: typeof speech.text === "string" ? speech.text.slice(0, 240) : "",
+      tone: typeof speech.tone === "string" ? speech.tone.slice(0, 40) : "soft"
+    },
+    movement,
+    timing,
+    iterateMovement: args.iterateMovement === true
   };
 }
 

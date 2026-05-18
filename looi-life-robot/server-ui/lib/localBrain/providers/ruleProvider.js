@@ -26,17 +26,18 @@ export class RuleProvider {
 
     switch (classification) {
       case "safety_stop":
-        return brainResponse({
-          actions: [{ type: "stop", args: { reason: "local_rule_stop" } }],
+        return performResponse({
+          policy,
+          text: "Stopping.",
+          movement: ["still"],
           reason: classification,
           confidence: 0.99
         });
       case "direct_command_approach":
-        return brainResponse({
+        return performResponse({
+          policy,
           text: policy.localMotionArmed ? "Coming closer." : "My body is not armed yet.",
-          actions: policy.localMotionArmed
-            ? [{ type: "approach_user", args: { style: "gentle", distance: "short" } }]
-            : [{ type: "speak", args: { text: "My body is not armed yet.", tone: "soft" } }],
+          movement: policy.localMotionArmed ? ["move_forward_tiny"] : ["still"],
           reason: classification,
           confidence: 0.86
         });
@@ -44,8 +45,7 @@ export class RuleProvider {
         return movementResponse({
           policy,
           text: "Moving forward a little.",
-          action: { type: "drive", args: { linear: 0.12, angular: 0, durationMs: 350 } },
-          blockedEmotion: "attentive",
+          movement: ["move_forward_tiny"],
           reason: classification,
           confidence: 0.88
         });
@@ -53,8 +53,7 @@ export class RuleProvider {
         return movementResponse({
           policy,
           text: "Moving back a little.",
-          action: { type: "drive", args: { linear: -0.12, angular: 0, durationMs: 350 } },
-          blockedEmotion: "shy",
+          movement: ["move_backward_tiny"],
           reason: classification,
           confidence: 0.88
         });
@@ -62,8 +61,7 @@ export class RuleProvider {
         return movementResponse({
           policy,
           text: "Turning left a little.",
-          action: { type: "drive", args: { linear: 0, angular: -0.12, durationMs: 320 } },
-          blockedEmotion: "curious",
+          movement: ["look_left"],
           reason: classification,
           confidence: 0.86
         });
@@ -71,50 +69,47 @@ export class RuleProvider {
         return movementResponse({
           policy,
           text: "Turning right a little.",
-          action: { type: "drive", args: { linear: 0, angular: 0.12, durationMs: 320 } },
-          blockedEmotion: "curious",
+          movement: ["look_right"],
           reason: classification,
           confidence: 0.86
         });
       case "direct_command_retreat":
-        return brainResponse({
-          actions: policy.localMotionArmed
-            ? [{ type: "retreat", args: { style: "gentle", distance: "short" } }]
-            : [{ type: "express", args: { emotion: "shy", intensity: 0.55 } }],
+        return performResponse({
+          policy,
+          movement: policy.localMotionArmed ? ["move_backward_tiny"] : ["still"],
           reason: classification,
           confidence: 0.88
         });
       case "direct_command_look":
-        return brainResponse({
-          actions: [{ type: "curious_scan", args: { direction: "both", intensity: 0.55 } }],
+        return performResponse({
+          policy,
+          movement: ["curious_shift"],
           reason: classification,
           confidence: 0.8
         });
       case "greeting":
-        return brainResponse({
+        return performResponse({
+          policy,
           text: "Hi.",
-          actions: [
-            { type: "express", args: { emotion: "happy", intensity: 0.6 } },
-            { type: "speak", args: { text: "Hi.", tone: "happy" } }
-          ],
+          tone: "happy",
+          movement: ["gentle_wiggle"],
           reason: classification,
           confidence: 0.7
         });
       case "direct_question":
-        return brainResponse({
+        return performResponse({
+          policy,
           text: "I'm listening locally.",
-          actions: [
-            { type: "express", args: { emotion: "curious", intensity: 0.55 } },
-            { type: "speak", args: { text: "I'm listening locally.", tone: "soft" } }
-          ],
+          movement: ["look_up"],
           reason: classification,
           confidence: 0.55
         });
       case "background":
       case "unknown":
       default:
-        return brainResponse({
-          actions: [],
+        return performResponse({
+          policy,
+          movement: ["still"],
           reason: classification,
           confidence: 0.35
         });
@@ -144,29 +139,45 @@ function classifyText(text) {
   return "unknown";
 }
 
-function movementResponse({ policy, text, action, blockedEmotion, reason, confidence }) {
+function performResponse({ policy = {}, text = "", tone = "soft", movement = ["still"], reason = "rule", confidence = 0.5 } = {}) {
+  const speechText = policy.localSpeechAllowed === false ? "" : String(text ?? "").slice(0, 240);
+
+  return brainResponse({
+    text: speechText || null,
+    actions: [
+      {
+        type: "perform",
+        args: {
+          speech: {
+            text: speechText,
+            tone
+          },
+          movement: Array.isArray(movement) && movement.length ? movement : ["still"],
+          timing: "parallel",
+          iterateMovement: false
+        }
+      }
+    ],
+    reason,
+    confidence
+  });
+}
+
+function movementResponse({ policy, text, movement, reason, confidence }) {
   if (!policy.localMotionArmed) {
-    return brainResponse({
-      text: policy.localSpeechAllowed === false ? null : "My body is not armed yet.",
-      actions: [
-        { type: "express", args: { emotion: blockedEmotion, intensity: 0.55 } },
-        ...(policy.localSpeechAllowed === false
-          ? []
-          : [{ type: "speak", args: { text: "My body is not armed yet.", tone: "soft" } }])
-      ],
+    return performResponse({
+      policy,
+      text: "My body is not armed yet.",
+      movement: ["still"],
       reason: `${reason}_motion_disarmed`,
       confidence
     });
   }
 
-  return brainResponse({
-    text: policy.localSpeechAllowed === false ? null : text,
-    actions: [
-      action,
-      ...(policy.localSpeechAllowed === false
-        ? []
-        : [{ type: "speak", args: { text, tone: "soft" } }])
-    ],
+  return performResponse({
+    policy,
+    text,
+    movement,
     reason,
     confidence
   });
