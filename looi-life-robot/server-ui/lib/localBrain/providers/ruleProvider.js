@@ -144,20 +144,18 @@ function performResponse({ policy = {}, text = "", tone = "soft", movement = ["s
 
   return brainResponse({
     text: speechText || null,
-    actions: [
-      {
-        type: "perform",
-        args: {
-          speech: {
-            text: speechText,
-            tone
-          },
-          movement: Array.isArray(movement) && movement.length ? movement : ["still"],
-          timing: "parallel",
-          iterateMovement: false
-        }
+    action: {
+      type: "perform",
+      args: {
+        speech: {
+          text: speechText,
+          tone
+        },
+        movement: Array.isArray(movement) && movement.length ? movement : ["still"],
+        timing: "parallel",
+        iterateMovement: false
       }
-    ],
+    },
     reason,
     confidence
   });
@@ -183,11 +181,11 @@ function movementResponse({ policy, text, movement, reason, confidence }) {
   });
 }
 
-function brainResponse({ text = null, actions = [], reason = "rule", confidence = 0.5 } = {}) {
+function brainResponse({ text = null, action = null, reason = "rule", confidence = 0.5 } = {}) {
   return {
     ok: true,
     text,
-    actions,
+    action,
     reason,
     confidence
   };

@@ -115,10 +115,12 @@ export class LocalBrainServer {
         ok: normalized.ok,
         latencyMs: normalized.latencyMs,
         text: normalized.text,
-        actions: normalized.actions.map((action) => ({
-          type: action.type,
-          args: action.args
-        })),
+        action: normalized.action
+          ? {
+              type: normalized.action.type,
+              args: normalized.action.args
+            }
+          : null,
         reason: normalized.reason,
         confidence: normalized.confidence
       }, normalized.ok ? "info" : "warn");
@@ -240,16 +242,13 @@ function summarizeContext(context = {}) {
           args: trigger.suggestedIntent.args
         }
       : null,
-    policy: context.policy ?? null,
     attentionMode: context.attention?.mode ?? null,
-    simulatorMode: context.simulatorMode,
-    robotConnected: context.robotConnected,
-    camera: context.camera
+    life: context.lifeState
       ? {
-          running: context.camera.running,
-          userVisible: context.camera.userVisible,
-          userPosition: context.camera.userPosition,
-          userDistance: context.camera.userDistance
+          mood: context.lifeState.mood,
+          userVisible: context.lifeState.userVisible,
+          userPosition: context.lifeState.userPosition,
+          userDistance: context.lifeState.userDistance
         }
       : null
   };
@@ -270,8 +269,8 @@ function summarizeRawResponse(raw) {
       keys: Object.keys(raw).slice(0, 20),
       ok: raw.ok,
       reason: shortLogText(raw.reason, 180),
-      actions: Array.isArray(raw.actions)
-        ? raw.actions.map((action) => ({ type: action?.type, args: action?.args ?? {} })).slice(0, 4)
+      action: raw.action
+        ? { type: raw.action?.type, args: raw.action?.args ?? {} }
         : null
     };
   }
@@ -365,7 +364,7 @@ function failedResponse({ provider, model, latencyMs, error, reason = "provider_
     model,
     latencyMs,
     text: null,
-    actions: [],
+    action: null,
     reason,
     confidence: 0,
     raw,

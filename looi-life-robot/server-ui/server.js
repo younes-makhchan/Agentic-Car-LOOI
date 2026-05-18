@@ -144,7 +144,7 @@ app.post("/api/local-brain/think", requireLocalBrainAccess, async (req, res) => 
   });
 
   serverLog(
-    `HTTP THINK response ok=${response.ok !== false} provider=${response.provider} model=${response.model} latency=${Date.now() - startedAt}ms actions=${response.actions?.map((action) => action.type).join(",") || "none"} reason="${shortServerLogText(response.reason)}"`,
+    `HTTP THINK response ok=${response.ok !== false} provider=${response.provider} model=${response.model} latency=${Date.now() - startedAt}ms action=${response.action?.type || "none"} reason="${shortServerLogText(response.reason)}"`,
     response.ok === false ? "warn" : "info"
   );
   res.status(response.ok === false ? 502 : 200).json(response);
@@ -162,7 +162,7 @@ app.post("/api/local-brain/chat", requireLocalBrainAccess, async (req, res) => {
   });
 
   serverLog(
-    `HTTP CHAT response ok=${response.ok !== false} provider=${response.provider} model=${response.model} latency=${Date.now() - startedAt}ms actions=${response.actions?.map((action) => action.type).join(",") || "none"} reason="${shortServerLogText(response.reason)}"`,
+    `HTTP CHAT response ok=${response.ok !== false} provider=${response.provider} model=${response.model} latency=${Date.now() - startedAt}ms action=${response.action?.type || "none"} reason="${shortServerLogText(response.reason)}"`,
     response.ok === false ? "warn" : "info"
   );
   res.status(response.ok === false ? 502 : 200).json(response);
@@ -872,11 +872,11 @@ function summarizeApiResponseBody(req, body) {
       model: body.model ?? body.brain?.model ?? null,
       available: body.brain?.available,
       latencyMs: body.latencyMs,
-      actions: Array.isArray(body.actions)
-        ? body.actions.map((action) => ({
-            type: action?.type,
-            args: redactAndCompact(action?.args)
-          }))
+      action: body.action
+        ? {
+            type: body.action?.type,
+            args: redactAndCompact(body.action?.args)
+          }
         : undefined,
       reason: shortServerLogText(body.reason, 160),
       error: body.error ? shortServerLogText(body.error, 240) : undefined
@@ -969,38 +969,18 @@ function summarizeRuntimeContext(context = null) {
   }
 
   return {
-    simulatorMode: context.simulatorMode,
-    robotConnected: context.robotConnected,
-    policy: redactAndCompact(context.policy),
     attention: context.attention
       ? {
-          mode: context.attention.mode,
-          attentionTarget: context.attention.attentionTarget,
-          stopRespectUntil: context.attention.stopRespectUntil
+          mode: context.attention.mode
         }
       : null,
     lifeState: context.lifeState
       ? {
           mood: context.lifeState.mood,
           energy: context.lifeState.energy,
-          boredom: context.lifeState.boredom,
-          fear: context.lifeState.fear,
-          curiosity: context.lifeState.curiosity,
           userVisible: context.lifeState.userVisible,
           userPosition: context.lifeState.userPosition,
-          userDistance: context.lifeState.userDistance,
-          currentBehavior: context.lifeState.currentBehavior,
-          robotMotorState: context.lifeState.robotMotorState
-        }
-      : null,
-    camera: context.camera
-      ? {
-          running: context.camera.running,
-          facingMode: context.camera.facingMode,
-          userVisible: context.camera.userVisible,
-          userPosition: context.camera.userPosition,
-          userDistance: context.camera.userDistance,
-          faceCount: context.camera.faceCount
+          userDistance: context.lifeState.userDistance
         }
       : null
   };

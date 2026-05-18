@@ -118,7 +118,7 @@ const engine = new LocalBrainEngine({
       return {
         ok: true,
         source: "smoke",
-        actions: [{ type: "approach_user", args: { style: "gentle", distance: "short" } }],
+        action: { type: "perform", args: { speech: { text: "", tone: "soft" }, movement: ["move_forward_tiny"], timing: "parallel", iterateMovement: false } },
         reason: "approach"
       };
     }
@@ -143,12 +143,12 @@ engine.setAdapter({
   },
   async think() {
     adapterCalls += 1;
-    return {
-      ok: true,
-      source: "server_llm",
-      actions: [{ type: "express", args: { emotion: "attentive", intensity: 0.5 } }],
-      reason: "speech"
-    };
+      return {
+        ok: true,
+        source: "server_llm",
+        action: { type: "perform", args: { speech: { text: "", tone: "soft" }, movement: ["look_up"], timing: "parallel", iterateMovement: false } },
+        reason: "speech"
+      };
   }
 });
 engineBus.publish("autonomous_tick", {
@@ -173,12 +173,12 @@ engine.setAdapter({
     return true;
   },
   async think() {
-    return {
-      ok: true,
-      source: "smoke",
-      actions: [{ type: "approach_user", args: { style: "gentle", distance: "short" } }],
-      reason: "approach"
-    };
+      return {
+        ok: true,
+        source: "smoke",
+        action: { type: "perform", args: { speech: { text: "", tone: "soft" }, movement: ["move_forward_tiny"], timing: "parallel", iterateMovement: false } },
+        reason: "approach"
+      };
   }
 });
 const disarmed = await engine.thinkNow("manual", {
@@ -193,12 +193,12 @@ engine.setAdapter({
     return true;
   },
   async think() {
-    return {
-      ok: true,
-      source: "smoke",
-      actions: [{ type: "stop", args: { reason: "smoke_stop" } }],
-      reason: "stop"
-    };
+      return {
+        ok: true,
+        source: "smoke",
+        action: { type: "perform", args: { speech: { text: "", tone: "soft" }, movement: ["still"], timing: "parallel", iterateMovement: false } },
+        reason: "stop"
+      };
   }
 });
 const stopped = await engine.thinkNow("manual");

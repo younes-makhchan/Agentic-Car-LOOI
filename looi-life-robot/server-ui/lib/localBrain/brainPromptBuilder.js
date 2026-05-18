@@ -2,11 +2,10 @@ import { MOVEMENT_PROMPT_LIST } from "../../public/js/embodiment/movementCatalog
 
 export const LOCAL_BRAIN_SERVER_SYSTEM_PROMPT = `You are LOOI's action selector, not a chatbot.
 Return ONLY minified JSON. No markdown. No extra keys.
-Schema: {"text":string|null,"actions":[{"type":string,"args":object}],"reason":string,"confidence":number}
-Official response action: perform. Browser handles safety/execution.
+Schema: {"text":string|null,"action":{"type":"perform","args":object},"reason":string,"confidence":number}
 perform args: {"speech":{"text":"short sentence","tone":"soft|happy|curious|serious|shy|playful"},"movement":["canonical movement action"],"iterateMovement":false,"timing":"parallel|sequence"}.
-Movement actions you may choose: ${MOVEMENT_PROMPT_LIST}.
-Rules: every finalized user speech/text event may be sent to you; decide whether to answer or stay still. stop/freeze/don't move => perform with movement ["still"] and short stop acknowledgement only if useful. If suggestedIntent is present and safe, usually express it through perform. Motion only if policy.localMotionArmed=true; autonomous motion also needs allowAutonomousMovement=true. Speech only if localSpeechAllowed=true. Never raw PWM/motors/code/network/files. Keep speech under 12 words. Use movement only when it fits; use ["still"] often. If unsure or the speech does not need a response, use perform with empty speech text and movement ["still"]. Do not use any other perform args.`;
+Movement names you may choose: ${MOVEMENT_PROMPT_LIST}.
+Rules: choose one perform action only. Reply briefly or use empty speech. Use ["still"] when no movement fits. stop/freeze/don't move => ["still"]. Runtime enforces safety after your reply. Never raw PWM/motors/code/network/files.`;
 
 export function buildLocalBrainMessages(context = {}) {
   const compactContext = buildCompactBrainContext(context);
@@ -25,9 +24,7 @@ export function buildLocalBrainMessages(context = {}) {
 export function buildCompactBrainContext(context = {}) {
   const trigger = context.triggerEvent ?? {};
   const life = context.lifeState ?? {};
-  const policy = context.policy ?? {};
   const attention = context.attention ?? {};
-  const camera = context.camera ?? {};
   const speech = context.speech ?? context.voice ?? {};
   const memory = context.memory ?? null;
   const recentEvents = Array.isArray(context.recentEvents) ? context.recentEvents : [];
@@ -45,47 +42,24 @@ export function buildCompactBrainContext(context = {}) {
       gateReason: shortValue(trigger.gateReason, 80),
       suggestedIntent: compactSuggestedIntent(trigger.suggestedIntent)
     }),
-    policy: dropEmpty({
-      localMotionArmed: Boolean(policy.localMotionArmed),
-      autonomousMode: Boolean(policy.autonomousMode),
-      allowAutonomousMovement: Boolean(policy.allowAutonomousMovement),
-      localSpeechAllowed: policy.localSpeechAllowed !== false,
-      allowAutonomousSpeech: policy.allowAutonomousSpeech !== false,
-      localCameraAllowed: Boolean(policy.localCameraAllowed)
-    }),
     attention: dropEmpty({
-      mode: shortValue(attention.mode, 32),
-      target: shortValue(attention.attentionTarget, 40)
+      mode: shortValue(attention.mode, 32)
     }),
     life: dropEmpty({
       mood: shortValue(life.mood, 32),
       energy: round01(life.energy),
-      boredom: round01(life.boredom),
-      fear: round01(life.fear),
-      curiosity: round01(life.curiosity),
       userVisible: boolOrUndefined(life.userVisible),
       userPosition: shortValue(life.userPosition, 32),
       userDistance: shortValue(life.userDistance, 32),
       speaking: boolOrUndefined(life.isSpeaking),
-      listening: boolOrUndefined(life.isListening),
-      obstacle: shortValue(life.obstacle, 40),
-      behavior: shortValue(life.currentBehavior, 50),
-      motor: shortValue(life.robotMotorState, 40)
-    }),
-    camera: dropEmpty({
-      running: boolOrUndefined(camera.running),
-      userVisible: boolOrUndefined(camera.userVisible ?? camera.latestObservation?.userVisible),
-      userPosition: shortValue(camera.userPosition ?? camera.latestObservation?.userPosition, 32),
-      userDistance: shortValue(camera.userDistance ?? camera.latestObservation?.userDistance, 32),
-      faces: numericOrUndefined(camera.faceCount ?? camera.latestObservation?.faceCount)
+      listening: boolOrUndefined(life.isListening)
     }),
     speech: dropEmpty({
       listening: boolOrUndefined(speech.listening),
-      speaking: boolOrUndefined(speech.speaking),
-      muted: boolOrUndefined(speech.muted)
+      speaking: boolOrUndefined(speech.speaking)
     }),
     memory: compactMemory(memory),
-    recent: recentEvents.slice(0, 3).map(compactRecentEvent).filter(Boolean)
+    recent: recentEvents.slice(0, 2).map(compactRecentEvent).filter(Boolean)
   });
 }
 
@@ -145,7 +119,6 @@ function compactMemory(memory = null) {
 
   return dropEmpty({
     summary: shortValue(memory.summary, 180),
-    learnedPhraseCount: numericOrUndefined(memory.learnedPhraseCount),
     matches
   });
 }
@@ -199,11 +172,6 @@ function shortValue(value, maxLength) {
 
 function boolOrUndefined(value) {
   return typeof value === "boolean" ? value : undefined;
-}
-
-function numericOrUndefined(value) {
-  const numeric = Number(value);
-  return Number.isFinite(numeric) ? numeric : undefined;
 }
 
 function round01(value) {

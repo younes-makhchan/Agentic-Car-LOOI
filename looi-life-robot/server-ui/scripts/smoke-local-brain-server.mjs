@@ -45,8 +45,8 @@ for (const [text, expectedAction] of cases) {
 
   assert.equal(response.ok, true);
   assert.equal(response.provider, "mock");
-  assert.equal(response.actions[0].type, "perform");
-  assert.equal(response.actions[0].args.movement.includes(expectedAction), true);
+  assert.equal(response.action.type, "perform");
+  assert.equal(response.action.args.movement.includes(expectedAction), true);
 }
 
 const fallbackServer = createLocalBrainServerFromEnv({
@@ -81,51 +81,47 @@ assert.equal(fireworksStatus.model, "accounts/fireworks/models/gpt-oss-20b");
 assert.equal(fireworksStatus.available, false);
 assert.match(fireworksStatus.details.error, /FIREWORKS_API_KEY/);
 
-assert.deepEqual(parseBrainResponse({ text: null, actions: [] }).actions, []);
-assert.equal(parseBrainResponse('{"actions":[{"type":"express","args":{"emotion":"happy"}}]}').actions[0].type, "express");
+assert.equal(parseBrainResponse({ text: null, action: null }).action, null);
+assert.equal(parseBrainResponse('{"action":{"type":"perform","args":{"movement":["still"]}}}').action.type, "perform");
 const performResponse = normalizeBrainResponse(parseBrainResponse({
-  actions: [
-    {
-      type: "perform",
-      args: {
-        speech: { text: "I can come closer.", tone: "happy" },
-        movement: ["excited_wiggle", "move_forward_tiny"],
-        iterateMovement: true,
-        timing: "parallel"
-      }
+  action: {
+    type: "perform",
+    args: {
+      speech: { text: "I can come closer.", tone: "happy" },
+      movement: ["excited_wiggle", "move_forward_tiny"],
+      iterateMovement: true,
+      timing: "parallel"
     }
-  ]
+  }
 }), { provider: "test", model: "test" });
 assert.equal(performResponse.ok, true);
-assert.equal(performResponse.actions[0].type, "perform");
-assert.equal(performResponse.actions[0].args.speech.text, "I can come closer.");
-assert.equal(performResponse.actions[0].args.movement[0], "excited_wiggle");
-const movementResponse = normalizeBrainResponse(parseBrainResponse({
-  actions: [
-    {
-      type: "movement",
-      args: {
-        movement: ["excited_wiggle", "move_forward_tiny"],
-        iterateMovement: false,
-        timing: "sequence"
-      }
+assert.equal(performResponse.action.type, "perform");
+assert.equal(performResponse.action.args.speech.text, "I can come closer.");
+assert.equal(performResponse.action.args.movement[0], "excited_wiggle");
+const legacyMovementResponse = normalizeBrainResponse(parseBrainResponse({
+  action: {
+    type: "movement",
+    args: {
+      movement: ["excited_wiggle", "move_forward_tiny"],
+      iterateMovement: false,
+      timing: "sequence"
     }
-  ]
+  }
 }), { provider: "test", model: "test" });
-assert.equal(movementResponse.ok, true);
-assert.equal(movementResponse.actions[0].type, "perform");
-assert.equal(movementResponse.actions[0].args.movement[0], "excited_wiggle");
+assert.equal(legacyMovementResponse.ok, false);
+assert.equal(legacyMovementResponse.action, null);
+assert.match(legacyMovementResponse.reason, /Unknown action type/);
 assert.equal(stripMarkdownCodeFence("```json\n{\"ok\":true}\n```"), '{"ok":true}');
-assert.equal(parseBrainResponse("```json\n{\"actions\":[{\"type\":\"stop\",\"args\":{}}]}\n```").actions[0].type, "stop");
+assert.equal(parseBrainResponse("```json\n{\"action\":{\"type\":\"perform\",\"args\":{\"movement\":[\"still\"]}}}\n```").action.type, "perform");
 const invalid = normalizeBrainResponse(parseBrainResponse("not json"), { provider: "test", model: "test" });
 assert.equal(invalid.ok, true);
-assert.equal(invalid.actions.length, 0);
+assert.equal(invalid.action, null);
 assert.equal(invalid.reason, "invalid_json_from_model");
 const unsafeAction = validateBrainAction({
-  type: "drive",
+  type: "perform",
   args: {
     left_motor: 1,
-    linear: 0.2
+    movement: ["move_forward_tiny"]
   }
 });
 assert.equal(unsafeAction.ok, false);
@@ -190,8 +186,8 @@ try {
   const thinkPayload = await thinkResponse.json();
   assert.equal(thinkResponse.ok, true);
   assert.equal(thinkPayload.ok, true);
-  assert.equal(thinkPayload.actions[0].type, "perform");
-  assert.equal(thinkPayload.actions[0].args.movement.includes("move_forward_tiny"), true);
+  assert.equal(thinkPayload.action.type, "perform");
+  assert.equal(thinkPayload.action.args.movement.includes("move_forward_tiny"), true);
 
   const chatResponse = await fetch(`${baseUrl}/api/local-brain/chat`, {
     method: "POST",
@@ -205,8 +201,8 @@ try {
   });
   const chatPayload = await chatResponse.json();
   assert.equal(chatResponse.ok, true);
-  assert.equal(chatPayload.actions[0].type, "perform");
-  assert.equal(chatPayload.actions[0].args.movement.includes("curious_shift"), true);
+  assert.equal(chatPayload.action.type, "perform");
+  assert.equal(chatPayload.action.args.movement.includes("curious_shift"), true);
 } finally {
   await new Promise((resolve) => server.close(resolve));
 }

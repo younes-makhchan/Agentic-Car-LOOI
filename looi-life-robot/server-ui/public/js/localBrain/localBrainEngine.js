@@ -162,7 +162,7 @@ export class LocalBrainEngine {
       this.lastFallbackUsed = fallbackUsed;
       this.lastError = null;
       this.log(
-        `STEP 2 BRAIN_RESPONSE provider=${this.provider} latency=${Math.round(Number(this.latestLatencyMs) || 0)}ms text="${response.text ?? ""}" actions=${JSON.stringify((response.actions ?? []).map((action) => ({ type: action.type, args: action.args ?? {} })))}`
+        `STEP 2 BRAIN_RESPONSE provider=${this.provider} latency=${Math.round(Number(this.latestLatencyMs) || 0)}ms text="${response.text ?? ""}" action=${response.action ? JSON.stringify({ type: response.action.type, args: response.action.args ?? {} }) : "none"}`
       );
       const results = await this.executeBrainResponse(response, context);
       this.lastThoughtAt = Date.now();
@@ -367,13 +367,11 @@ export class LocalBrainEngine {
 
   async executeBrainResponse(response, context = {}) {
     const policy = this.policy();
-    const actions = Array.isArray(response?.actions) ? response.actions : [];
-    const maxActions = policy.maxActionsPerThought;
     const results = [];
+    const action = response?.action;
 
-    for (const action of actions.slice(0, maxActions)) {
-      const result = await this.executeBrainAction(action, context, policy, response);
-      results.push(result);
+    if (action) {
+      results.push(await this.executeBrainAction(action, context, policy, response));
     }
 
     return results;
@@ -568,7 +566,7 @@ export class LocalBrainEngine {
       response: {
         ok: true,
         source: "local_safety",
-        actions: [action],
+        action,
         reason: "local stop phrase"
       },
       results: [result],
@@ -708,9 +706,7 @@ export class LocalBrainEngine {
       latencyMs: Number(response?.latencyMs ?? this.latestLatencyMs ?? 0),
       text: response?.text ?? null,
       fallbackUsed: this.lastFallbackUsed,
-      actionTypes: Array.isArray(response?.actions)
-        ? response.actions.map((action) => action.type)
-        : [],
+      actionType: response?.action?.type ?? null,
       results: results ?? [],
       result: results ?? [],
       skipped: Boolean(skipped),

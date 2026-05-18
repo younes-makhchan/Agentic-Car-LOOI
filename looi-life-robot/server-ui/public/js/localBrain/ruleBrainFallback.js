@@ -74,7 +74,7 @@ export class RuleBrainFallback {
     switch (classification) {
       case "safety_stop":
         return brainResponse({
-          actions: [
+          legacyPlan: [
             {
               type: "stop",
               args: { reason: "rule_brain_stop" },
@@ -88,7 +88,7 @@ export class RuleBrainFallback {
         if (!policy.localMotionArmed) {
           return brainResponse({
             text: policy.localSpeechAllowed === false ? null : "My body is not armed yet.",
-            actions: [
+            legacyPlan: [
               {
                 type: "express",
                 args: { emotion: "attentive", intensity: 0.55 },
@@ -109,7 +109,7 @@ export class RuleBrainFallback {
           });
         }
         return brainResponse({
-          actions: [
+          legacyPlan: [
             {
               type: "approach_user",
               args: { style: "gentle", distance: "short" },
@@ -175,7 +175,7 @@ export class RuleBrainFallback {
         if (!policy.localMotionArmed) {
           return brainResponse({
             text: policy.localSpeechAllowed === false ? null : "I'll stay still and give you space.",
-            actions: [
+            legacyPlan: [
               {
                 type: "express",
                 args: { emotion: "shy", intensity: 0.55 },
@@ -196,7 +196,7 @@ export class RuleBrainFallback {
           });
         }
         return brainResponse({
-          actions: [
+          legacyPlan: [
             {
               type: "retreat",
               args: { style: "gentle", distance: "short" },
@@ -209,7 +209,7 @@ export class RuleBrainFallback {
       case "direct_command_look":
         if (!policy.localMotionArmed) {
           return brainResponse({
-            actions: [
+            legacyPlan: [
               policy.localCameraAllowed
                 ? {
                     type: "observe_scene",
@@ -227,7 +227,7 @@ export class RuleBrainFallback {
           });
         }
         return brainResponse({
-          actions: [
+          legacyPlan: [
             {
               type: "curious_scan",
               args: { direction: "both", intensity: 0.55 },
@@ -241,7 +241,7 @@ export class RuleBrainFallback {
       case "wake_name":
         return brainResponse({
           text: policy.localSpeechAllowed === false ? null : classification === "wake_name" ? "Hm?" : "Hi.",
-          actions: [
+          legacyPlan: [
             {
               type: "express",
               args: { emotion: classification === "wake_name" ? "attentive" : "happy", intensity: 0.6 },
@@ -265,7 +265,7 @@ export class RuleBrainFallback {
         });
       case "direct_question":
         return brainResponse({
-          actions: [
+          legacyPlan: [
             {
               type: "express",
               args: { emotion: "curious", intensity: 0.55 },
@@ -285,7 +285,7 @@ export class RuleBrainFallback {
       default:
         if (context.reason === "autonomous_tick" && Number(context.lifeState?.boredom) > 0.82) {
           return brainResponse({
-            actions: [
+            legacyPlan: [
               {
                 type: "express",
                 args: { emotion: "curious", intensity: 0.5 },
@@ -298,7 +298,7 @@ export class RuleBrainFallback {
         }
 
         return brainResponse({
-          actions: [
+          legacyPlan: [
             {
               type: "none",
               args: {},
@@ -315,7 +315,7 @@ export class RuleBrainFallback {
     if (!policy.localMotionArmed) {
       return brainResponse({
         text: policy.localSpeechAllowed === false ? null : "My body is not armed yet.",
-        actions: [
+        legacyPlan: [
           {
             type: "express",
             args: { emotion: blockedEmotion, intensity: 0.55 },
@@ -338,7 +338,7 @@ export class RuleBrainFallback {
 
     return brainResponse({
       text: policy.localSpeechAllowed === false ? null : text,
-      actions: [
+      legacyPlan: [
         action,
         ...(policy.localSpeechAllowed === false
           ? []
@@ -356,35 +356,33 @@ export class RuleBrainFallback {
   }
 }
 
-function brainResponse({ text = null, actions = [], reason = "rule", confidence = 0.5 } = {}) {
+function brainResponse({ text = null, legacyPlan = [], reason = "rule", confidence = 0.5 } = {}) {
   return {
     ok: true,
     source: "rule_fallback",
     text,
-    actions: normalizeOfficialActions(actions),
+    action: normalizeOfficialAction(legacyPlan),
     reason,
     confidence,
     shouldRemember: false
   };
 }
 
-function normalizeOfficialActions(actions = []) {
-  const list = Array.isArray(actions) ? actions : [];
+function normalizeOfficialAction(legacyPlan = []) {
+  const list = Array.isArray(legacyPlan) ? legacyPlan : [];
   const speechAction = list.find((action) => action?.type === "speak");
   const movementAction = list.find((action) => action?.type !== "speak") ?? speechAction;
 
-  return [
-    {
-      type: "perform",
-      args: {
-        speech: speechForAction(speechAction),
-        movement: movementForAction(movementAction),
-        timing: "parallel",
-        iterateMovement: false
-      },
-      reason: movementAction?.reason ?? speechAction?.reason
-    }
-  ];
+  return {
+    type: "perform",
+    args: {
+      speech: speechForAction(speechAction),
+      movement: movementForAction(movementAction),
+      timing: "parallel",
+      iterateMovement: false
+    },
+    reason: movementAction?.reason ?? speechAction?.reason
+  };
 }
 
 function speechForAction(action = {}) {

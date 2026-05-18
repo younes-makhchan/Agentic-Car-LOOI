@@ -10,7 +10,6 @@ export function createDefaultBrainPolicy() {
     maxThoughtsPerMinute: 12,
     minAutonomousThoughtIntervalMs: 3000,
     eventThoughtCooldownMs: 800,
-    maxActionsPerThought: 2,
     stopRespectCooldownMs: 8000
   };
 }
@@ -50,12 +49,6 @@ export function clampBrainPolicy(policy = {}) {
       0,
       10000,
       defaults.eventThoughtCooldownMs
-    ),
-    maxActionsPerThought: clampInteger(
-      value.maxActionsPerThought,
-      1,
-      6,
-      defaults.maxActionsPerThought
     ),
     stopRespectCooldownMs: clampInteger(
       value.stopRespectCooldownMs,

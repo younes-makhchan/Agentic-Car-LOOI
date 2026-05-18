@@ -1,23 +1,4 @@
-export const LOCAL_BRAIN_ALLOWED_ACTIONS = new Set([
-  "none",
-  "speak",
-  "perform",
-  "movement",
-  "express",
-  "drive",
-  "stop",
-  "approach_user",
-  "retreat",
-  "curious_scan",
-  "excited_wiggle",
-  "observe_scene",
-  "remember",
-  "open_front_camera",
-  "open_back_camera",
-  "switch_camera",
-  "close_camera",
-  "capture_snapshot"
-]);
+export const LOCAL_BRAIN_ALLOWED_ACTIONS = new Set(["perform"]);
 
 const UNSAFE_ARG_KEYS = new Set([
   "pwm",
@@ -58,7 +39,7 @@ export function parseBrainResponse(rawTextOrObject) {
     return {
       ok: true,
       text: null,
-      actions: [],
+      action: null,
       reason: "empty_model_response",
       confidence: 0,
       raw: rawTextOrObject
@@ -71,7 +52,7 @@ export function parseBrainResponse(rawTextOrObject) {
     return {
       ok: true,
       text: null,
-      actions: [],
+      action: null,
       reason: "invalid_json_from_model",
       confidence: 0,
       raw: rawTextOrObject
@@ -83,53 +64,47 @@ export function normalizeBrainResponse(parsed, defaults = {}) {
   const value = parsed && typeof parsed === "object" && !Array.isArray(parsed)
     ? parsed
     : {};
-  const normalizedActions = normalizeActions(value.actions, defaults.maxActions ?? 2);
+  const normalizedAction = normalizeAction(value.action);
   const reason =
     typeof value.reason === "string" && value.reason.trim()
       ? value.reason.trim().slice(0, 240)
       : defaults.reason ?? "brain_response";
 
   return {
-    ok: value.ok !== false && normalizedActions.errors.length === 0,
+    ok: value.ok !== false && normalizedAction.errors.length === 0,
     provider: defaults.provider ?? value.provider ?? "unknown",
     model: defaults.model ?? value.model ?? "unknown",
     latencyMs: Number.isFinite(Number(defaults.latencyMs ?? value.latencyMs))
       ? Number(defaults.latencyMs ?? value.latencyMs)
       : 0,
     text: normalizeText(value.text, 500),
-    actions: normalizedActions.actions,
-    reason: normalizedActions.errors[0] ?? reason,
+    action: normalizedAction.action,
+    reason: normalizedAction.errors[0] ?? reason,
     confidence: clampNumber(value.confidence, 0, 1, defaults.confidence ?? 0.5),
     raw: defaults.raw ?? value.raw ?? null,
-    ...(normalizedActions.errors.length ? { errors: normalizedActions.errors } : {}),
+    ...(normalizedAction.errors.length ? { errors: normalizedAction.errors } : {}),
     ...(value.error || defaults.error ? { error: String(value.error ?? defaults.error).slice(0, 500) } : {})
   };
 }
 
-export function normalizeActions(actions, maxActions = 2) {
-  const list = Array.isArray(actions) ? actions : actions ? [actions] : [];
-  const normalized = [];
+export function normalizeAction(action) {
   const errors = [];
-  const limit = clampInteger(maxActions, 1, 8, 2);
 
-  for (const action of list) {
-    if (normalized.length >= limit) {
-      break;
-    }
+  if (!action) {
+    return {
+      action: null,
+      errors
+    };
+  }
 
-    const result = validateBrainAction(action);
+  const result = validateBrainAction(action);
 
-    if (result.ok) {
-      if (result.action.type !== "none") {
-        normalized.push(result.action);
-      }
-    } else {
-      errors.push(result.error);
-    }
+  if (!result.ok) {
+    errors.push(result.error);
   }
 
   return {
-    actions: normalized,
+    action: result.ok && result.action.type !== "none" ? result.action : null,
     errors
   };
 }
@@ -169,92 +144,13 @@ export function validateBrainAction(action) {
     };
   }
 
-  const officialAction = normalizeOfficialPerformAction(type, args);
-
   return {
     ok: true,
-    action: officialAction
-  };
-}
-
-function normalizeOfficialPerformAction(type, args = {}) {
-  if (type === "perform") {
-    return {
+    action: {
       type: "perform",
       args: sanitizePerformArgs(args)
-    };
-  }
-
-  if (type === "movement") {
-    return {
-      type: "perform",
-      args: sanitizePerformArgs({
-        speech: { text: "", tone: "soft" },
-        movement: args.movement,
-        timing: args.timing,
-        iterateMovement: args.iterateMovement
-      })
-    };
-  }
-
-  if (type === "speak") {
-    return {
-      type: "perform",
-      args: sanitizePerformArgs({
-        speech: { text: args.text, tone: args.tone },
-        movement: ["still"],
-        timing: "parallel",
-        iterateMovement: false
-      })
-    };
-  }
-
-  return {
-    type: "perform",
-    args: sanitizePerformArgs({
-      speech: { text: "", tone: "soft" },
-      movement: movementForLegacyAction(type, args),
-      timing: "parallel",
-      iterateMovement: false
-    })
+    }
   };
-}
-
-function movementForLegacyAction(type, args = {}) {
-  switch (type) {
-    case "approach_user":
-      return ["move_forward_tiny"];
-    case "retreat":
-      return ["move_backward_tiny"];
-    case "curious_scan":
-      return ["curious_shift"];
-    case "excited_wiggle":
-      return ["excited_wiggle"];
-    case "drive":
-      return movementForDrive(args);
-    case "express":
-    case "observe_scene":
-      return ["look_up"];
-    case "stop":
-    case "none":
-    default:
-      return ["still"];
-  }
-}
-
-function movementForDrive(args = {}) {
-  const linear = Number(args.linear);
-  const angular = Number(args.angular);
-
-  if (Number.isFinite(linear) && Math.abs(linear) >= Math.abs(angular || 0) && Math.abs(linear) > 0.001) {
-    return linear > 0 ? ["move_forward_tiny"] : ["move_backward_tiny"];
-  }
-
-  if (Number.isFinite(angular) && Math.abs(angular) > 0.001) {
-    return angular < 0 ? ["look_left"] : ["look_right"];
-  }
-
-  return ["still"];
 }
 
 function sanitizePerformArgs(args = {}) {
@@ -346,14 +242,4 @@ function clampNumber(value, min, max, fallback) {
   }
 
   return Math.min(max, Math.max(min, numeric));
-}
-
-function clampInteger(value, min, max, fallback) {
-  const numeric = Number(value);
-
-  if (!Number.isFinite(numeric)) {
-    return fallback;
-  }
-
-  return Math.min(max, Math.max(min, Math.round(numeric)));
 }

@@ -1,23 +1,4 @@
-export const LOCAL_BRAIN_ALLOWED_ACTIONS = new Set([
-  "none",
-  "speak",
-  "perform",
-  "movement",
-  "express",
-  "drive",
-  "stop",
-  "approach_user",
-  "retreat",
-  "curious_scan",
-  "excited_wiggle",
-  "observe_scene",
-  "remember",
-  "open_front_camera",
-  "open_back_camera",
-  "switch_camera",
-  "close_camera",
-  "capture_snapshot"
-]);
+export const LOCAL_BRAIN_ALLOWED_ACTIONS = new Set(["perform"]);
 
 const RAW_MOTOR_KEYS = new Set([
   "pwm",
@@ -56,21 +37,14 @@ export function parseBrainResponse(raw) {
     return safeNoneResponse("Brain response must be an object.");
   }
 
-  const rawActions = Array.isArray(value.actions)
-    ? value.actions
-    : value.action
-      ? [value.action]
-      : [];
-  const normalized = normalizeBrainActions(rawActions);
-  const actions = normalized.actions.length
-    ? normalized.actions
-    : [{ type: "none", args: {}, reason: "no_actions" }];
+  const normalized = normalizeBrainAction(value.action);
+  const action = normalized.action ?? { type: "none", args: {}, reason: "no_action" };
 
   return {
     ok: normalized.errors.length === 0 && value.ok !== false,
     source: normalizeText(value.source, "local_brain"),
     text: typeof value.text === "string" ? value.text : null,
-    actions,
+    action,
     reason: normalizeText(value.reason, normalized.errors[0] ?? "brain_response"),
     confidence: clampNumber(value.confidence, 0, 1, 0.5),
     shouldRemember: value.shouldRemember === true,
@@ -79,23 +53,29 @@ export function parseBrainResponse(raw) {
   };
 }
 
-export function normalizeBrainActions(actions) {
-  const list = Array.isArray(actions) ? actions : actions ? [actions] : [];
-  const normalizedActions = [];
+export function normalizeBrainAction(action) {
   const errors = [];
 
-  list.forEach((action, index) => {
-    const result = validateBrainAction(action);
+  if (!action) {
+    return {
+      action: null,
+      errors
+    };
+  }
 
-    if (result.ok) {
-      normalizedActions.push(result.action);
-    } else {
-      errors.push(`action[${index}]: ${result.error}`);
-    }
-  });
+  const result = validateBrainAction(action);
+
+  if (result.ok) {
+    return {
+      action: result.action,
+      errors
+    };
+  }
+
+  errors.push(`action: ${result.error}`);
 
   return {
-    actions: normalizedActions,
+    action: null,
     errors
   };
 }
@@ -135,98 +115,16 @@ export function validateBrainAction(action) {
     };
   }
 
-  const officialAction = normalizeOfficialPerformAction(type, args);
-
   return {
     ok: true,
     action: {
       id: typeof action.id === "string" ? action.id.slice(0, 80) : undefined,
       source: normalizeText(action.source, "local_brain"),
-      type: officialAction.type,
-      args: officialAction.args,
+      type: "perform",
+      args: sanitizePerformArgs(args),
       reason: typeof action.reason === "string" ? action.reason.slice(0, 240) : undefined
     }
   };
-}
-
-function normalizeOfficialPerformAction(type, args = {}) {
-  if (type === "perform") {
-    return {
-      type: "perform",
-      args: sanitizePerformArgs(args)
-    };
-  }
-
-  if (type === "movement") {
-    return {
-      type: "perform",
-      args: sanitizePerformArgs({
-        speech: { text: "", tone: "soft" },
-        movement: args.movement,
-        timing: args.timing,
-        iterateMovement: args.iterateMovement
-      })
-    };
-  }
-
-  if (type === "speak") {
-    return {
-      type: "perform",
-      args: sanitizePerformArgs({
-        speech: { text: args.text, tone: args.tone },
-        movement: ["still"],
-        timing: "parallel",
-        iterateMovement: false
-      })
-    };
-  }
-
-  return {
-    type: "perform",
-    args: sanitizePerformArgs({
-      speech: { text: "", tone: "soft" },
-      movement: movementForLegacyAction(type, args),
-      timing: "parallel",
-      iterateMovement: false
-    })
-  };
-}
-
-function movementForLegacyAction(type, args = {}) {
-  switch (type) {
-    case "approach_user":
-      return ["move_forward_tiny"];
-    case "retreat":
-      return ["move_backward_tiny"];
-    case "curious_scan":
-      return ["curious_shift"];
-    case "excited_wiggle":
-      return ["excited_wiggle"];
-    case "drive":
-      return movementForDrive(args);
-    case "express":
-    case "observe_scene":
-      return ["look_up"];
-    case "stop":
-    case "none":
-    default:
-      return ["still"];
-  }
-}
-
-function movementForDrive(args = {}) {
-  const linear = Number(args.linear);
-  const angular = Number(args.angular);
-
-  if (Number.isFinite(linear) && Math.abs(linear) >= Math.abs(angular || 0) && Math.abs(linear) > 0.001) {
-    return linear > 0 ? ["move_forward_tiny"] : ["move_backward_tiny"];
-  }
-
-  if (Number.isFinite(angular) && Math.abs(angular) > 0.001) {
-    return angular < 0 ? ["look_left"] : ["look_right"];
-  }
-
-  return ["still"];
 }
 
 function sanitizePerformArgs(args = {}) {
@@ -257,13 +155,11 @@ function safeNoneResponse(error) {
     ok: false,
     source: "parser",
     text: null,
-    actions: [
-      {
-        type: "none",
-        args: {},
-        reason: error
-      }
-    ],
+    action: {
+      type: "none",
+      args: {},
+      reason: error
+    },
     reason: error,
     confidence: 0,
     shouldRemember: false,

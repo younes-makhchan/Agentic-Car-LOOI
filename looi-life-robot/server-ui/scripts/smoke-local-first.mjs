@@ -52,17 +52,17 @@ assert.equal(clampedPolicy.minAutonomousThoughtIntervalMs, 1000);
 
 const mock = new MockBrainAdapter();
 const comeHere = await mock.think(contextForText("come here", { localMotionArmed: true }));
-assert.equal(comeHere.actions[0].type, "perform");
-assert.equal(comeHere.actions[0].args.movement.includes("move_forward_tiny"), true);
+assert.equal(comeHere.action.type, "perform");
+assert.equal(comeHere.action.args.movement.includes("move_forward_tiny"), true);
 const giveSpace = await mock.think(contextForText("please give me space", { localMotionArmed: true }));
-assert.equal(giveSpace.actions[0].type, "perform");
-assert.equal(giveSpace.actions[0].args.movement.includes("move_backward_tiny"), true);
+assert.equal(giveSpace.action.type, "perform");
+assert.equal(giveSpace.action.args.movement.includes("move_backward_tiny"), true);
 const lookAround = await mock.think(contextForText("look around", { localMotionArmed: true }));
-assert.equal(lookAround.actions[0].type, "perform");
-assert.equal(lookAround.actions[0].args.movement.includes("curious_shift"), true);
+assert.equal(lookAround.action.type, "perform");
+assert.equal(lookAround.action.args.movement.includes("curious_shift"), true);
 const stop = await mock.think(contextForText("freeze"));
-assert.equal(stop.actions[0].type, "perform");
-assert.equal(stop.actions[0].args.movement.includes("still"), true);
+assert.equal(stop.action.type, "perform");
+assert.equal(stop.action.args.movement.includes("still"), true);
 
 const fallback = new RuleBrainFallback();
 assert.equal(fallback.classifyText("freeze"), "safety_stop");
@@ -76,13 +76,13 @@ const unknownAction = validateBrainAction({ type: "raw_pwm", args: {} });
 assert.equal(unknownAction.ok, false);
 assert.match(unknownAction.error, /unknown/i);
 const rawMotorAction = validateBrainAction({
-  type: "drive",
-  args: { left_motor: 1, linear: 0.1, angular: 0, duration_ms: 100 }
+  type: "perform",
+  args: { left_motor: 1, movement: ["move_forward_tiny"] }
 });
 assert.equal(rawMotorAction.ok, false);
 assert.match(rawMotorAction.error, /motor|PWM/i);
 const invalidJson = parseBrainResponse("{not json");
-assert.equal(invalidJson.actions[0].type, "none");
+assert.equal(invalidJson.action.type, "none");
 assert.equal(invalidJson.ok, false);
 
 let policy = createDefaultBrainPolicy();
@@ -124,12 +124,15 @@ const engine = new LocalBrainEngine({
       return {
         ok: true,
         source: "test",
-        actions: [
-          {
-            type: "approach_user",
-            args: { style: "gentle", distance: "short" }
+        action: {
+          type: "perform",
+          args: {
+            speech: { text: "", tone: "soft" },
+            movement: ["move_forward_tiny"],
+            timing: "parallel",
+            iterateMovement: false
           }
-        ],
+        },
         reason: "test physical rejection"
       };
     }
@@ -148,17 +151,20 @@ engine.setAdapter({
     return true;
   },
   async think() {
-    return {
-      ok: true,
-      source: "test",
-      actions: [
-        {
-          type: "stop",
-          args: { reason: "smoke_local_stop" }
-        }
-      ],
-      reason: "test stop allowed"
-    };
+      return {
+        ok: true,
+        source: "test",
+        action: {
+          type: "perform",
+          args: {
+            speech: { text: "", tone: "soft" },
+            movement: ["still"],
+            timing: "parallel",
+            iterateMovement: false
+          }
+        },
+        reason: "test stop allowed"
+      };
   }
 });
 const stopThought = await engine.thinkNow("manual");
@@ -174,17 +180,20 @@ engine.setAdapter({
     return true;
   },
   async think() {
-    return {
-      ok: true,
-      source: "test",
-      actions: [
-        {
-          type: "retreat",
-          args: { style: "gentle", distance: "short" }
-        }
-      ],
-      reason: "test armed motion"
-    };
+      return {
+        ok: true,
+        source: "test",
+        action: {
+          type: "perform",
+          args: {
+            speech: { text: "", tone: "soft" },
+            movement: ["move_backward_tiny"],
+            timing: "parallel",
+            iterateMovement: false
+          }
+        },
+        reason: "test armed motion"
+      };
   }
 });
 const armedThought = await engine.thinkNow("manual");

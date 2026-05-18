@@ -131,11 +131,11 @@ export class MockProvider {
   }
 }
 
-function response({ text = null, actions = [], reason = "mock", confidence = 0.8 } = {}) {
+function response({ text = null, action = null, reason = "mock", confidence = 0.8 } = {}) {
   return {
     ok: true,
     text,
-    actions,
+    action,
     reason,
     confidence
   };
@@ -146,20 +146,18 @@ function performResponse({ policy = {}, text = "", tone = "soft", movement = ["s
 
   return response({
     text: speechText || null,
-    actions: [
-      {
-        type: "perform",
-        args: {
-          speech: {
-            text: speechText,
-            tone
-          },
-          movement: Array.isArray(movement) && movement.length ? movement : ["still"],
-          timing: "parallel",
-          iterateMovement: false
-        }
+    action: {
+      type: "perform",
+      args: {
+        speech: {
+          text: speechText,
+          tone
+        },
+        movement: Array.isArray(movement) && movement.length ? movement : ["still"],
+        timing: "parallel",
+        iterateMovement: false
       }
-    ],
+    },
     reason,
     confidence
   });

@@ -3086,7 +3086,7 @@ function renderLocalBrainThoughts(thoughts = localBrainEngine?.getRecentThoughts
     item.className = `local-brain-item${thought.skipped ? " local-brain-item--skipped" : ""}`;
 
     const title = document.createElement("strong");
-    title.textContent = `${thought.reason ?? "thought"} · ${thought.actionTypes?.join(", ") || "none"}`;
+    title.textContent = `${thought.reason ?? "thought"} · ${thought.actionType || "none"}`;
 
     const detail = document.createElement("span");
     const resultSummary = (thought.results ?? [])
@@ -3663,14 +3663,14 @@ function traceBrainThoughtResult(event = {}) {
   const thought = payload.thought ?? {};
   const response = payload.response ?? thought.response ?? {};
   const results = payload.results ?? thought.results ?? [];
-  const actions = response.actions ?? thought.actions ?? [];
+  const action = response.action ?? thought.action ?? null;
 
   traceLive("STEP 2 BRAIN", {
     reason: thought.reason ?? response.reason,
     provider: payload.provider ?? thought.provider,
     latencyMs: payload.latencyMs ?? thought.latencyMs,
     text: response.text ?? thought.text,
-    actions: summarizeActions(actions),
+    action: action ? summarizeActions([action])[0] : null,
     results: summarizeResults(results),
     fallbackUsed: payload.fallbackUsed ?? thought.fallbackUsed,
     error: payload.error ?? thought.error

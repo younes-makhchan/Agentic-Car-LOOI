@@ -15,7 +15,7 @@ export class MockBrainAdapter {
 
     if (["background", "noise"].includes(classification)) {
       return response({
-        actions: [
+        legacyPlan: [
           {
             type: "none",
             args: {},
@@ -29,7 +29,7 @@ export class MockBrainAdapter {
 
     if (/\b(stop|freeze|halt)\b/.test(text) || /\bdon'?t move\b/.test(text)) {
       return response({
-        actions: [
+        legacyPlan: [
           {
             type: "stop",
             args: { reason: "local_brain_stop_phrase" },
@@ -45,7 +45,7 @@ export class MockBrainAdapter {
       if (!policy.localMotionArmed) {
         return response({
           text: policy.localSpeechAllowed === false ? null : "My body is not armed yet.",
-          actions: [
+          legacyPlan: [
             {
               type: "express",
               args: { emotion: "attentive", intensity: 0.55 },
@@ -68,7 +68,7 @@ export class MockBrainAdapter {
 
       return response({
         text: "Coming a little closer.",
-        actions: [
+        legacyPlan: [
           {
             type: "approach_user",
             args: { style: "gentle", distance: "short" },
@@ -129,7 +129,7 @@ export class MockBrainAdapter {
       if (!policy.localMotionArmed) {
         return response({
           text: policy.localSpeechAllowed === false ? null : "I'll stay still and give you space.",
-          actions: [
+          legacyPlan: [
             {
               type: "express",
               args: { emotion: "shy", intensity: 0.55 },
@@ -152,7 +152,7 @@ export class MockBrainAdapter {
 
       return response({
         text: "I'll give you room.",
-        actions: [
+        legacyPlan: [
           {
             type: "retreat",
             args: { style: "gentle", distance: "short" },
@@ -172,7 +172,7 @@ export class MockBrainAdapter {
     if (/\blook around\b|\bcheck the room\b|\bscan\b/.test(text)) {
       if (!policy.localMotionArmed) {
         return response({
-          actions: [
+          legacyPlan: [
             policy.localCameraAllowed
               ? {
                   type: "observe_scene",
@@ -191,7 +191,7 @@ export class MockBrainAdapter {
       }
 
       return response({
-        actions: [
+        legacyPlan: [
           {
             type: "curious_scan",
             args: { direction: "both", intensity: 0.55 },
@@ -206,7 +206,7 @@ export class MockBrainAdapter {
     if (!text && Number(context.lifeState?.boredom) > 0.82) {
       if (policy.localMotionArmed && policy.allowAutonomousMovement) {
         return response({
-          actions: [
+          legacyPlan: [
             {
               type: "curious_scan",
               args: { direction: "both", intensity: 0.35 },
@@ -219,7 +219,7 @@ export class MockBrainAdapter {
       }
 
       return response({
-        actions: [
+        legacyPlan: [
           {
             type: "express",
             args: { emotion: "curious", intensity: 0.55 },
@@ -234,7 +234,7 @@ export class MockBrainAdapter {
     if (classification === "wake_name" || /\b(hello|hi|hey|looi|louie|lui|robot)\b/.test(text)) {
       return response({
         text: policy.localSpeechAllowed === false ? null : classification === "wake_name" ? "Hm?" : "Hi.",
-        actions: [
+        legacyPlan: [
           {
             type: "express",
             args: { emotion: classification === "wake_name" ? "attentive" : "happy", intensity: 0.65 },
@@ -260,7 +260,7 @@ export class MockBrainAdapter {
 
     if (context.reason === "autonomous_tick") {
       return response({
-        actions: [
+        legacyPlan: [
           {
             type: "express",
             args: { emotion: "curious", intensity: 0.45 },
@@ -273,7 +273,7 @@ export class MockBrainAdapter {
     }
 
     return response({
-      actions: [
+      legacyPlan: [
         {
           type: "express",
           args: { emotion: "attentive", intensity: 0.45 },
@@ -286,35 +286,33 @@ export class MockBrainAdapter {
   }
 }
 
-function response({ text = null, actions = [], reason = "mock", confidence = 0.8 } = {}) {
+function response({ text = null, legacyPlan = [], reason = "mock", confidence = 0.8 } = {}) {
   return {
     ok: true,
     source: "mock",
     text,
-    actions: normalizeOfficialActions(actions),
+    action: normalizeOfficialAction(legacyPlan),
     reason,
     confidence,
     shouldRemember: false
   };
 }
 
-function normalizeOfficialActions(actions = []) {
-  const list = Array.isArray(actions) ? actions : [];
+function normalizeOfficialAction(legacyPlan = []) {
+  const list = Array.isArray(legacyPlan) ? legacyPlan : [];
   const speechAction = list.find((action) => action?.type === "speak");
   const movementAction = list.find((action) => action?.type !== "speak") ?? speechAction;
 
-  return [
-    {
-      type: "perform",
-      args: {
-        speech: speechForAction(speechAction),
-        movement: movementForAction(movementAction),
-        timing: "parallel",
-        iterateMovement: false
-      },
-      reason: movementAction?.reason ?? speechAction?.reason
-    }
-  ];
+  return {
+    type: "perform",
+    args: {
+      speech: speechForAction(speechAction),
+      movement: movementForAction(movementAction),
+      timing: "parallel",
+      iterateMovement: false
+    },
+    reason: movementAction?.reason ?? speechAction?.reason
+  };
 }
 
 function speechForAction(action = {}) {
@@ -370,7 +368,7 @@ function movementResponse({ policy, text, action, blockedEmotion, reason }) {
   if (!policy.localMotionArmed) {
     return response({
       text: policy.localSpeechAllowed === false ? null : "My body is not armed yet.",
-      actions: [
+      legacyPlan: [
         { type: "express", args: { emotion: blockedEmotion, intensity: 0.55 } },
         ...(policy.localSpeechAllowed === false
           ? []
@@ -383,7 +381,7 @@ function movementResponse({ policy, text, action, blockedEmotion, reason }) {
 
   return response({
     text: policy.localSpeechAllowed === false ? null : text,
-    actions: [
+    legacyPlan: [
       action,
       ...(policy.localSpeechAllowed === false
         ? []
