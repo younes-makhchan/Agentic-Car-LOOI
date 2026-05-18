@@ -7,6 +7,7 @@ import {
   validateBrainAction
 } from "../lib/localBrain/brainResponseParser.js";
 import { sanitizeBrainContext } from "../lib/localBrain/brainContextSanitizer.js";
+import { sanitizeBrainRequestValue } from "../public/js/localBrain/localServerBrainAdapter.js";
 
 process.env.LOCAL_BRAIN_ENABLED = "true";
 process.env.LOCAL_BRAIN_PROVIDER = "mock";
@@ -189,6 +190,25 @@ assert.equal(JSON.stringify(sanitized).includes("api key"), false);
 assert.equal(sanitized.recentEvents.length, 20);
 assert.equal("memory" in sanitized, false);
 assert.equal("learnedPhraseCount" in sanitized, false);
+
+const browserSanitized = sanitizeBrainRequestValue({
+  recentThoughts: [
+    {
+      results: [
+        {
+          detail: {
+            snapshot: {
+              width: 640,
+              dataUrl: `data:image/jpeg;base64,${"A".repeat(160000)}`
+            }
+          }
+        }
+      ]
+    }
+  ]
+});
+assert.equal(JSON.stringify(browserSanitized).includes("data:image"), false);
+assert.equal("dataUrl" in browserSanitized.recentThoughts[0].results[0].detail.snapshot, false);
 
 const { app } = await import("../server.js");
 const server = app.listen(0);

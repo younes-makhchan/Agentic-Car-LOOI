@@ -175,13 +175,13 @@ export class LocalBrainEngine {
         message: response.reason
       });
 
-      this.eventBus?.publish?.("brain_thought_result", {
-        thought,
-        response,
-        results,
-        provider: this.provider,
-        latencyMs: this.latestLatencyMs,
-        fallbackUsed
+    this.eventBus?.publish?.("brain_thought_result", {
+      thought,
+      response: stripLargeMediaFields(response),
+      results: thought.results,
+      provider: this.provider,
+      latencyMs: this.latestLatencyMs,
+      fallbackUsed
       }, {
         source: "local_brain",
         priority: 1
@@ -352,16 +352,26 @@ export class LocalBrainEngine {
     const policy = this.policy();
 
     return {
-      ...brainRuntimeContext,
       reason,
       triggerEvent,
       policy,
-      lifeState: brainRuntimeContext.lifeState ?? this.lifeEngine?.getState?.() ?? null,
+      lifeState: {
+        mood: brainRuntimeContext.lifeState?.mood,
+        energy: brainRuntimeContext.lifeState?.energy,
+        userVisible: brainRuntimeContext.lifeState?.userVisible,
+        userPosition: brainRuntimeContext.lifeState?.userPosition,
+        userDistance: brainRuntimeContext.lifeState?.userDistance,
+        isSpeaking: brainRuntimeContext.lifeState?.isSpeaking,
+        isListening: brainRuntimeContext.lifeState?.isListening
+      },
+      speech: {
+        listening: brainRuntimeContext.speechStatus?.listening,
+        speaking: brainRuntimeContext.voiceStatus?.speaking
+      },
       recentEvents:
         brainRuntimeContext.recentEvents ??
-        this.eventBus?.getRecentEvents?.({ limit: 30 }) ??
+        this.eventBus?.getRecentEvents?.({ limit: 5 }) ??
         [],
-      recentThoughts: this.getRecentThoughts({ limit: 8 })
     };
   }
 
@@ -576,7 +586,7 @@ export class LocalBrainEngine {
 
     this.eventBus?.publish?.("brain_thought_result", {
       thought,
-      results: [result]
+      results: thought.results
     }, {
       source: "local_brain",
       priority: 5
@@ -693,6 +703,7 @@ export class LocalBrainEngine {
   }
 
   recordThought({ reason, triggerEvent, response, results, skipped, message, error } = {}) {
+    const safeResults = stripLargeMediaFields(results ?? []);
     const thought = {
       id: `thought_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`,
       at: Date.now(),
@@ -707,8 +718,8 @@ export class LocalBrainEngine {
       text: response?.text ?? null,
       fallbackUsed: this.lastFallbackUsed,
       actionType: response?.action?.type ?? null,
-      results: results ?? [],
-      result: results ?? [],
+      results: safeResults,
+      result: safeResults,
       skipped: Boolean(skipped),
       message: message ?? response?.reason ?? "",
       error: error ?? null
@@ -769,6 +780,44 @@ function hasUserSpeechText(...sources) {
       "";
     return String(value).trim().length > 0;
   });
+}
+
+function stripLargeMediaFields(value, depth = 0) {
+  if (depth > 8) {
+    return null;
+  }
+
+  if (Array.isArray(value)) {
+    return value.slice(0, 30).map((item) => stripLargeMediaFields(item, depth + 1));
+  }
+
+  if (!value || typeof value !== "object") {
+    return stripLargeMediaScalar(value);
+  }
+
+  const result = {};
+
+  Object.entries(value).forEach(([key, child]) => {
+    if (/^(dataUrl|data_url|imageData|image_data|base64|blob|raw)$/i.test(String(key))) {
+      return;
+    }
+
+    result[key] = stripLargeMediaFields(child, depth + 1);
+  });
+
+  return result;
+}
+
+function stripLargeMediaScalar(value) {
+  if (typeof value !== "string") {
+    return value;
+  }
+
+  if (/^data:(image|audio|video)\//i.test(value)) {
+    return "[local_media_omitted]";
+  }
+
+  return value.length > 1000 ? `${value.slice(0, 1000)}...` : value;
 }
 
 function clampInteger(value, min, max, fallback) {

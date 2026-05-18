@@ -27,13 +27,15 @@ export class LocalServerBrainAdapter {
   }
 
   async think(context = {}) {
+    const safeContext = sanitizeBrainRequestValue(context);
+    const safeTriggerEvent = sanitizeBrainRequestValue(context.triggerEvent ?? null);
     const response = await fetch("/api/local-brain/think", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        reason: context.reason ?? "manual",
-        triggerEvent: context.triggerEvent ?? null,
-        context
+        reason: safeContext.reason ?? context.reason ?? "manual",
+        triggerEvent: safeTriggerEvent,
+        context: safeContext
       })
     });
     const payload = await response.json().catch(() => ({}));
@@ -70,4 +72,50 @@ export class LocalServerBrainAdapter {
       this.logger(message, level);
     }
   }
+}
+
+export function sanitizeBrainRequestValue(value, depth = 0) {
+  if (depth > 8) {
+    return null;
+  }
+
+  if (Array.isArray(value)) {
+    return value.slice(0, 30).map((item) => sanitizeBrainRequestValue(item, depth + 1));
+  }
+
+  if (!value || typeof value !== "object") {
+    return sanitizeBrainRequestScalar(value);
+  }
+
+  const result = {};
+
+  Object.entries(value).forEach(([key, child]) => {
+    if (isMediaKey(key)) {
+      return;
+    }
+
+    result[key] = sanitizeBrainRequestValue(child, depth + 1);
+  });
+
+  return result;
+}
+
+function sanitizeBrainRequestScalar(value) {
+  if (typeof value !== "string") {
+    return value;
+  }
+
+  if (isMediaLikeString(value)) {
+    return "[local_media_omitted]";
+  }
+
+  return value.length > 800 ? `${value.slice(0, 800)}...` : value;
+}
+
+function isMediaKey(key) {
+  return /^(dataUrl|data_url|imageData|image_data|base64|blob|raw)$/i.test(String(key));
+}
+
+function isMediaLikeString(value) {
+  return /^data:(image|audio|video)\//i.test(value) || /^[A-Za-z0-9+/]{12000,}={0,2}$/.test(value);
 }

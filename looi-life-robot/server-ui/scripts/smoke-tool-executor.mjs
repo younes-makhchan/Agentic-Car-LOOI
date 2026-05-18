@@ -237,7 +237,7 @@ const observeSnapshot = await executor.executeBridgeAction({
   }
 });
 assert.equal(observeSnapshot.status, "completed");
-assert.equal(observeSnapshot.detail.snapshot.dataUrl, null);
+assert.equal("dataUrl" in observeSnapshot.detail.snapshot, false);
 
 policy.cloudCameraAllowed = false;
 

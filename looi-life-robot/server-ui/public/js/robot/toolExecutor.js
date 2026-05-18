@@ -361,7 +361,7 @@ export class ToolExecutor {
           ignoredMovement: normalizedArgs.movement,
           scenarioMovement: scenario.movement,
           cameraStatus: sanitizeCameraStatus(snapshotResult.status),
-          snapshot: snapshotResult.snapshot ?? null
+          snapshot: sanitizeSnapshotMetadata(snapshotResult.snapshot)
         }
       });
     } finally {
@@ -775,7 +775,7 @@ export class ToolExecutor {
         });
       }
 
-      detail.snapshot = snapshotResult.snapshot;
+      detail.snapshot = sanitizeSnapshotMetadata(snapshotResult.snapshot);
       detail.cameraStatus = sanitizeCameraStatus(snapshotResult.status);
     }
 
@@ -922,7 +922,7 @@ export class ToolExecutor {
       message: result.ok ? "Captured a small local camera snapshot." : result.error ?? "Snapshot capture failed.",
       detail: {
         cameraStatus: sanitizeCameraStatus(result.status),
-        snapshot: result.snapshot ?? null
+        snapshot: sanitizeSnapshotMetadata(result.snapshot)
       }
     });
   }
@@ -1468,6 +1468,22 @@ function sanitizeCameraStatus(status = {}) {
           note: status.observation.note ?? ""
         }
       : null
+  };
+}
+
+function sanitizeSnapshotMetadata(snapshot = null) {
+  if (!snapshot || typeof snapshot !== "object") {
+    return null;
+  }
+
+  return {
+    timestamp: snapshot.timestamp ?? null,
+    facingMode: snapshot.facingMode ?? "unknown",
+    width: Number.isFinite(Number(snapshot.width)) ? Number(snapshot.width) : null,
+    height: Number.isFinite(Number(snapshot.height)) ? Number(snapshot.height) : null,
+    bytesApprox: Number.isFinite(Number(snapshot.bytesApprox)) ? Number(snapshot.bytesApprox) : null,
+    note: snapshot.note ?? "",
+    hasDataUrl: typeof snapshot.dataUrl === "string" && snapshot.dataUrl.startsWith("data:image/")
   };
 }
 
