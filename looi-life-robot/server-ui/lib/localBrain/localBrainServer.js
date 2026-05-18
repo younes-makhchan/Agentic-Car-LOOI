@@ -242,7 +242,6 @@ function summarizeContext(context = {}) {
           args: trigger.suggestedIntent.args
         }
       : null,
-    attentionMode: context.attention?.mode ?? null,
     life: context.lifeState
       ? {
           mood: context.lifeState.mood,

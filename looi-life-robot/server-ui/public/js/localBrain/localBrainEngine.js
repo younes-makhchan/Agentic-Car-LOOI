@@ -348,19 +348,19 @@ export class LocalBrainEngine {
   buildContext(reason, triggerEvent) {
     const runtimeContext =
       typeof this.getRuntimeContext === "function" ? this.getRuntimeContext() : {};
+    const { attention: _attention, ...brainRuntimeContext } = runtimeContext ?? {};
     const policy = this.policy();
 
     return {
-      ...runtimeContext,
+      ...brainRuntimeContext,
       reason,
       triggerEvent,
       policy,
-      lifeState: runtimeContext.lifeState ?? this.lifeEngine?.getState?.() ?? null,
+      lifeState: brainRuntimeContext.lifeState ?? this.lifeEngine?.getState?.() ?? null,
       recentEvents:
-        runtimeContext.recentEvents ??
+        brainRuntimeContext.recentEvents ??
         this.eventBus?.getRecentEvents?.({ limit: 30 }) ??
         [],
-      attention: runtimeContext.attention ?? this.attentionSystem?.getStatus?.() ?? null,
       recentThoughts: this.getRecentThoughts({ limit: 8 })
     };
   }

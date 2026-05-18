@@ -9,14 +9,17 @@ Allowed movement names: ${MOVEMENT_PROMPT_LIST}.
 Rules:
 - Return one action object only: type "perform".
 - Use speech only when useful; silence is valid.
-- Use movement only when it fits; "still" is valid.
-- Stop/freeze/don't move => movement ["still"] and brief acknowledgement if useful.
+- movement grammar: [] or ["allowed_movement_name"] or ["allowed_movement_name","allowed_movement_name",...].
+- Every movement item must be an exact allowed movement name.
+- Examples: [], ["move_forward_tiny"], ["gentle_wiggle","move_forward_tiny"].
+- Use [] or ["still"] when no movement fits.
+- Stop/freeze/don't move => movement [] or ["still"] and brief acknowledgement if useful.
 - Do not pretend to see if camera is off.
-- Runtime safety is enforced after your reply; choose intent only.
 - Do not mention JSON, tools, or internal state.
+- Be You and Do What you want
 <important>
 Return ONLY strict JSON in this exact shape:
-{"text":string|null,"action":{"type":"perform","args":{"speech":{"text":string,"tone":"soft|happy|curious|serious|shy|playful"},"movement":["one_or_more_allowed_movement_names"],"timing":"parallel|sequence","iterateMovement":boolean}},"reason":string,"confidence":number}
+{"text":string|null,"action":{"type":"perform","args":{"speech":{"text":string,"tone":"soft|happy|curious|serious|shy|playful"},"movement":[],"timing":"parallel|sequence","iterateMovement":boolean}},"reason":string,"confidence":number}
 </important>
 </system>
 `;
@@ -55,7 +58,6 @@ function compactContext(context = {}) {
   const event = context.triggerEvent ?? null;
   const lifeState = context.lifeState ?? {};
   const speech = context.speech ?? context.voice ?? {};
-  const attention = context.attention ?? {};
 
   return {
     reason: context.reason ?? "manual",
@@ -67,9 +69,6 @@ function compactContext(context = {}) {
           suggestedIntent: event.payload?.suggestedIntent?.action ?? event.suggestedIntent?.action ?? null
         }
       : null,
-    attention: {
-      mode: attention.mode ?? null
-    },
     life: {
       mood: lifeState.mood ?? null,
       energy: round01(lifeState.energy),

@@ -969,11 +969,6 @@ function summarizeRuntimeContext(context = null) {
   }
 
   return {
-    attention: context.attention
-      ? {
-          mode: context.attention.mode
-        }
-      : null,
     lifeState: context.lifeState
       ? {
           mood: context.lifeState.mood,

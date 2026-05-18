@@ -3,9 +3,9 @@ import { MOVEMENT_PROMPT_LIST } from "../../public/js/embodiment/movementCatalog
 export const LOCAL_BRAIN_SERVER_SYSTEM_PROMPT = `You are LOOI's action selector, not a chatbot.
 Return ONLY minified JSON. No markdown. No extra keys.
 Schema: {"text":string|null,"action":{"type":"perform","args":object},"reason":string,"confidence":number}
-perform args: {"speech":{"text":"short sentence","tone":"soft|happy|curious|serious|shy|playful"},"movement":["canonical movement action"],"iterateMovement":false,"timing":"parallel|sequence"}.
+perform args: {"speech":{"text":"short sentence","tone":"soft|happy|curious|serious|shy|playful"},"movement":[],"iterateMovement":false,"timing":"parallel|sequence"}.
 Movement names you may choose: ${MOVEMENT_PROMPT_LIST}.
-Rules: choose one perform action only. Reply briefly or use empty speech. Use ["still"] when no movement fits. stop/freeze/don't move => ["still"]. Runtime enforces safety after your reply. Never raw PWM/motors/code/network/files.`;
+Rules: choose one perform action only. movement grammar: [] or ["allowed_movement_name"] or ["allowed_movement_name","allowed_movement_name",...]. Every movement item must be an exact name from the allowed list, for example ["gentle_wiggle","move_forward_tiny"]. Reply briefly or use empty speech. Use [] or ["still"] when no movement fits. stop/freeze/don't move => [] or ["still"]. Runtime enforces safety after your reply. Never raw PWM/motors/code/network/files.`;
 
 export function buildLocalBrainMessages(context = {}) {
   const compactContext = buildCompactBrainContext(context);
@@ -24,7 +24,6 @@ export function buildLocalBrainMessages(context = {}) {
 export function buildCompactBrainContext(context = {}) {
   const trigger = context.triggerEvent ?? {};
   const life = context.lifeState ?? {};
-  const attention = context.attention ?? {};
   const speech = context.speech ?? context.voice ?? {};
   const memory = context.memory ?? null;
   const recentEvents = Array.isArray(context.recentEvents) ? context.recentEvents : [];
@@ -41,9 +40,6 @@ export function buildCompactBrainContext(context = {}) {
       immediateStop: boolOrUndefined(trigger.shouldImmediateStop),
       gateReason: shortValue(trigger.gateReason, 80),
       suggestedIntent: compactSuggestedIntent(trigger.suggestedIntent)
-    }),
-    attention: dropEmpty({
-      mode: shortValue(attention.mode, 32)
     }),
     life: dropEmpty({
       mood: shortValue(life.mood, 32),
