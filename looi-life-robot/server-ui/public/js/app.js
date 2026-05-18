@@ -34,6 +34,10 @@ import { createFaceController } from "./ui/faceCanvas.js";
 
 const DEFAULT_SPEED = 0.2;
 const DEFAULT_DURATION_MS = 400;
+const LOCAL_VISION_SIZE_STORAGE_KEY = "looi.localVisionWidgetSizePx.v1";
+const LOCAL_VISION_SIZE_MIN = 90;
+const LOCAL_VISION_SIZE_MAX = 240;
+const LOCAL_VISION_SIZE_STEP = 10;
 
 const ui = {
   canvas: document.getElementById("faceCanvas"),
@@ -48,6 +52,8 @@ const ui = {
   localVisionPreview: document.getElementById("localVisionPreview"),
   localVisionState: document.getElementById("localVisionState"),
   localVisionDetail: document.getElementById("localVisionDetail"),
+  localVisionSizeSlider: document.getElementById("localVisionSizeSlider"),
+  localVisionSizeValue: document.getElementById("localVisionSizeValue"),
   esp32Status: document.getElementById("esp32Status"),
   moodValue: document.getElementById("moodValue"),
   energyValue: document.getElementById("energyValue"),
@@ -318,12 +324,14 @@ let looiModeEnabled = false;
 let idleMicroBehaviorEnabled = true;
 let attentionBodyTrackingEnabled = false;
 let keepRobotAwakeEnabled = false;
+let localVisionWidgetSizePx = loadLocalVisionWidgetSize();
 let lastLogSignature = "";
 const QUIET_IDLE_MACROS = new Set(["soft_idle", "soft_recenter", "thinking_pose"]);
 
 face = createFaceController(ui.canvas);
 face.setExpression("neutral");
 face.setEyeDirection("center");
+applyLocalVisionWidgetSize(localVisionWidgetSizePx, { persist: false });
 renderTelemetry(null);
 updateSliderLabels();
 updateSimulatorUi();
@@ -681,11 +689,9 @@ ui.startListeningButton.addEventListener("click", () => {
   if (ui.alwaysListeningToggle.checked) {
     ui.continuousListeningToggle.checked = true;
     speechInput.startAlwaysListening();
-    logSpeechStartStatus("Manual always-listening start");
   } else {
     speechInput.setContinuous(ui.continuousListeningToggle.checked);
     speechInput.start();
-    logSpeechStartStatus("Manual listening start");
   }
   updateAlwaysListeningUi();
 });
@@ -1058,6 +1064,9 @@ ui.runWheelsLiftedSafetyTestButton?.addEventListener("click", () => {
 
 ui.speedSlider.addEventListener("input", updateSliderLabels);
 ui.durationSlider.addEventListener("input", updateSliderLabels);
+ui.localVisionSizeSlider?.addEventListener("input", () => {
+  applyLocalVisionWidgetSize(ui.localVisionSizeSlider.value);
+});
 
 init();
 
@@ -2371,7 +2380,6 @@ async function startLocalBrainProductionMode() {
   ui.continuousListeningToggle.checked = true;
   ui.alwaysListeningToggle.checked = true;
   speechInput?.startAlwaysListening?.();
-  logSpeechStartStatus("Live listening start");
   attentionSystem?.wake?.("live_start", activeConfig.conversationWindowMs ?? 30000);
   speechGate?.openAttentionWindow?.("live_start");
 
@@ -2414,8 +2422,7 @@ function primeSpeechFromUserGesture() {
   speechInput.setContinuous?.(true);
   ui.continuousListeningToggle.checked = true;
   ui.alwaysListeningToggle.checked = true;
-  const status = speechInput.startAlwaysListening?.();
-  logSpeechStartStatus("Live tap speech prime", status);
+  speechInput.startAlwaysListening?.();
   updateVoiceUi();
   updateAlwaysListeningUi();
 }
@@ -2430,20 +2437,6 @@ function primeCameraFromUserGesture() {
     .catch((error) => {
       log(`Camera permission prime failed: ${error.message}`, "warn");
     });
-}
-
-function logSpeechStartStatus(label, status = speechInput?.getStatus?.()) {
-  if (!status) {
-    return;
-  }
-
-  const state = status.supported
-    ? status.listening
-      ? "listening"
-      : "start requested"
-    : "unsupported";
-  const error = status.lastError ? ` error=${status.lastError}` : "";
-  log(`${label}: ${state}${error}`);
 }
 
 async function ensureOfficialRobotConnection() {
@@ -3686,6 +3679,58 @@ function parseJsonObject(value, fallback = {}) {
 function updateSliderLabels() {
   ui.speedValue.textContent = getSpeedSetting().toFixed(2);
   ui.durationValue.textContent = `${getDurationSetting()} ms`;
+}
+
+function getDefaultLocalVisionWidgetSize() {
+  return globalThis.matchMedia?.("(max-width: 560px)")?.matches ? 140 : 210;
+}
+
+function loadLocalVisionWidgetSize() {
+  let storedValue = null;
+
+  try {
+    storedValue = globalThis.localStorage?.getItem?.(LOCAL_VISION_SIZE_STORAGE_KEY) ?? null;
+  } catch {
+    storedValue = null;
+  }
+
+  return normalizeLocalVisionWidgetSize(storedValue ?? getDefaultLocalVisionWidgetSize());
+}
+
+function normalizeLocalVisionWidgetSize(value) {
+  const rawSize = clampNumber(
+    value,
+    LOCAL_VISION_SIZE_MIN,
+    LOCAL_VISION_SIZE_MAX,
+    getDefaultLocalVisionWidgetSize()
+  );
+  return Math.round(rawSize / LOCAL_VISION_SIZE_STEP) * LOCAL_VISION_SIZE_STEP;
+}
+
+function applyLocalVisionWidgetSize(value, { persist = true } = {}) {
+  localVisionWidgetSizePx = normalizeLocalVisionWidgetSize(value);
+  document.documentElement.style.setProperty(
+    "--local-vision-widget-width",
+    `${localVisionWidgetSizePx}px`
+  );
+
+  if (ui.localVisionSizeSlider) {
+    ui.localVisionSizeSlider.value = String(localVisionWidgetSizePx);
+  }
+  if (ui.localVisionSizeValue) {
+    ui.localVisionSizeValue.textContent = `${localVisionWidgetSizePx}px`;
+  }
+
+  if (persist) {
+    try {
+      globalThis.localStorage?.setItem?.(
+        LOCAL_VISION_SIZE_STORAGE_KEY,
+        String(localVisionWidgetSizePx)
+      );
+    } catch {
+      // Storage can be blocked in some mobile browser modes; the size still applies this session.
+    }
+  }
 }
 
 function setInputValue(element, value) {

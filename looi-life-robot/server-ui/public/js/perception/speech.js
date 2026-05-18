@@ -44,7 +44,6 @@ export class SpeechInput {
   start() {
     this.manualStop = false;
     if (!this.supported) {
-      this.log("Speech recognition is not supported in this browser.", "warn");
       this.recordDebug("unsupported", "Speech recognition is not supported in this browser.");
       this.emitStatus({ error: "unsupported" });
       return this.getStatus();
@@ -246,7 +245,6 @@ export class SpeechInput {
     this.lastError = message;
     this.lastErrorAt = Date.now();
     this.recordDebug("error", message);
-    this.log(`Speech recognition error: ${message}`, "warn");
     if (["not-allowed", "service-not-allowed", "permission denied"].includes(message)) {
       this.permissionBlocked = true;
       this.alwaysListening = false;

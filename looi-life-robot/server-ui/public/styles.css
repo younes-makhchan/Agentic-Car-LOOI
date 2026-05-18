@@ -15,6 +15,7 @@
   --warning: #ffd166;
   --success: #7ee0ba;
   --shadow: 0 22px 60px rgba(0, 0, 0, 0.4);
+  --local-vision-widget-width: 210px;
 }
 
 * {
@@ -1813,7 +1814,7 @@ body {
   right: max(1rem, env(safe-area-inset-right));
   bottom: max(1rem, env(safe-area-inset-bottom));
   z-index: 36;
-  width: min(210px, 45vw);
+  width: min(var(--local-vision-widget-width), 45vw);
   padding: 0.55rem;
   border-radius: 1.15rem;
   border: 1px solid rgba(122, 193, 255, 0.2);
@@ -1912,6 +1913,6 @@ body {
   }
 
   .looi-vision-widget {
-    width: min(170px, 48vw);
+    width: min(var(--local-vision-widget-width), 48vw);
   }
 }
