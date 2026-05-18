@@ -43,7 +43,6 @@ export function buildCompactBrainContext(context = {}) {
   const trigger = context.triggerEvent ?? {};
   const life = context.lifeState ?? {};
   const speech = context.speech ?? context.voice ?? {};
-  const memory = context.memory ?? null;
   const recentEvents = Array.isArray(context.recentEvents) ? context.recentEvents : [];
 
   return dropEmpty({
@@ -66,36 +65,7 @@ export function buildCompactBrainContext(context = {}) {
       listening: boolOrUndefined(speech.listening),
       speaking: boolOrUndefined(speech.speaking)
     }),
-    memory: compactMemory(memory),
     recent: recentEvents.slice(0, 2).map(compactRecentEvent).filter(Boolean)
-  });
-}
-
-function compactMemory(memory = null) {
-  if (!memory) {
-    return undefined;
-  }
-
-  if (typeof memory === "string") {
-    return shortValue(memory, 180);
-  }
-
-  if (typeof memory !== "object") {
-    return undefined;
-  }
-
-  const matches = Array.isArray(memory.matches)
-    ? memory.matches.slice(0, 2).map((entry) =>
-        dropEmpty({
-          phrase: shortValue(entry.phrase, 80),
-          action: shortValue(entry.action, 40)
-        })
-      )
-    : undefined;
-
-  return dropEmpty({
-    summary: shortValue(memory.summary, 180),
-    matches
   });
 }
 

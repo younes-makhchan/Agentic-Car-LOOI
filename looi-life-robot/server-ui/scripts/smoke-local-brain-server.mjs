@@ -142,7 +142,6 @@ const sanitized = sanitizeBrainContext({
       dataUrl: "data:image/jpeg;base64,BBBB"
     }
   },
-  memorySummary: "x".repeat(1400),
   recentEvents: Array.from({ length: 30 }, (_, index) => ({
     type: "system",
     payload: {
@@ -155,7 +154,8 @@ const sanitized = sanitizeBrainContext({
 assert.equal(JSON.stringify(sanitized).includes("data:image"), false);
 assert.equal(JSON.stringify(sanitized).includes("api key"), false);
 assert.equal(sanitized.recentEvents.length, 20);
-assert.equal(String(sanitized.memory).length <= 1000, true);
+assert.equal("memory" in sanitized, false);
+assert.equal("learnedPhraseCount" in sanitized, false);
 
 const { app } = await import("../server.js");
 const server = app.listen(0);

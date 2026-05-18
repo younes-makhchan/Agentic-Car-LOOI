@@ -16,8 +16,6 @@ export function sanitizeBrainContext(input = {}) {
     speech: compactSpeechState(context.speech ?? context.speechStatus ?? context.voice),
     voice: compactSpeechState(context.voice ?? context.voiceStatus),
     personality: compactPersonality(context.personality),
-    memory: compactMemory(context.memory ?? context.memorySummary),
-    learnedPhraseCount: safeNumber(context.learnedPhraseCount, 0),
     recentEvents: compactRecentEvents(context.recentEvents, 20),
     simulatorMode: Boolean(context.simulatorMode),
     robotConnected: Boolean(context.robotConnected),
@@ -119,28 +117,6 @@ export function compactPersonality(personality) {
     speechStyle: isPlainObject(profile.speechStyle)
       ? removeSecretsAndLargeFields(profile.speechStyle)
       : null
-  };
-}
-
-export function compactMemory(memory) {
-  if (typeof memory === "string") {
-    return shortText(memory, 1000);
-  }
-
-  if (!isPlainObject(memory)) {
-    return null;
-  }
-
-  return {
-    summary: shortText(memory.summary ?? memory.text ?? memory.longTerm ?? "", 1000),
-    learnedPhraseCount: safeNumber(memory.learnedPhraseCount, 0),
-    matches: Array.isArray(memory.matches)
-      ? memory.matches.slice(0, 5).map((entry) => ({
-          phrase: shortText(entry.phrase, 160),
-          action: shortText(entry.action, 80),
-          meaning: shortText(entry.meaning, 240)
-        }))
-      : []
   };
 }
 

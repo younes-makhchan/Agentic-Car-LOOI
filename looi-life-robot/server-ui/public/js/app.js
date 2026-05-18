@@ -19,7 +19,6 @@ import { SpeechInput } from "./perception/speech.js";
 import { AudioLevelMonitor } from "./perception/audioLevelMonitor.js";
 import { SpeechGate } from "./perception/speechGate.js";
 import { VoiceOutput } from "./perception/voiceOutput.js";
-import { inferKnownIntent } from "./personality/learnedPhrases.js";
 import { LifeEventEmitter } from "./personality/lifeEvents.js";
 import { describePersonalityForRuntime } from "./personality/personalityProfile.js";
 import { PersonalityTuning } from "./personality/personalityTuning.js";
@@ -1689,8 +1688,6 @@ async function handleGatedTranscript(transcript = {}) {
     return null;
   }
 
-  const inferredKnownIntent = inferKnownIntent(text, learnedPhraseCache);
-  recordLearnedPhraseUse(inferredKnownIntent);
   const source = transcript.source === "typed" ? "typed" : "speech";
   const eventType = source === "typed" ? "user_text" : "user_speech";
   const gateResult = speechGate?.processTranscript?.({
@@ -1719,7 +1716,6 @@ async function handleGatedTranscript(transcript = {}) {
     lifeEngine?.receiveEvent({
       type: eventType,
       text,
-      inferredKnownIntent,
       classification: gateResult.classification,
       suggestedIntent: gateResult.suggestedIntent
     });
@@ -1760,7 +1756,6 @@ async function handleGatedTranscript(transcript = {}) {
       confidence: transcript.confidence,
       language: transcript.language,
       final: true,
-      inferredKnownIntent,
       classification: gateResult.classification,
       accepted: gateResult.accepted,
       shouldTriggerBrain: gateResult.shouldTriggerBrain,
@@ -2198,19 +2193,6 @@ function renderLearnedPhrases(phrases = learnedPhraseCache) {
     item.append(title, detail);
     ui.learnedPhraseList.append(item);
   });
-}
-
-function recordLearnedPhraseUse(inferredKnownIntent) {
-  if (inferredKnownIntent?.source !== "learned_phrase" || !inferredKnownIntent.id) {
-    return;
-  }
-
-  fetch(`/api/memory/learned-phrases/${encodeURIComponent(inferredKnownIntent.id)}/use`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" }
-  })
-    .then(() => refreshLearnedPhrases())
-    .catch(() => {});
 }
 
 async function applyCalibrationToRobot({ quiet = false } = {}) {
@@ -3416,7 +3398,6 @@ function getStatusSnapshot() {
       stopRespectActive: Number(lifeState.stopRespectUntil || 0) > Date.now(),
       lifeEventsEnabled
     },
-    learnedPhraseCount: learnedPhraseCache.length,
     telemetry: robotClient?.getLatestTelemetry?.() ?? null,
     latestAction: latestActionResult,
     calibration: bodyCalibration?.getSettings?.() ?? null,
@@ -3459,7 +3440,6 @@ function getRuntimeContext() {
     audioActivity: audioLevelMonitor?.getStatus?.() ?? null,
     calibration: bodyCalibration?.getSettings?.() ?? null,
     personality: describePersonalityForRuntime(personalityTuning?.getProfile?.()),
-    memorySummary: ui.memoryDisplay?.textContent?.slice(0, 1200) ?? "",
     lifeSignals: {
       loneliness: lifeState?.loneliness,
       comfort: lifeState?.comfort,
@@ -3467,7 +3447,6 @@ function getRuntimeContext() {
       stopRespectActive: Number(lifeState?.stopRespectUntil || 0) > Date.now(),
       lifeEventsEnabled
     },
-    learnedPhraseCount: learnedPhraseCache.length,
     recentCommands: commandQueue?.getRecentCommands?.({ limit: 8 }) ?? [],
     recentLifeEvents: lifeState?.recentEvents ?? [],
     recentEvents: localEventBus?.getRecentEvents?.({ limit: 30 }) ?? [],
