@@ -31,12 +31,6 @@ const LLM_TRIGGER_EVENT_TYPES = new Set([
   "user_text"
 ]);
 
-const IGNORED_SPEECH_CLASSIFICATIONS = new Set([
-  "background",
-  "noise",
-  "unknown"
-]);
-
 export class LocalBrainEngine {
   constructor({
     eventBus,
@@ -274,7 +268,9 @@ export class LocalBrainEngine {
       return this.executeStopNow(event);
     }
 
-    if (!result.shouldTriggerBrain || !result.accepted) {
+    const hasSpeechText = hasUserSpeechText(transcript, result);
+
+    if (!hasSpeechText) {
       return null;
     }
 
@@ -330,22 +326,12 @@ export class LocalBrainEngine {
     }
 
     const payload = event?.payload ?? {};
-    const classification = payload.classification ?? payload.speechClassification ?? null;
-
     if (event?.type === "user_speech" || event?.type === "user_text") {
-      if (payload.shouldTriggerBrain === false) {
+      if (!hasUserSpeechText(event.payload, event)) {
         return false;
       }
 
-      if (IGNORED_SPEECH_CLASSIFICATIONS.has(classification) && payload.accepted !== true) {
-        return false;
-      }
-
-      if (this.attentionSystem && !this.attentionSystem.shouldThinkAboutEvent(event)) {
-        return false;
-      }
-
-      return payload.accepted === true || payload.shouldTriggerBrain === true;
+      return true;
     }
 
     if (event?.type === "camera_observation") {
@@ -552,7 +538,6 @@ export class LocalBrainEngine {
     const reason = context.reason ?? "";
     const triggerType = context.triggerEvent?.type ?? null;
     const payload = context.triggerEvent?.payload ?? {};
-    const classification = payload.classification ?? payload.speechClassification ?? null;
 
     if (reason === "manual") {
       return true;
@@ -562,15 +547,7 @@ export class LocalBrainEngine {
       return false;
     }
 
-    if (payload.shouldTriggerBrain === false) {
-      return false;
-    }
-
-    if (IGNORED_SPEECH_CLASSIFICATIONS.has(classification) && payload.accepted !== true) {
-      return false;
-    }
-
-    return payload.accepted === true || payload.shouldTriggerBrain === true;
+    return hasUserSpeechText(payload, context.triggerEvent);
   }
 
   async executeStopNow(event) {
@@ -780,6 +757,22 @@ function rejected(action, message, physical, detail = {}) {
 function wait(ms) {
   const delay = clampInteger(ms, 0, 10000, 0);
   return delay > 0 ? new Promise((resolve) => globalThis.setTimeout(resolve, delay)) : Promise.resolve();
+}
+
+function hasUserSpeechText(...sources) {
+  return sources.some((source) => {
+    if (!source || typeof source !== "object") {
+      return false;
+    }
+
+    const value =
+      source.text ??
+      source.normalizedText ??
+      source.payload?.text ??
+      source.payload?.normalizedText ??
+      "";
+    return String(value).trim().length > 0;
+  });
 }
 
 function clampInteger(value, min, max, fallback) {

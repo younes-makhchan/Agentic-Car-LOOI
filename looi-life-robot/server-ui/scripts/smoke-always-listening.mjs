@@ -76,7 +76,10 @@ activeScheduler.start();
 assert.equal(schedulerEvents.length > 0, true);
 activeScheduler.stop();
 
-let policy = createDefaultBrainPolicy();
+let policy = {
+  ...createDefaultBrainPolicy(),
+  eventThoughtCooldownMs: 0
+};
 let adapterCalls = 0;
 const executedActions = [];
 const engineBus = new LocalEventBus({ logger: () => {} });
@@ -132,7 +135,7 @@ engineBus.publish("user_speech", {
   shouldTriggerBrain: false
 });
 await wait(20);
-assert.equal(adapterCalls, 0);
+assert.equal(adapterCalls, 1);
 
 engine.setAdapter({
   async isAvailable() {
@@ -148,10 +151,6 @@ engine.setAdapter({
     };
   }
 });
-policy = {
-  ...policy,
-  eventThoughtCooldownMs: 0
-};
 engineBus.publish("autonomous_tick", {
   reason: "boredom_high"
 });
@@ -159,7 +158,7 @@ engineBus.publish("camera_observation", {
   observation: { userVisible: true }
 });
 await wait(20);
-assert.equal(adapterCalls, 0);
+assert.equal(adapterCalls, 1);
 engineBus.publish("user_speech", {
   text: "random room speech",
   classification: "open_speech",
@@ -167,7 +166,7 @@ engineBus.publish("user_speech", {
   shouldTriggerBrain: true
 });
 await wait(20);
-assert.equal(adapterCalls, 1);
+assert.equal(adapterCalls, 2);
 
 engine.setAdapter({
   async isAvailable() {

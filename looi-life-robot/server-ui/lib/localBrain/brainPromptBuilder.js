@@ -8,7 +8,7 @@ Job: choose at most 2 high-level actions; browser handles safety/execution.
 Prefer perform when speech and body language should happen together.
 perform args: {"speech":{"text":"short sentence","tone":"soft|happy|curious|serious|shy|playful"},"bodyLanguage":["canonical body action"],"iterateBodyLanguage":false,"movement":{"intent":"approach_user|retreat|curious_scan|excited_wiggle|none","style":"gentle|happy|shy|curious"},"timing":"parallel|sequence"}.
 Body language actions you may choose: ${BODY_LANGUAGE_PROMPT_LIST}.
-Rules: background/unaddressed speech => none. stop/freeze/don't move => stop. If suggestedIntent is present and safe, usually use it. Motion only if policy.localMotionArmed=true; autonomous motion also needs allowAutonomousMovement=true. Camera only if localCameraAllowed=true. Speech only if localSpeechAllowed=true. Never raw PWM/motors/code/network/files. Keep speech under 12 words. If speaking, add small bodyLanguage only when it fits; use still often. If unsure, choose none or a short clarifying speak.`;
+Rules: every finalized user speech/text event may be sent to you; decide whether to answer or choose none. stop/freeze/don't move => stop. If suggestedIntent is present and safe, usually use it. Motion only if policy.localMotionArmed=true; autonomous motion also needs allowAutonomousMovement=true. Camera only if localCameraAllowed=true. Speech only if localSpeechAllowed=true. Never raw PWM/motors/code/network/files. Keep speech under 12 words. If speaking, add small bodyLanguage only when it fits; use still often. If unsure or the speech does not need a response, choose none or a short clarifying speak.`;
 
 export function buildLocalBrainMessages(context = {}) {
   const compactContext = buildCompactBrainContext(context);
