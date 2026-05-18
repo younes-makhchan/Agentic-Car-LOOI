@@ -5,6 +5,9 @@ const FACE_STATE = {
   speaking: false,
   sleeping: false,
   autoBlinkTimer: 0,
+  autoGlanceTimer: 0,
+  autoGlanceReturnTimer: 0,
+  autoGlanceToken: 0,
   animationTimer: 0,
   lookTimer: 0,
   photoTimer: 0,
@@ -17,6 +20,10 @@ const SOFT_CLOSE_TIME_MS = 420;
 const PHOTO_TIME_MS = 2400;
 const AUTO_BLINK_MIN_MS = 2200;
 const AUTO_BLINK_JITTER_MS = 2400;
+const AUTO_GLANCE_MIN_MS = 1400;
+const AUTO_GLANCE_JITTER_MS = 2200;
+const AUTO_GLANCE_DWELL_MIN_MS = 420;
+const AUTO_GLANCE_DWELL_JITTER_MS = 420;
 
 const SUPPORTED_DIRECTIONS = new Set(["center", "left", "right", "up", "down"]);
 
@@ -40,6 +47,7 @@ export function initFaceCanvas(element) {
   eyesRef = rootRef.querySelector(".looi-eyes");
   openEyes();
   scheduleNextBlink();
+  scheduleNextGlance();
 }
 
 export function setExpression(expression, intensity = 1) {
@@ -48,7 +56,13 @@ export function setExpression(expression, intensity = 1) {
   applyExpression();
 }
 
-export function setEyeDirection(direction) {
+export function setEyeDirection(direction, { auto = false } = {}) {
+  if (!auto) {
+    FACE_STATE.autoGlanceToken += 1;
+    window.clearTimeout(FACE_STATE.autoGlanceReturnTimer);
+    scheduleNextGlance();
+  }
+
   const nextDirection = SUPPORTED_DIRECTIONS.has(direction) ? direction : "center";
   FACE_STATE.eyeDirection = nextDirection;
 
@@ -408,6 +422,53 @@ function scheduleNextBlink() {
   }, AUTO_BLINK_MIN_MS + Math.random() * AUTO_BLINK_JITTER_MS);
 }
 
+function scheduleNextGlance() {
+  window.clearTimeout(FACE_STATE.autoGlanceTimer);
+
+  FACE_STATE.autoGlanceTimer = window.setTimeout(() => {
+    if (!canAutoGlance()) {
+      scheduleNextGlance();
+      return;
+    }
+
+    const token = FACE_STATE.autoGlanceToken + 1;
+    const nextDirection = chooseAutoGlanceDirection();
+    FACE_STATE.autoGlanceToken = token;
+    setEyeDirection(nextDirection, { auto: true });
+
+    window.clearTimeout(FACE_STATE.autoGlanceReturnTimer);
+    FACE_STATE.autoGlanceReturnTimer = window.setTimeout(() => {
+      if (FACE_STATE.autoGlanceToken === token && canAutoGlance()) {
+        setEyeDirection("center", { auto: true });
+      }
+      scheduleNextGlance();
+    }, AUTO_GLANCE_DWELL_MIN_MS + Math.random() * AUTO_GLANCE_DWELL_JITTER_MS);
+  }, AUTO_GLANCE_MIN_MS + Math.random() * AUTO_GLANCE_JITTER_MS);
+}
+
+function canAutoGlance() {
+  return Boolean(
+    eyesRef &&
+    !FACE_STATE.speaking &&
+    !FACE_STATE.sleeping &&
+    !rootRef?.classList.contains("is-taking-picture") &&
+    !eyesRef.classList.contains("is-blinking") &&
+    !eyesRef.classList.contains("is-soft-closing")
+  );
+}
+
+function chooseAutoGlanceDirection() {
+  if (FACE_STATE.eyeDirection === "left") {
+    return "right";
+  }
+
+  if (FACE_STATE.eyeDirection === "right") {
+    return "left";
+  }
+
+  return Math.random() < 0.5 ? "left" : "right";
+}
+
 function clearMomentaryAnimations() {
   if (!eyesRef) {
     return;
@@ -419,6 +480,8 @@ function clearMomentaryAnimations() {
 
 function clearAllTimers() {
   window.clearTimeout(FACE_STATE.autoBlinkTimer);
+  window.clearTimeout(FACE_STATE.autoGlanceTimer);
+  window.clearTimeout(FACE_STATE.autoGlanceReturnTimer);
   window.clearTimeout(FACE_STATE.animationTimer);
   window.clearTimeout(FACE_STATE.lookTimer);
   window.clearTimeout(FACE_STATE.photoTimer);

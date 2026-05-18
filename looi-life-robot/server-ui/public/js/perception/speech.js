@@ -10,6 +10,7 @@ export class SpeechInput {
     this.continuous = continuous;
     this.interimResults = interimResults;
     this.listening = false;
+    this.starting = false;
     this.alwaysListening = false;
     this.manualStop = false;
     this.autoRestartDelayMs = 300;
@@ -49,19 +50,22 @@ export class SpeechInput {
       return this.getStatus();
     }
 
-    if (this.listening) {
-      this.recordDebug("start_skip", "Already listening.");
+    if (this.listening || this.starting) {
+      this.recordDebug("start_skip", this.listening ? "Already listening." : "Recognition start already in progress.");
       return this.getStatus();
     }
 
     this.configureRecognition();
 
     try {
+      this.starting = true;
       this.lastStartAt = Date.now();
       this.startAttemptCount += 1;
       this.recordDebug("start", `Starting recognition attempt ${this.startAttemptCount}.`);
       this.recognition.start();
+      this.emitStatus();
     } catch (error) {
+      this.starting = false;
       this.emitError(error);
     }
 
@@ -73,6 +77,7 @@ export class SpeechInput {
     this.alwaysListening = false;
     clearTimeout(this.restartTimer);
     this.restartTimer = null;
+    this.starting = false;
     if (!this.supported) {
       return this.getStatus();
     }
@@ -91,6 +96,7 @@ export class SpeechInput {
     this.alwaysListening = false;
     clearTimeout(this.restartTimer);
     this.restartTimer = null;
+    this.starting = false;
     if (!this.supported) {
       return this.getStatus();
     }
@@ -160,6 +166,7 @@ export class SpeechInput {
     return {
       supported: this.supported,
       listening: this.listening,
+      starting: this.starting,
       language: this.language,
       continuous: this.continuous,
       interimResults: this.interimResults,
@@ -189,6 +196,7 @@ export class SpeechInput {
     this.recognition.continuous = this.continuous;
     this.recognition.interimResults = this.interimResults;
     this.recognition.onstart = () => {
+      this.starting = false;
       this.listening = true;
       this.lastError = null;
       this.lastErrorAt = 0;
@@ -197,6 +205,7 @@ export class SpeechInput {
       this.emitStatus();
     };
     this.recognition.onend = () => {
+      this.starting = false;
       this.listening = false;
       this.lastEndAt = Date.now();
       this.recordDebug("end", this.alwaysListening ? "Recognition ended; restart may follow." : "Recognition ended.");
@@ -275,6 +284,7 @@ export class SpeechInput {
       this.manualStop ||
       this.permissionBlocked ||
       !this.supported ||
+      this.starting ||
       this.listening
     ) {
       return;
@@ -284,7 +294,13 @@ export class SpeechInput {
     this.restartTimer = setTimeout(() => {
       this.restartTimer = null;
 
-      if (!this.alwaysListening || this.manualStop || this.permissionBlocked || this.listening) {
+      if (
+        !this.alwaysListening ||
+        this.manualStop ||
+        this.permissionBlocked ||
+        this.starting ||
+        this.listening
+      ) {
         return;
       }
 

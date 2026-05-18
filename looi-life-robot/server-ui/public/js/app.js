@@ -3172,6 +3172,7 @@ function updateAlwaysListeningUi() {
   const speechStatus = speechInput?.getStatus?.() ?? {
     supported: false,
     listening: false,
+    starting: false,
     alwaysListening: false
   };
   const gateStatus = speechGate?.getStatus?.() ?? {
@@ -3208,12 +3209,22 @@ function updateAlwaysListeningUi() {
     ui.earsState.textContent = speechStatus.alwaysListening
       ? speechStatus.listening
         ? "ears on"
-        : "restarting"
+        : speechStatus.starting
+          ? "starting"
+          : "restarting"
       : speechStatus.listening
         ? "manual listening"
+        : speechStatus.starting
+          ? "starting"
         : "ears off";
-    ui.earsState.classList.toggle("ears-state--on", Boolean(speechStatus.alwaysListening || speechStatus.listening));
-    ui.earsState.classList.toggle("ears-state--off", !speechStatus.alwaysListening && !speechStatus.listening);
+    ui.earsState.classList.toggle(
+      "ears-state--on",
+      Boolean(speechStatus.alwaysListening || speechStatus.listening || speechStatus.starting)
+    );
+    ui.earsState.classList.toggle(
+      "ears-state--off",
+      !speechStatus.alwaysListening && !speechStatus.listening && !speechStatus.starting
+    );
   }
 
   if (ui.speechGateState) {
@@ -3296,6 +3307,8 @@ function updateSpeechRecognitionDiagnostics(speechStatus = speechInput?.getStatu
   if (ui.speechRecognitionStateDetail) {
     ui.speechRecognitionStateDetail.textContent = speechStatus.listening
       ? "listening"
+      : speechStatus.starting
+        ? "starting"
       : speechStatus.alwaysListening
         ? `waiting restart (${speechStatus.restartBackoffMs ?? 0}ms)`
         : "stopped";
@@ -3360,6 +3373,7 @@ function updateVoiceUi() {
   const speechStatus = speechInput?.getStatus?.() ?? {
     supported: false,
     listening: false,
+    starting: false,
     secureContext: globalThis.isSecureContext !== false
   };
   const voiceStatus = voiceOutput?.getStatus?.() ?? {
@@ -3373,9 +3387,11 @@ function updateVoiceUi() {
       ? `error: ${speechStatus.lastError}`
       : speechStatus.listening
       ? "listening"
+      : speechStatus.starting
+      ? "starting"
       : "supported"
     : "unsupported";
-  ui.speechSupportState.classList.toggle("voice-state--active", speechStatus.listening);
+  ui.speechSupportState.classList.toggle("voice-state--active", Boolean(speechStatus.listening || speechStatus.starting));
   ui.speechSupportState.classList.toggle("voice-state--warn", !speechStatus.supported || Boolean(speechStatus.lastError));
   ui.speechSecureWarning.textContent = speechStatus.lastError
     ? `Speech error: ${speechStatus.lastError}. Check microphone permission for this site on the phone.`
