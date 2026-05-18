@@ -74,6 +74,7 @@ body {
   --blink-time: 360ms;
   --soft-close-time: 420ms;
   --sleep-time: 700ms;
+  --photo-time: 2400ms;
   --look-x: 0px;
   --look-scale-y: 1;
   --glow-dir: 1;
@@ -148,6 +149,173 @@ body {
   opacity: 0;
   transform: translate(-50%, -50%) scaleX(0.25);
   pointer-events: none;
+}
+
+.looi-camera-icon {
+  position: absolute;
+  z-index: 6;
+  left: 50%;
+  bottom: 9%;
+  width: clamp(210px, 25vw, 330px);
+  height: clamp(130px, 15vw, 205px);
+  transform: translate(-50%, 140%) scale(0.9);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.looi-camera-icon__body {
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  bottom: 5%;
+  height: 66%;
+  border-radius: 12px;
+  background: #f7f7f7;
+  box-shadow: 0 6px 0 rgba(0, 0, 0, 0.18);
+}
+
+.looi-camera-icon__body::before,
+.looi-camera-icon__body::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  width: 22%;
+  height: 100%;
+  background: #e9a13a;
+}
+
+.looi-camera-icon__body::before {
+  left: 0;
+}
+
+.looi-camera-icon__body::after {
+  right: 0;
+}
+
+.looi-camera-icon__top {
+  position: absolute;
+  left: 25%;
+  top: 6%;
+  width: 34%;
+  height: 26%;
+  border-radius: 8px 8px 0 0;
+  background: #f7f7f7;
+}
+
+.looi-camera-icon__lens {
+  position: absolute;
+  left: 50%;
+  top: 56%;
+  width: 42%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  background:
+    radial-gradient(circle at 48% 54%, #0c1719 0 20%, #0a6d66 21% 32%, #132527 33% 54%, #343434 55% 68%, #f3f3f3 69% 100%);
+  box-shadow: inset 0 0 0 5px #d8d8d8, 0 0 12px rgba(95, 245, 255, 0.25);
+}
+
+.looi-camera-icon__flash-dot {
+  position: absolute;
+  right: 25%;
+  top: 31%;
+  width: 9%;
+  aspect-ratio: 1;
+  border-radius: 3px;
+  background: #113434;
+  box-shadow: inset 0 0 0 3px #f7f7f7;
+}
+
+.looi-photo-preview {
+  position: absolute;
+  z-index: 7;
+  right: max(24px, 8%);
+  top: max(24px, 13%);
+  width: clamp(220px, 27vw, 370px);
+  aspect-ratio: 1.18 / 1;
+  border: 4px solid #31d8ff;
+  border-radius: 10px;
+  opacity: 0;
+  transform: translateX(80px) scale(0.86);
+  background: #111;
+  box-shadow: 0 0 12px rgba(49, 216, 255, 0.75);
+  pointer-events: none;
+  overflow: hidden;
+  transition: opacity 220ms ease, transform 220ms ease;
+}
+
+.looi-photo-preview.is-visible {
+  opacity: 1;
+  transform: translateX(0) scale(1);
+  pointer-events: auto;
+}
+
+.looi-photo-preview__image {
+  position: absolute;
+  left: 8%;
+  top: 8%;
+  width: 84%;
+  height: 58%;
+  object-fit: cover;
+  border-radius: 4px;
+  background: #18222d;
+}
+
+.looi-photo-preview__actions {
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  bottom: 9%;
+  display: flex;
+  justify-content: space-between;
+  gap: 8%;
+}
+
+.looi-photo-preview__button {
+  flex: 1;
+  height: 36px;
+  border: 0;
+  border-radius: 999px;
+  font: 700 14px/36px "IBM Plex Mono", "SFMono-Regular", monospace;
+  text-align: center;
+  color: white;
+}
+
+.looi-photo-preview__button--delete {
+  background: #d43d36;
+}
+
+.looi-photo-preview__button--save {
+  background: #2c8aaa;
+}
+
+.looi-flash-screen {
+  position: absolute;
+  z-index: 20;
+  inset: 0;
+  background: white;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.looi-eye-system.is-taking-picture .looi-eyes {
+  animation: looiPictureEyesMove var(--photo-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-taking-picture .looi-eye:first-child {
+  animation: looiPictureLeftEye var(--photo-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-taking-picture .looi-eye:last-child {
+  animation: looiPictureRightEye var(--photo-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-taking-picture .looi-camera-icon {
+  animation: looiCameraPop var(--photo-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-taking-picture .looi-flash-screen {
+  animation: looiPhotoFlash var(--photo-time) linear both;
 }
 
 .looi-eyes[data-expression="happy"] {
@@ -388,6 +556,97 @@ body {
     transform: translate(calc(var(--glow-dir) * 14px), 12px);
     filter: blur(5px);
     opacity: 0.9;
+  }
+}
+
+@keyframes looiPictureEyesMove {
+  0%,
+  12% {
+    transform: translateX(var(--look-x)) scaleY(var(--look-scale-y));
+  }
+
+  24%,
+  48% {
+    transform: translateX(-60px) scaleY(0.98);
+  }
+
+  58%,
+  72% {
+    transform: translateX(-85px) scaleY(0.9);
+  }
+
+  100% {
+    transform: translateX(var(--look-x)) scaleY(var(--look-scale-y));
+  }
+}
+
+@keyframes looiPictureLeftEye {
+  0%,
+  30%,
+  100% {
+    width: clamp(126px, 25vw, 258px);
+    height: clamp(104px, 20vw, 214px);
+    transform: translateY(-10px) rotate(0deg);
+  }
+
+  58%,
+  72% {
+    width: clamp(118px, 22vw, 230px);
+    height: clamp(34px, 5vw, 62px);
+    transform: translateY(-25px) rotate(10deg);
+  }
+}
+
+@keyframes looiPictureRightEye {
+  0%,
+  30%,
+  100% {
+    width: clamp(126px, 25vw, 258px);
+    height: clamp(104px, 20vw, 214px);
+    transform: translateY(-10px) rotate(0deg);
+  }
+
+  58%,
+  72% {
+    width: clamp(120px, 22vw, 232px);
+    height: clamp(88px, 16vw, 180px);
+    transform: translateY(-10px) rotate(0deg);
+  }
+}
+
+@keyframes looiCameraPop {
+  0%,
+  16% {
+    opacity: 0;
+    transform: translate(-50%, 140%) scale(0.9);
+  }
+
+  28%,
+  72% {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+
+  86%,
+  100% {
+    opacity: 0;
+    transform: translate(-50%, 40%) scale(0.95);
+  }
+}
+
+@keyframes looiPhotoFlash {
+  0%,
+  64% {
+    opacity: 0;
+  }
+
+  66% {
+    opacity: 1;
+  }
+
+  73%,
+  100% {
+    opacity: 0;
   }
 }
 

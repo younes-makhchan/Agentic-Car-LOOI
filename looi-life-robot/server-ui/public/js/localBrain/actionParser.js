@@ -1,3 +1,5 @@
+import { normalizeScenarioName } from "../embodiment/scenarioCatalog.js";
+
 export const LOCAL_BRAIN_ALLOWED_ACTIONS = new Set(["perform"]);
 
 const RAW_MOTOR_KEYS = new Set([
@@ -138,6 +140,7 @@ function sanitizePerformArgs(args = {}) {
         .map((item) => item.slice(0, 80))
     : [];
   const timing = args.timing === "sequence" ? "sequence" : "parallel";
+  const scenario = normalizeScenarioName(args.scenario);
 
   return {
     speech: {
@@ -145,6 +148,7 @@ function sanitizePerformArgs(args = {}) {
       tone: typeof speech.tone === "string" ? speech.tone.slice(0, 40) : "soft"
     },
     movement,
+    scenario,
     timing,
     iterateMovement: args.iterateMovement === true
   };

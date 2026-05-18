@@ -33,6 +33,18 @@ export class MockProvider {
       });
     }
 
+    if (/\b(take|snap|shoot|capture)\b.*\b(picture|photo|selfie)\b|\b(picture|photo|selfie)\b.*\b(me|my)\b/.test(text)) {
+      return performResponse({
+        policy,
+        text: "Okay, hold still.",
+        tone: "happy",
+        movement: ["still"],
+        scenario: "take_picture",
+        reason: "take picture scenario",
+        confidence: 0.9
+      });
+    }
+
     if (/\bcome here\b|\bcome closer\b|\bcome to me\b/.test(text)) {
       return performResponse({
         policy,
@@ -141,7 +153,7 @@ function response({ text = null, action = null, reason = "mock", confidence = 0.
   };
 }
 
-function performResponse({ policy = {}, text = "", tone = "soft", movement = ["still"], reason = "mock", confidence = 0.8 } = {}) {
+function performResponse({ policy = {}, text = "", tone = "soft", movement = ["still"], scenario = null, reason = "mock", confidence = 0.8 } = {}) {
   const speechText = policy.localSpeechAllowed === false ? "" : String(text ?? "").slice(0, 240);
 
   return response({
@@ -154,6 +166,7 @@ function performResponse({ policy = {}, text = "", tone = "soft", movement = ["s
           tone
         },
         movement: Array.isArray(movement) && movement.length ? movement : ["still"],
+        scenario,
         timing: "parallel",
         iterateMovement: false
       }

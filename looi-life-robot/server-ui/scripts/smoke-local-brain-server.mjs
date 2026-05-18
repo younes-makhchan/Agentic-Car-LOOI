@@ -49,6 +49,25 @@ for (const [text, expectedAction] of cases) {
   assert.equal(response.action.args.movement.includes(expectedAction), true);
 }
 
+const pictureResponse = await localBrain.think({
+  reason: "manual",
+  triggerEvent: {
+    type: "user_text",
+    payload: { text: "take a picture of me" }
+  },
+  context: {
+    policy: {
+      localBrainEnabled: true,
+      localMotionArmed: true,
+      localCameraAllowed: true,
+      localSpeechAllowed: true
+    }
+  }
+});
+assert.equal(pictureResponse.ok, true);
+assert.equal(pictureResponse.action.type, "perform");
+assert.equal(pictureResponse.action.args.scenario, "take_picture");
+
 const fallbackServer = createLocalBrainServerFromEnv({
   LOCAL_BRAIN_ENABLED: "true",
   LOCAL_BRAIN_PROVIDER: "bad-provider"
@@ -98,6 +117,20 @@ assert.equal(performResponse.ok, true);
 assert.equal(performResponse.action.type, "perform");
 assert.equal(performResponse.action.args.speech.text, "I can come closer.");
 assert.equal(performResponse.action.args.movement[0], "excited_wiggle");
+const scenarioResponse = normalizeBrainResponse(parseBrainResponse({
+  action: {
+    type: "perform",
+    args: {
+      speech: { text: "Okay, hold still.", tone: "happy" },
+      movement: ["move_forward_tiny"],
+      scenario: "take_picture",
+      timing: "parallel",
+      iterateMovement: false
+    }
+  }
+}), { provider: "test", model: "test" });
+assert.equal(scenarioResponse.ok, true);
+assert.equal(scenarioResponse.action.args.scenario, "take_picture");
 const legacyMovementResponse = normalizeBrainResponse(parseBrainResponse({
   action: {
     type: "movement",

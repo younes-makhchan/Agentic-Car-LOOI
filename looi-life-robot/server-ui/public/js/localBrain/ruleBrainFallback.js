@@ -27,6 +27,10 @@ export class RuleBrainFallback {
       return "direct_command_approach";
     }
 
+    if (/\b(take|snap|shoot|capture)\b.*\b(picture|photo|selfie)\b|\b(picture|photo|selfie)\b.*\b(me|my)\b/.test(normalized)) {
+      return "scenario_take_picture";
+    }
+
     if (/\b(move|go|drive|roll)\s+(forward|forwards|ahead|straight)\b|\bforward a little\b/.test(normalized)) {
       return "direct_command_drive_forward";
     }
@@ -118,6 +122,22 @@ export class RuleBrainFallback {
           ],
           reason: classification,
           confidence: 0.86
+        });
+      case "scenario_take_picture":
+        return brainResponse({
+          text: policy.localSpeechAllowed === false ? null : "Okay, hold still.",
+          legacyPlan: [
+            {
+              type: "scenario_take_picture",
+              args: {},
+              reason: "User asked LOOI to take a picture."
+            },
+            ...(policy.localSpeechAllowed === false
+              ? []
+              : [{ type: "speak", args: { text: "Okay, hold still.", tone: "happy" } }])
+          ],
+          reason: classification,
+          confidence: 0.9
         });
       case "direct_command_drive_forward":
         return this.motionResponse({
@@ -378,6 +398,7 @@ function normalizeOfficialAction(legacyPlan = []) {
     args: {
       speech: speechForAction(speechAction),
       movement: movementForAction(movementAction),
+      scenario: scenarioForAction(movementAction),
       timing: "parallel",
       iterateMovement: false
     },
@@ -406,6 +427,8 @@ function movementForAction(action = {}) {
       return ["curious_shift"];
     case "excited_wiggle":
       return ["excited_wiggle"];
+    case "scenario_take_picture":
+      return ["still"];
     case "drive":
       return movementForDrive(action.args);
     case "express":
@@ -417,6 +440,10 @@ function movementForAction(action = {}) {
     default:
       return ["still"];
   }
+}
+
+function scenarioForAction(action = {}) {
+  return action.type === "scenario_take_picture" ? "take_picture" : null;
 }
 
 function movementForDrive(args = {}) {

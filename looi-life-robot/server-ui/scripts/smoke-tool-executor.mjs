@@ -11,7 +11,11 @@ const policy = {
   simulatorMode: true,
   robotConnected: true,
   allowSpeak: true,
-  allowNonPhysical: true
+  allowNonPhysical: true,
+  localMotionArmed: false,
+  localCameraAllowed: false,
+  localSpeechAllowed: true,
+  allowAutonomousMovement: false
 };
 
 const face = {
@@ -20,6 +24,15 @@ const face = {
   },
   setEyeDirection(direction) {
     faceEvents.push({ type: "eye", direction });
+  },
+  takePicture() {
+    faceEvents.push({ type: "take_picture" });
+  },
+  showPhoto(dataUrl) {
+    faceEvents.push({ type: "show_photo", dataUrl });
+  },
+  dismissPhoto() {
+    faceEvents.push({ type: "dismiss_photo" });
   }
 };
 
@@ -241,6 +254,41 @@ assert.equal(speakResult.status, "completed");
 assert.equal(speakResult.physical, false);
 
 const routedMovements = [];
+policy.localCameraAllowed = true;
+policy.localMotionArmed = true;
+executor.setEmbodiedActionRouter({
+  async execute(action, context) {
+    routedMovements.push({ action, context });
+    return {
+      ok: true,
+      status: "completed",
+      macro: "perform_embodied",
+      result: { executed: true }
+    };
+  }
+});
+const photoScenario = await executor.executeBridgeAction({
+  id: "scenario_photo_1",
+  source: "local_brain",
+  type: "perform",
+  args: {
+    speech: { text: "Okay, hold still.", tone: "happy" },
+    movement: ["move_forward_tiny"],
+    scenario: "take_picture",
+    timing: "parallel",
+    iterateMovement: false
+  }
+});
+assert.equal(photoScenario.status, "completed");
+assert.equal(photoScenario.detail.scenario, "take_picture");
+assert.deepEqual(photoScenario.detail.scenarioMovement, ["move_backward_tiny"]);
+assert.deepEqual(photoScenario.detail.ignoredMovement, ["move_forward_tiny"]);
+assert.equal(routedMovements.at(-1).action.args.movement.includes("move_backward_tiny"), true);
+assert.equal(faceEvents.some((event) => event.type === "take_picture"), true);
+assert.equal(faceEvents.some((event) => event.type === "show_photo"), true);
+policy.localCameraAllowed = false;
+policy.localMotionArmed = false;
+
 executor.setEmbodiedActionRouter({
   async execute(action, context) {
     routedMovements.push({ action, context });

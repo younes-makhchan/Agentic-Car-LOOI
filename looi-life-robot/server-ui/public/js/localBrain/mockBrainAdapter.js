@@ -41,6 +41,24 @@ export class MockBrainAdapter {
       });
     }
 
+    if (/\b(take|snap|shoot|capture)\b.*\b(picture|photo|selfie)\b|\b(picture|photo|selfie)\b.*\b(me|my)\b/.test(text)) {
+      return response({
+        text: policy.localSpeechAllowed === false ? null : "Okay, hold still.",
+        legacyPlan: [
+          {
+            type: "scenario_take_picture",
+            args: {},
+            reason: "User asked LOOI to take a picture."
+          },
+          ...(policy.localSpeechAllowed === false
+            ? []
+            : [{ type: "speak", args: { text: "Okay, hold still.", tone: "happy" } }])
+        ],
+        reason: "take picture scenario",
+        confidence: 0.9
+      });
+    }
+
     if (/\bcome here\b|\bcome closer\b|\bcome to me\b/.test(text)) {
       if (!policy.localMotionArmed) {
         return response({
@@ -308,6 +326,7 @@ function normalizeOfficialAction(legacyPlan = []) {
     args: {
       speech: speechForAction(speechAction),
       movement: movementForAction(movementAction),
+      scenario: scenarioForAction(movementAction),
       timing: "parallel",
       iterateMovement: false
     },
@@ -336,6 +355,8 @@ function movementForAction(action = {}) {
       return ["curious_shift"];
     case "excited_wiggle":
       return ["excited_wiggle"];
+    case "scenario_take_picture":
+      return ["still"];
     case "drive":
       return movementForDrive(action.args);
     case "express":
@@ -347,6 +368,10 @@ function movementForAction(action = {}) {
     default:
       return ["still"];
   }
+}
+
+function scenarioForAction(action = {}) {
+  return action.type === "scenario_take_picture" ? "take_picture" : null;
 }
 
 function movementForDrive(args = {}) {

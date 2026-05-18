@@ -41,6 +41,16 @@ export class RuleProvider {
           reason: classification,
           confidence: 0.86
         });
+      case "scenario_take_picture":
+        return performResponse({
+          policy,
+          text: "Okay, hold still.",
+          tone: "happy",
+          movement: ["still"],
+          scenario: "take_picture",
+          reason: classification,
+          confidence: 0.9
+        });
       case "direct_command_drive_forward":
         return movementResponse({
           policy,
@@ -127,6 +137,7 @@ function classifyText(text) {
 
   if (!normalized) return "background";
   if (/\b(stop|freeze|halt)\b/.test(normalized) || /\bdon'?t move\b/.test(normalized)) return "safety_stop";
+  if (/\b(take|snap|shoot|capture)\b.*\b(picture|photo|selfie)\b|\b(picture|photo|selfie)\b.*\b(me|my)\b/.test(normalized)) return "scenario_take_picture";
   if (/\bcome here\b|\bcome closer\b|\bcome to me\b/.test(normalized)) return "direct_command_approach";
   if (/\b(move|go|drive|roll)\s+(forward|forwards|ahead|straight)\b|\bforward a little\b/.test(normalized)) return "direct_command_drive_forward";
   if (/\b(move|drive|roll)\s+(back|backward|backwards|reverse)\b|\breverse a little\b/.test(normalized)) return "direct_command_drive_backward";
@@ -139,7 +150,7 @@ function classifyText(text) {
   return "unknown";
 }
 
-function performResponse({ policy = {}, text = "", tone = "soft", movement = ["still"], reason = "rule", confidence = 0.5 } = {}) {
+function performResponse({ policy = {}, text = "", tone = "soft", movement = ["still"], scenario = null, reason = "rule", confidence = 0.5 } = {}) {
   const speechText = policy.localSpeechAllowed === false ? "" : String(text ?? "").slice(0, 240);
 
   return brainResponse({
@@ -152,6 +163,7 @@ function performResponse({ policy = {}, text = "", tone = "soft", movement = ["s
           tone
         },
         movement: Array.isArray(movement) && movement.length ? movement : ["still"],
+        scenario,
         timing: "parallel",
         iterateMovement: false
       }

@@ -1,4 +1,5 @@
 import { movementRequestsMotion } from "../embodiment/movementCatalog.js";
+import { getScenarioDefinition, normalizeScenarioName } from "../embodiment/scenarioCatalog.js";
 
 const PHYSICAL_ACTIONS = new Set([
   "drive",
@@ -78,6 +79,8 @@ export class ToolExecutor {
     this.latestResults = new Map();
     this.actionHistory = [];
     this.maxHistory = 50;
+    this.activeScenario = null;
+    this.scenarioToken = 0;
   }
 
   setRobotInterfaces({ robotClient, commandQueue } = {}) {
@@ -121,6 +124,9 @@ export class ToolExecutor {
   }
 
   async emergencyStop(reason = "tool_executor_emergency_stop") {
+    this.scenarioToken += 1;
+    this.activeScenario = null;
+    this.face?.dismissPhoto?.();
     const dropped = this.executionQueue.splice(0);
     const stopResult = await this.executeStop({ reason }, { id: "emergency_stop", type: "stop" });
 
@@ -190,13 +196,21 @@ export class ToolExecutor {
 
   async executePerform(args = {}, action = {}) {
     const normalizedArgs = normalizePerformArgs(args);
+    const scenario = getScenarioDefinition(normalizedArgs.scenario);
     const wantsMotion = performRequestsMotion(normalizedArgs);
     const motionPermission = this.performMotionPermission(action, wantsMotion);
     const allowSpeech = !normalizedArgs.speech?.text || this.isSpeechAllowed(action);
 
     this.log(
-      `STEP 4 PERFORM_PLAN speech=${Boolean(normalizedArgs.speech?.text)} movement=${safeStringify(normalizedArgs.movement)} motionAllowed=${motionPermission.allowed}${motionPermission.reason ? ` reason=${motionPermission.reason}` : ""}`
+      `STEP 4 PERFORM_PLAN speech=${Boolean(normalizedArgs.speech?.text)} scenario=${scenario?.name ?? "none"} movement=${safeStringify(scenario ? scenario.movement : normalizedArgs.movement)} motionAllowed=${motionPermission.allowed}${motionPermission.reason ? ` reason=${motionPermission.reason}` : ""}`
     );
+
+    if (scenario) {
+      return this.executeScenario(scenario, normalizedArgs, action, {
+        motionPermission,
+        allowSpeech
+      });
+    }
 
     const routed = await this.executeEmbodiedRoute(action, {
       physical: wantsMotion,
@@ -219,6 +233,142 @@ export class ToolExecutor {
       physical: wantsMotion,
       message: "Perform action could not be routed."
     });
+  }
+
+  async executeScenario(scenario, normalizedArgs, action, { motionPermission, allowSpeech } = {}) {
+    if (this.activeScenario) {
+      return this.buildResult("rejected", {
+        action,
+        executed: false,
+        physical: Boolean(scenario.requiresMotion),
+        message: `Scenario already running: ${this.activeScenario}`
+      });
+    }
+
+    if (scenario.requiresCamera) {
+      const cameraGate = this.ensureCameraAllowed(action);
+      if (cameraGate) {
+        return cameraGate;
+      }
+
+      if (!this.cameraInput?.captureSnapshot) {
+        return this.buildResult("failed", {
+          action,
+          executed: false,
+          physical: false,
+          message: "Camera input is not available."
+        });
+      }
+    }
+
+    const token = ++this.scenarioToken;
+    this.activeScenario = scenario.name;
+    this.log(`STEP 4 SCENARIO_START ${scenario.name}`);
+
+    try {
+      if (scenario.requiresCamera) {
+        const status = this.cameraInput?.getCameraStatus?.() ?? {};
+
+        if (!status.running) {
+          const startResult = await this.cameraInput.startCamera?.({ facingMode: "user" });
+
+          if (!startResult?.ok) {
+            return this.buildResult("failed", {
+              action,
+              executed: false,
+              physical: false,
+              message: startResult?.error ?? "Camera could not start for scenario.",
+              detail: {
+                scenario: scenario.name,
+                cameraStatus: sanitizeCameraStatus(startResult?.status)
+              }
+            });
+          }
+        }
+      }
+
+      const scenarioArgs = {
+        speech: normalizedArgs.speech,
+        movement: [...scenario.movement],
+        timing: "sequence",
+        iterateMovement: false
+      };
+
+      const routeResult = await this.executeEmbodiedRoute({ ...action, args: scenarioArgs }, {
+        physical: Boolean(scenario.requiresMotion),
+        allowMotion: motionPermission?.allowed === true,
+        allowSpeech,
+        allowCamera: Boolean(scenario.requiresCamera),
+        args: scenarioArgs
+      });
+
+      if (token !== this.scenarioToken) {
+        return this.buildResult("rejected", {
+          action,
+          executed: false,
+          physical: Boolean(scenario.requiresMotion),
+          message: `Scenario interrupted: ${scenario.name}`
+        });
+      }
+
+      this.face?.takePicture?.();
+      await wait(Number(scenario.captureDelayMs) || 0);
+
+      if (token !== this.scenarioToken) {
+        return this.buildResult("rejected", {
+          action,
+          executed: false,
+          physical: Boolean(scenario.requiresMotion),
+          message: `Scenario interrupted before capture: ${scenario.name}`
+        });
+      }
+
+      const snapshotResult = await this.cameraInput.captureSnapshot({
+        includeDataUrl: true,
+        maxWidth: 640,
+        quality: 0.72
+      });
+
+      if (!snapshotResult.ok) {
+        this.face?.dismissPhoto?.();
+        return this.buildResult("failed", {
+          action,
+          executed: false,
+          physical: Boolean(scenario.requiresMotion),
+          message: snapshotResult.error ?? "Scenario snapshot capture failed.",
+          detail: {
+            scenario: scenario.name,
+            route: routeResult ?? null,
+            cameraStatus: sanitizeCameraStatus(snapshotResult.status)
+          }
+        });
+      }
+
+      this.face?.showPhoto?.(snapshotResult.snapshot?.dataUrl, {
+        dismissMs: scenario.previewDismissMs
+      });
+
+      await wait(Math.max(0, Number(scenario.animationMs || 0) - Number(scenario.captureDelayMs || 0)));
+
+      return this.buildResult("completed", {
+        action,
+        executed: true,
+        physical: Boolean(scenario.requiresMotion),
+        message: `Scenario completed: ${scenario.name}`,
+        detail: {
+          scenario: scenario.name,
+          route: routeResult ?? null,
+          ignoredMovement: normalizedArgs.movement,
+          scenarioMovement: scenario.movement,
+          cameraStatus: sanitizeCameraStatus(snapshotResult.status),
+          snapshot: snapshotResult.snapshot ?? null
+        }
+      });
+    } finally {
+      if (token === this.scenarioToken) {
+        this.activeScenario = null;
+      }
+    }
   }
 
   async executeMovement(args = {}, action = {}) {
@@ -432,6 +582,9 @@ export class ToolExecutor {
 
   async executeStop(args = {}, action = {}) {
     const reason = normalizeShortText(args.reason, 160) || "cloud_stop";
+    this.scenarioToken += 1;
+    this.activeScenario = null;
+    this.face?.dismissPhoto?.();
 
     const routed = await this.executeEmbodiedRoute({
       ...action,
@@ -1240,6 +1393,12 @@ function safeStringify(value) {
   }
 }
 
+function wait(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, Math.max(0, Number(ms) || 0));
+  });
+}
+
 function compactRuntimeContext(context = {}) {
   return {
     lifeState: context.lifeState ?? null,
@@ -1332,6 +1491,7 @@ function normalizePerformArgs(args = {}) {
     ? args.expression
     : {};
   const timing = ["parallel", "sequence"].includes(args.timing) ? args.timing : "parallel";
+  const scenario = normalizeScenarioName(args.scenario);
   const movement = readMovementNames(args.movement);
 
   return {
@@ -1347,6 +1507,7 @@ function normalizePerformArgs(args = {}) {
       .map((entry) => normalizeShortText(entry, 80))
       .filter(Boolean)
       .slice(0, 6),
+    scenario,
     iterateMovement: args.iterateMovement === true,
     timing
   };
@@ -1366,6 +1527,11 @@ function sanitizeMovementActionArgs(args = {}) {
 }
 
 function performRequestsMotion(args = {}) {
+  const scenario = getScenarioDefinition(args.scenario);
+  if (scenario) {
+    return Boolean(scenario.requiresMotion);
+  }
+
   const movementList = Array.isArray(args.movement) ? args.movement : [];
   return movementRequestsMotion(movementList, {
     iterate: args.iterateMovement === true || args.iterate === true
