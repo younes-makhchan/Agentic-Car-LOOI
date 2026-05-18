@@ -175,7 +175,7 @@ export function createLocalBrainServerFromEnv(env = process.env, logger) {
   const trace = env.LOCAL_BRAIN_TRACE === "true";
   const timeoutMs = Number(env.LOCAL_BRAIN_TIMEOUT_MS || 20000);
   const temperature = Number(env.LOCAL_BRAIN_TEMPERATURE || 0.4);
-  const maxOutputTokens = Number(env.LOCAL_BRAIN_MAX_OUTPUT_TOKENS || 192);
+  const maxOutputTokens = Number(env.LOCAL_BRAIN_MAX_OUTPUT_TOKENS || 1024);
 
   try {
     return new LocalBrainServer({

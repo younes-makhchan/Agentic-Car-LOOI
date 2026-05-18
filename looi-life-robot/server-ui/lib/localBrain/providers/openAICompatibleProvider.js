@@ -5,7 +5,7 @@ export class OpenAICompatibleProvider {
     model = "",
     timeoutMs = 20000,
     temperature = 0.4,
-    maxOutputTokens = 192,
+    maxOutputTokens = 1024,
     name = "openai-compatible",
     responseFormat = null,
     extraParams = {},
@@ -17,7 +17,7 @@ export class OpenAICompatibleProvider {
     this.model = model;
     this.timeoutMs = Number(timeoutMs) || 20000;
     this.temperature = Number.isFinite(Number(temperature)) ? Number(temperature) : 0.4;
-    this.maxOutputTokens = Number(maxOutputTokens) || 192;
+    this.maxOutputTokens = Number(maxOutputTokens) || 1024;
     this.name = name;
     this.responseFormat = responseFormat;
     this.extraParams = isPlainObject(extraParams) ? { ...extraParams } : {};
