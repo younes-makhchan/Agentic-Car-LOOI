@@ -174,6 +174,8 @@ const ui = {
   geminiLiveState: document.getElementById("geminiLiveState"),
   geminiLiveMicState: document.getElementById("geminiLiveMicState"),
   geminiLiveAudioState: document.getElementById("geminiLiveAudioState"),
+  geminiLiveOutputState: document.getElementById("geminiLiveOutputState"),
+  geminiLiveFrameState: document.getElementById("geminiLiveFrameState"),
   geminiLiveInputTranscript: document.getElementById("geminiLiveInputTranscript"),
   geminiLiveOutputTranscript: document.getElementById("geminiLiveOutputTranscript"),
   geminiLiveLastToolCall: document.getElementById("geminiLiveLastToolCall"),
@@ -3128,6 +3130,15 @@ function updateGeminiLiveUi(status = geminiLiveRuntime?.getStatus?.() ?? {}) {
 
   if (ui.geminiLiveAudioState) {
     ui.geminiLiveAudioState.textContent = status.audioPlaying ? "playing" : "idle";
+  }
+
+  if (ui.geminiLiveOutputState) {
+    ui.geminiLiveOutputState.textContent =
+      status.lastAudioDebug || status.outputAudioState || "--";
+  }
+
+  if (ui.geminiLiveFrameState) {
+    ui.geminiLiveFrameState.textContent = status.lastServerMessageDebug || "--";
   }
 
   if (ui.geminiLiveInputTranscript) {

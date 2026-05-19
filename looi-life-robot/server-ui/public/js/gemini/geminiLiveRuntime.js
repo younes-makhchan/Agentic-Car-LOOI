@@ -59,6 +59,9 @@ export class GeminiLiveRuntime {
       lastToolResult: "",
       latencyMs: null,
       lastError: "",
+      outputAudioState: "",
+      lastAudioDebug: "",
+      lastServerMessageDebug: "",
       model: "",
       voice: "",
       thinkingLevel: "",
@@ -123,7 +126,7 @@ export class GeminiLiveRuntime {
       voice: voice || this.status.voice || "Kore",
       thinkingLevel: thinkingLevel || this.status.thinkingLevel || "minimal"
     });
-    this.primeOutputAudio();
+    await this.primeOutputAudio();
     this.log("GEMINI STEP 1 token request");
 
     try {
@@ -366,6 +369,10 @@ export class GeminiLiveRuntime {
       return;
     }
 
+    this.patchStatus({
+      lastServerMessageDebug: summarizeServerMessage(message)
+    });
+
     if (message.setupComplete) {
       this.patchStatus({ setupComplete: true });
       this.log("GEMINI STEP 5 setup complete");
@@ -579,12 +586,15 @@ export class GeminiLiveRuntime {
       this.patchStatus({ lastError: "Web Audio output is unavailable." });
       return;
     }
-    this.outputAudioContext.resume?.().catch?.(() => {});
+    this.resumeOutputAudio("output_chunk");
 
     const rate = parseAudioRate(mimeType) || GEMINI_LIVE_OUTPUT_RATE;
     const samples = pcm16Base64ToFloat32(base64Data);
 
     if (!samples.length) {
+      this.patchStatus({
+        lastAudioDebug: `empty output chunk mime=${mimeType || "unknown"}`
+      });
       return;
     }
 
@@ -609,8 +619,13 @@ export class GeminiLiveRuntime {
     this.lifeEngine?.setSpeaking?.(true);
     this.patchStatus({
       audioPlaying: true,
-      lastAudioAt: this.now()
+      lastAudioAt: this.now(),
+      outputAudioState: this.outputAudioContext?.state ?? "",
+      lastAudioDebug: `queued ${samples.length} samples @ ${rate}Hz (${Math.round(buffer.duration * 1000)}ms), context=${this.outputAudioContext?.state ?? "unknown"}`
     });
+    this.log(
+      `GEMINI STEP 8 audio output queued samples=${samples.length} rate=${rate} duration=${Math.round(buffer.duration * 1000)}ms context=${this.outputAudioContext?.state ?? "unknown"}`
+    );
 
     globalThis.clearTimeout(this.audioStatusTimer);
     this.audioStatusTimer = globalThis.setTimeout(() => {
@@ -634,10 +649,22 @@ export class GeminiLiveRuntime {
     this.log(`Gemini Live audio interrupted: ${reason}`);
   }
 
-  primeOutputAudio() {
-    if (this.ensureOutputAudioContext()) {
-      this.outputAudioContext.resume?.().catch?.(() => {});
+  async primeOutputAudio() {
+    if (!this.ensureOutputAudioContext()) {
+      this.patchStatus({
+        outputAudioState: "unavailable",
+        lastAudioDebug: "Web Audio output is unavailable."
+      });
+      return false;
     }
+
+    await this.resumeOutputAudio("start");
+    this.playSilentUnlockBuffer();
+    this.patchStatus({
+      outputAudioState: this.outputAudioContext?.state ?? "",
+      lastAudioDebug: `audio primed, context=${this.outputAudioContext?.state ?? "unknown"}`
+    });
+    return true;
   }
 
   ensureOutputAudioContext() {
@@ -654,9 +681,51 @@ export class GeminiLiveRuntime {
     return true;
   }
 
+  async resumeOutputAudio(reason = "resume") {
+    if (!this.outputAudioContext?.resume) {
+      return false;
+    }
+
+    try {
+      await this.outputAudioContext.resume();
+      this.patchStatus({
+        outputAudioState: this.outputAudioContext.state ?? "",
+        lastAudioDebug: `audio resume ok (${reason}), context=${this.outputAudioContext.state ?? "unknown"}`
+      });
+      return true;
+    } catch (error) {
+      this.patchStatus({
+        outputAudioState: this.outputAudioContext.state ?? "",
+        lastAudioDebug: `audio resume failed (${reason}): ${error.message}`,
+        lastError: error.message
+      });
+      this.log(`Gemini Live audio resume failed: ${error.message}`, "warn");
+      return false;
+    }
+  }
+
+  playSilentUnlockBuffer() {
+    if (!this.outputAudioContext?.createBuffer || !this.outputAudioContext?.createBufferSource) {
+      return;
+    }
+
+    try {
+      const buffer = this.outputAudioContext.createBuffer(1, 1, this.outputAudioContext.sampleRate || GEMINI_LIVE_OUTPUT_RATE);
+      const source = this.outputAudioContext.createBufferSource();
+      source.buffer = buffer;
+      source.connect(this.outputAudioContext.destination);
+      source.start(0);
+    } catch (_error) {
+      // Unlock is best-effort only; real audio playback will report failures.
+    }
+  }
+
   refreshAudioPlayingStatus() {
     const playing = this.activeOutputSources.size > 0;
-    this.patchStatus({ audioPlaying: playing });
+    this.patchStatus({
+      audioPlaying: playing,
+      outputAudioState: this.outputAudioContext?.state ?? this.status.outputAudioState
+    });
     if (!playing) {
       this.face?.setSpeaking?.(false);
       this.lifeEngine?.setSpeaking?.(false);
@@ -867,6 +936,36 @@ function extractAudioChunks(message = {}) {
   }
 
   return chunks;
+}
+
+function summarizeServerMessage(message = {}) {
+  const parts = [
+    ...(message.serverContent?.modelTurn?.parts ?? []),
+    ...(message.modelTurn?.parts ?? [])
+  ];
+  const audioCount = parts.filter((part) => {
+    const inlineData = part.inlineData ?? part.inline_data;
+    const mimeType = inlineData?.mimeType ?? inlineData?.mime_type ?? "";
+    return inlineData?.data && /audio\/pcm/i.test(mimeType);
+  }).length;
+  const textCount = parts.filter((part) => typeof part.text === "string" && part.text.trim()).length;
+  const toolCount = Array.isArray(message.toolCall?.functionCalls)
+    ? message.toolCall.functionCalls.length
+    : 0;
+  const cancelCount = readToolCallCancellationIds(message).length;
+  const labels = [];
+
+  if (message.setupComplete) labels.push("setupComplete");
+  if (message.serverContent?.inputTranscription?.text || message.inputTranscription?.text) labels.push("inputTranscript");
+  if (message.serverContent?.outputTranscription?.text || message.outputTranscription?.text) labels.push("outputTranscript");
+  if (audioCount) labels.push(`audio:${audioCount}`);
+  if (textCount) labels.push(`text:${textCount}`);
+  if (toolCount) labels.push(`tool:${toolCount}`);
+  if (cancelCount) labels.push(`cancel:${cancelCount}`);
+  if (message.serverContent?.interrupted) labels.push("interrupted");
+  if (!labels.length) labels.push(Object.keys(message).slice(0, 4).join(",") || "unknown");
+
+  return labels.join(" | ");
 }
 
 function readToolCallCancellationIds(message = {}) {
