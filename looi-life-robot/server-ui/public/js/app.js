@@ -34,9 +34,9 @@ import { createFaceController } from "./ui/faceCanvas.js";
 
 const DEFAULT_SPEED = 0.2;
 const DEFAULT_DURATION_MS = 400;
-const LOCAL_VISION_SIZE_STORAGE_KEY = "looi.localVisionWidgetSizePx.v1";
-const LOCAL_VISION_SIZE_MIN = 90;
-const LOCAL_VISION_SIZE_MAX = 240;
+const LOCAL_VISION_SIZE_STORAGE_KEY = "looi.localVisionWidgetSizePx.v2";
+const LOCAL_VISION_SIZE_MIN = 70;
+const LOCAL_VISION_SIZE_MAX = 220;
 const LOCAL_VISION_SIZE_STEP = 10;
 
 const ui = {
@@ -110,6 +110,7 @@ const ui = {
   speechLanguageInput: document.getElementById("speechLanguageInput"),
   interimTranscript: document.getElementById("interimTranscript"),
   finalTranscript: document.getElementById("finalTranscript"),
+  earsInterimTranscript: document.getElementById("earsInterimTranscript"),
   voiceSupportState: document.getElementById("voiceSupportState"),
   muteSpeechToggle: document.getElementById("muteSpeechToggle"),
   voiceSelect: document.getElementById("voiceSelect"),
@@ -1823,6 +1824,9 @@ async function handleGatedTranscript(transcript = {}) {
 
 function handleInterimSpeech(payload) {
   ui.interimTranscript.textContent = payload.text;
+  if (ui.earsInterimTranscript) {
+    ui.earsInterimTranscript.textContent = payload.text || "--";
+  }
   updateVoiceUi();
 }
 
@@ -1839,6 +1843,9 @@ async function handleFinalSpeech(payload) {
   };
   ui.finalTranscript.textContent = text;
   ui.interimTranscript.textContent = "";
+  if (ui.earsInterimTranscript) {
+    ui.earsInterimTranscript.textContent = "--";
+  }
   log(`STEP 0 INPUT speech: "${text}"`);
   await handleGatedTranscript({
     ...payload,
@@ -3698,7 +3705,7 @@ function updateSliderLabels() {
 }
 
 function getDefaultLocalVisionWidgetSize() {
-  return globalThis.matchMedia?.("(max-width: 560px)")?.matches ? 140 : 210;
+  return globalThis.matchMedia?.("(max-width: 560px)")?.matches ? 100 : 120;
 }
 
 function loadLocalVisionWidgetSize() {
