@@ -22,6 +22,8 @@ const sentMessages = [];
 const actions = [];
 const stops = [];
 let fakeTransport = null;
+let holdNextAction = false;
+let heldActionResolve = null;
 
 class FakeAudioContext {
   constructor() {
@@ -74,6 +76,19 @@ function createFakeTransport({ onOpen, onMessage, onClose }) {
 const toolExecutor = {
   executeBridgeAction(action) {
     actions.push(action);
+    if (holdNextAction) {
+      holdNextAction = false;
+      return new Promise((resolve) => {
+        heldActionResolve = () => resolve({
+          status: "completed",
+          type: action.type,
+          executed: true,
+          physical: action.type === "perform",
+          message: "mock accepted"
+        });
+      });
+    }
+
     return Promise.resolve({
       status: "completed",
       type: action.type,
@@ -111,6 +126,7 @@ const setup = buildGeminiLiveSetup({
 });
 assert.equal(setup.setup.model, "models/gemini-3.1-flash-live-preview");
 assert.equal(setup.setup.generationConfig.responseModalities[0], "AUDIO");
+assert.equal(setup.setup.generationConfig.thinkingConfig.thinkingLevel, "minimal");
 assert.ok(setup.setup.tools[0].functionDeclarations.some((tool) => tool.name === "perform"));
 assert.ok(setup.setup.systemInstruction.parts[0].text.includes("move_forward_tiny"));
 assert.ok(setup.setup.systemInstruction.parts[0].text.includes("take_picture"));
@@ -203,6 +219,33 @@ assert.equal(actions.at(-1).type, "perform");
 assert.equal(actions.at(-1).args.scenario, "take_picture");
 assert.deepEqual(actions.at(-1).args.movement, []);
 
+holdNextAction = true;
+fakeTransport.emit({
+  toolCall: {
+    functionCalls: [
+      {
+        id: "cancel_me",
+        name: "perform",
+        args: {
+          movement: ["move_forward_tiny"],
+          timing: "parallel",
+          iterateMovement: false
+        }
+      }
+    ]
+  }
+});
+await wait(5);
+fakeTransport.emit({
+  toolCallCancellation: {
+    ids: ["cancel_me"]
+  }
+});
+await wait(5);
+assert.ok(stops.includes("gemini_tool_call_cancelled"));
+heldActionResolve?.();
+await wait(5);
+
 const mappedUnknown = geminiFunctionCallToAction({
   id: "unknown_move",
   name: "perform",
@@ -227,7 +270,7 @@ fakeTransport.emit({
   }
 });
 await wait(5);
-assert.deepEqual(stops, ["user_stop"]);
+assert.ok(stops.includes("user_stop"));
 assert.equal(sentMessages.at(-1).toolResponse.functionResponses[0].response.output.accepted, true);
 
 await runtime.stop("smoke_done");

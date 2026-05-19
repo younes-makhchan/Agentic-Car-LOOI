@@ -222,14 +222,8 @@ export class GeminiLiveRuntime {
     }
 
     this.sendJson({
-      clientContent: {
-        turns: [
-          {
-            role: "user",
-            parts: [{ text: cleanText }]
-          }
-        ],
-        turnComplete: true
+      realtimeInput: {
+        text: cleanText
       }
     });
     return true;
@@ -396,6 +390,14 @@ export class GeminiLiveRuntime {
         this.log(`Gemini Live tool handling failed: ${error.message}`, "warn");
       });
     }
+
+    const cancelledToolCallIds = readToolCallCancellationIds(message);
+    if (cancelledToolCallIds.length) {
+      this.handleToolCallCancellation(cancelledToolCallIds).catch((error) => {
+        this.patchStatus({ lastError: error.message });
+        this.log(`Gemini Live tool cancellation failed: ${error.message}`, "warn");
+      });
+    }
   }
 
   handleTranscriptions(message) {
@@ -535,6 +537,37 @@ export class GeminiLiveRuntime {
         }
       }
     };
+  }
+
+  async handleToolCallCancellation(ids = []) {
+    const cancelled = [];
+
+    ids.forEach((id) => {
+      const key = String(id ?? "");
+      if (!key) {
+        return;
+      }
+
+      const pending = this.pendingToolCalls.get(key);
+      if (pending) {
+        cancelled.push(pending);
+        this.pendingToolCalls.delete(key);
+      }
+    });
+
+    this.patchStatus({
+      lastToolResult: cancelled.length
+        ? `cancelled: ${cancelled.map((entry) => entry.name).join(", ")}`
+        : `cancelled unknown tool calls: ${ids.join(", ")}`
+    });
+
+    if (!cancelled.length) {
+      return;
+    }
+
+    this.interruptAudio("gemini_tool_call_cancelled");
+    await this.toolExecutor?.emergencyStop?.("gemini_tool_call_cancelled");
+    this.log(`GEMINI STEP 7 tool cancellation: ${ids.join(", ")}`, "warn");
   }
 
   enqueueOutputAudio(base64Data, mimeType = "") {
@@ -834,6 +867,15 @@ function extractAudioChunks(message = {}) {
   }
 
   return chunks;
+}
+
+function readToolCallCancellationIds(message = {}) {
+  const cancellation = message.toolCallCancellation ?? message.tool_call_cancellation;
+  const ids = cancellation?.ids ?? cancellation?.functionCallIds ?? cancellation?.function_call_ids ?? [];
+
+  return Array.isArray(ids)
+    ? ids.map((id) => String(id ?? "").trim()).filter(Boolean)
+    : [];
 }
 
 function parseAudioRate(mimeType = "") {

@@ -268,12 +268,9 @@ function normalizeGeminiModelName(model) {
 function normalizeThinkingLevel(value) {
   const normalized = String(value || "").trim().toLowerCase();
 
-  return {
-    minimal: "MINIMAL",
-    low: "LOW",
-    medium: "MEDIUM",
-    high: "HIGH"
-  }[normalized] ?? "MINIMAL";
+  return ["minimal", "low", "medium", "high"].includes(normalized)
+    ? normalized
+    : "minimal";
 }
 
 function normalizeFunctionArgs(args) {
