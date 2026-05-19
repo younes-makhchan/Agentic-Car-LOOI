@@ -28,5 +28,16 @@ export const PUBLIC_CONFIG = {
   robotBridgeEnabled: false,
   cameraObservationPostMs: 3000,
   cameraSnapshotMaxWidth: 320,
+  localVisionEnabled: true,
+  objectDetectionEnabledDefault: false,
+  objectDetectionIntervalMs: 1000,
+  objectDetectorScoreThreshold: 0.3,
+  objectDetectorMaxResults: 12,
+  objectDetectorModelPreset: "efficientdet_lite2_int8",
+  objectDetectorModelAssetPath: "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite2/int8/latest/efficientdet_lite2.tflite",
+  objectDetectorWasmBasePath: "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm",
+  objectDetectorModuleUrl: "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/+esm",
+  followLostTimeoutMs: 2000,
+  maxObjectFollowSpeed: 0.18,
   legacyCloudBridgeInactive: true
 };

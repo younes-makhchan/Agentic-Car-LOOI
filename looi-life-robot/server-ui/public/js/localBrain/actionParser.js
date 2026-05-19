@@ -1,6 +1,6 @@
 import { normalizeScenarioName } from "../embodiment/scenarioCatalog.js";
 
-export const LOCAL_BRAIN_ALLOWED_ACTIONS = new Set(["perform"]);
+export const LOCAL_BRAIN_ALLOWED_ACTIONS = new Set(["perform", "set_follow_target", "follow_target_stop"]);
 
 const RAW_MOTOR_KEYS = new Set([
   "pwm",
@@ -122,11 +122,25 @@ export function validateBrainAction(action) {
     action: {
       id: typeof action.id === "string" ? action.id.slice(0, 80) : undefined,
       source: normalizeText(action.source, "local_brain"),
-      type: "perform",
-      args: sanitizePerformArgs(args),
+      type,
+      args: sanitizeActionArgs(type, args),
       reason: typeof action.reason === "string" ? action.reason.slice(0, 240) : undefined
     }
   };
+}
+
+function sanitizeActionArgs(type, args = {}) {
+  if (type === "set_follow_target") {
+    return sanitizeSetFollowTargetArgs(args);
+  }
+
+  if (type === "follow_target_stop") {
+    return {
+      reason: normalizeText(args.reason, "user_request").slice(0, 120)
+    };
+  }
+
+  return sanitizePerformArgs(args);
 }
 
 function sanitizePerformArgs(args = {}) {
@@ -151,6 +165,22 @@ function sanitizePerformArgs(args = {}) {
     scenario,
     timing,
     iterateMovement: args.iterateMovement === true
+  };
+}
+
+function sanitizeSetFollowTargetArgs(args = {}) {
+  const aliases = Array.isArray(args.aliases)
+    ? args.aliases
+        .slice(0, 8)
+        .filter((item) => typeof item === "string")
+        .map((item) => item.slice(0, 80))
+    : [];
+
+  return {
+    label: normalizeText(args.label ?? args.target ?? args.object, "").slice(0, 80),
+    aliases,
+    trackId: typeof args.trackId === "string" ? args.trackId.slice(0, 80) : undefined,
+    mode: ["gentle", "curious", "cautious"].includes(args.mode) ? args.mode : "gentle"
   };
 }
 

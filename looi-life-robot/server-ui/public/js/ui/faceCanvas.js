@@ -12,7 +12,11 @@ const FACE_STATE = {
   lookTimer: 0,
   photoTimer: 0,
   previewTimer: 0,
-  latestPhotoUrl: ""
+  latestPhotoUrl: "",
+  visionIndicator: {
+    active: false,
+    mode: "detecting"
+  }
 };
 
 const BLINK_TIME_MS = 360;
@@ -262,6 +266,20 @@ export function dismissPhoto() {
   openEyes();
 }
 
+export function setVisionIndicator(active, mode = "detecting") {
+  FACE_STATE.visionIndicator = {
+    active: Boolean(active),
+    mode: normalizeVisionMode(mode)
+  };
+
+  if (!rootRef) {
+    return;
+  }
+
+  rootRef.classList.toggle("has-vision-indicator", FACE_STATE.visionIndicator.active);
+  rootRef.dataset.visionMode = FACE_STATE.visionIndicator.mode;
+}
+
 export function updateFaceState(partialState = {}) {
   if (partialState.expression) {
     setExpression(partialState.expression, partialState.intensity ?? FACE_STATE.intensity);
@@ -278,6 +296,13 @@ export function updateFaceState(partialState = {}) {
 
   if (typeof partialState.speaking === "boolean") {
     setSpeaking(partialState.speaking);
+  }
+
+  if (partialState.visionIndicator) {
+    setVisionIndicator(
+      partialState.visionIndicator.active,
+      partialState.visionIndicator.mode
+    );
   }
 }
 
@@ -299,6 +324,7 @@ export function createFaceController(element) {
     takePicture,
     showPhoto,
     dismissPhoto,
+    setVisionIndicator,
     updateFaceState
   };
 }
@@ -344,11 +370,19 @@ function createEyeDom() {
     <div class="looi-camera-icon__flash-dot"></div>
   `;
 
+  const visionIcon = document.createElement("div");
+  visionIcon.className = "looi-vision-indicator";
+  visionIcon.innerHTML = `
+    <div class="looi-vision-indicator__lens"></div>
+    <div class="looi-vision-indicator__handle"></div>
+    <div class="looi-vision-indicator__dot"></div>
+  `;
+
   const eyes = document.createElement("div");
   eyes.className = "looi-eyes";
   eyes.append(createEye(), createEye());
 
-  fragment.append(flash, preview, cameraIcon, eyes);
+  fragment.append(flash, preview, cameraIcon, visionIcon, eyes);
   return fragment;
 }
 
@@ -407,6 +441,10 @@ function normalizeExpression(expression) {
   ].includes(expression)
     ? expression
     : "neutral";
+}
+
+function normalizeVisionMode(mode) {
+  return ["detecting", "searching", "following", "lost"].includes(mode) ? mode : "detecting";
 }
 
 function scheduleNextBlink() {

@@ -243,7 +243,11 @@ export function normalizeSpeechText(text) {
 export function isLocalStopPhrase(text) {
   const normalized = normalizeSpeechText(text);
 
-  if (/\bstop by\b/.test(normalized) || /\bstopping\b/.test(normalized)) {
+  if (
+    /\bstop by\b/.test(normalized) ||
+    /\bstopping\b/.test(normalized) ||
+    /\bstop (following|camera|looking|vision|detection)\b/.test(normalized)
+  ) {
     return false;
   }
 

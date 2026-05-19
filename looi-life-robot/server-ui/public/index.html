@@ -45,7 +45,10 @@
         <span>LOOI Eyes</span>
         <strong id="localVisionState">camera off</strong>
       </div>
-      <video id="localVisionPreview" autoplay playsinline muted></video>
+      <div class="vision-video-frame vision-video-frame--widget">
+        <video id="localVisionPreview" autoplay playsinline muted></video>
+        <div id="localVisionOverlay" class="object-overlay" aria-hidden="true"></div>
+      </div>
       <p id="localVisionDetail">Local Brain camera actions are blocked until allowed.</p>
     </aside>
 
@@ -81,6 +84,7 @@
           <a href="#settingsEars">Ears</a>
           <a href="#settingsLooiMode">LOOI</a>
           <a href="#settingsCamera">Camera</a>
+          <a href="#settingsObjectVision">Vision</a>
           <a href="#settingsVoice">Voice</a>
           <a href="#settingsMovement">Move</a>
           <a href="#settingsCalibration">Tune</a>
@@ -706,7 +710,10 @@
             </button>
           </div>
           <div class="camera-preview-grid">
-            <video id="cameraPreview" autoplay playsinline muted></video>
+            <div class="vision-video-frame">
+              <video id="cameraPreview" autoplay playsinline muted></video>
+              <div id="cameraObjectOverlay" class="object-overlay" aria-hidden="true"></div>
+            </div>
             <img id="snapshotPreview" alt="Latest small camera snapshot" hidden />
             <canvas id="cameraCanvas" hidden></canvas>
           </div>
@@ -730,6 +737,161 @@
             <div class="status-row">
               <span>Last observation</span>
               <strong id="cameraLastObservation">--</strong>
+            </div>
+            <div class="status-row">
+              <span>Objects visible</span>
+              <strong id="cameraObjectCount">0</strong>
+            </div>
+            <div class="status-row">
+              <span>Visible labels</span>
+              <strong id="cameraObjectLabels">--</strong>
+            </div>
+            <div class="status-row">
+              <span>Metadata age</span>
+              <strong id="cameraVisionMetadataAge">--</strong>
+            </div>
+            <div class="status-row">
+              <span>MediaPipe quality</span>
+              <strong id="cameraMediaPipeQuality">not running</strong>
+            </div>
+            <div class="status-row">
+              <span>MediaPipe model</span>
+              <strong id="cameraMediaPipeModel">--</strong>
+            </div>
+            <div class="status-row">
+              <span>Detector settings</span>
+              <strong id="cameraMediaPipeSettings">--</strong>
+            </div>
+            <div class="status-row">
+              <span>LLM payload</span>
+              <strong id="cameraVisionMetadataSafety">metadata only, no images</strong>
+            </div>
+          </div>
+          <h3>Metadata Sent To LocalBrain</h3>
+          <p class="privacy-note">
+            This is the compact object metadata cache used for visual answers. It does not include frames, data URLs, or raw image bytes.
+          </p>
+          <pre id="cameraVisionMetadataPreview" class="metadata-preview">No vision metadata yet.</pre>
+          <h3>MediaPipe Detection Log</h3>
+          <p class="privacy-note">
+            Shows the last local detector runs: model, threshold, max results, allowlist, and detected labels. Empty rows are useful when tuning phones or small objects.
+          </p>
+          <pre id="mediaPipeDetectionLog" class="metadata-preview mediapipe-log">No MediaPipe detections yet.</pre>
+        </section>
+
+        <section id="settingsObjectVision" class="panel-card object-vision-card">
+          <h2>Object Vision / Follow Target</h2>
+          <p class="panel-note">
+            Object detection runs locally. The Local Brain receives metadata only, and following is controlled locally after a target is selected.
+          </p>
+          <div class="status-grid">
+            <div class="status-row">
+              <span>Detector state</span>
+              <strong id="objectDetectorState">stopped</strong>
+            </div>
+            <div class="status-row">
+              <span>Model</span>
+              <strong id="objectDetectorModel">--</strong>
+            </div>
+            <div class="status-row">
+              <span>Interval</span>
+              <strong id="objectDetectionInterval">1000 ms</strong>
+            </div>
+            <div class="status-row">
+              <span>Last detection</span>
+              <strong id="objectDetectionLastRun">--</strong>
+            </div>
+            <div class="status-row">
+              <span>Last error</span>
+              <strong id="objectDetectionError">--</strong>
+            </div>
+          </div>
+          <div class="input-stack">
+            <label class="field-label" for="objectDetectorModelSelect">Detection model</label>
+            <select id="objectDetectorModelSelect"></select>
+            <p id="objectDetectorModelHelp" class="privacy-note">
+              EfficientDet-Lite2 int8 is the default stronger local model for following. Use Lite0 if the phone gets slow.
+            </p>
+          </div>
+          <div class="button-grid">
+            <button id="startObjectDetectionButton" class="primary-button" type="button">
+              Start Object Detection
+            </button>
+            <button id="stopObjectDetectionButton" type="button">
+              Stop Object Detection
+            </button>
+          </div>
+          <div class="slider-grid">
+            <label class="slider-field" for="objectDetectionIntervalSlider">
+              <span>Detection interval</span>
+              <strong id="objectDetectionIntervalValue">1000 ms</strong>
+              <input id="objectDetectionIntervalSlider" type="range" min="200" max="2000" step="100" value="1000" />
+            </label>
+            <label class="slider-field" for="objectScoreThresholdSlider">
+              <span>Score threshold</span>
+              <strong id="objectScoreThresholdValue">0.30</strong>
+              <input id="objectScoreThresholdSlider" type="range" min="0.1" max="0.9" step="0.05" value="0.3" />
+            </label>
+            <label class="slider-field" for="objectMaxResultsSlider">
+              <span>Max results / dominance</span>
+              <strong id="objectMaxResultsValue">12 objects</strong>
+              <input id="objectMaxResultsSlider" type="range" min="1" max="30" step="1" value="12" />
+            </label>
+          </div>
+          <div class="input-stack">
+            <label class="field-label" for="objectCategoryAllowlistInput">Category allowlist</label>
+            <input id="objectCategoryAllowlistInput" type="text" placeholder="apple,banana,person,cell phone,cup,bottle" autocomplete="off" />
+            <p class="privacy-note">
+              Leave empty to detect all supported COCO objects. If you type phone, it is sent to MediaPipe as cell phone.
+            </p>
+          </div>
+          <h3>Visible Objects</h3>
+          <p id="visionSummary" class="vision-summary">No objects detected.</p>
+          <div id="visibleObjectList" class="visible-object-list" aria-live="polite"></div>
+          <h3>Follow Target</h3>
+          <div class="input-stack">
+            <label class="field-label" for="followTargetLabelInput">Target label</label>
+            <input id="followTargetLabelInput" type="text" placeholder="apple" autocomplete="off" />
+          </div>
+          <div class="button-grid">
+            <button id="setFollowTargetButton" class="primary-button" type="button">
+              Set Follow Target
+            </button>
+            <button id="stopFollowingButton" type="button">
+              Stop Following
+            </button>
+            <button id="clearFollowTargetButton" type="button">
+              Clear Target
+            </button>
+          </div>
+          <div class="status-grid">
+            <div class="status-row">
+              <span>Scenario</span>
+              <strong id="followScenarioState">idle</strong>
+            </div>
+            <div class="status-row">
+              <span>Active target</span>
+              <strong id="activeFollowTarget">--</strong>
+            </div>
+            <div class="status-row">
+              <span>Target visible</span>
+              <strong id="followTargetVisible">--</strong>
+            </div>
+            <div class="status-row">
+              <span>Position</span>
+              <strong id="followTargetPosition">--</strong>
+            </div>
+            <div class="status-row">
+              <span>Distance</span>
+              <strong id="followTargetDistance">--</strong>
+            </div>
+            <div class="status-row">
+              <span>Lost for</span>
+              <strong id="followTargetLostFor">--</strong>
+            </div>
+            <div class="status-row">
+              <span>Controller</span>
+              <strong id="followControllerState">stopped</strong>
             </div>
           </div>
         </section>
@@ -807,6 +969,14 @@
             <label class="checkbox-field">
               <input id="allowAutonomousSpeechToggle" type="checkbox" checked />
               <span>Allow Autonomous Speech</span>
+            </label>
+            <label class="checkbox-field follow-arm-field">
+              <input id="followModeArmedToggle" type="checkbox" />
+              <span>Follow Mode Armed</span>
+            </label>
+            <label class="checkbox-field follow-arm-field">
+              <input id="allowFollowMovementToggle" type="checkbox" />
+              <span>Allow Follow Movement</span>
             </label>
           </div>
           <div class="button-grid">

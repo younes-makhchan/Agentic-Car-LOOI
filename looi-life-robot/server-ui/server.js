@@ -101,6 +101,25 @@ const PUBLIC_CONFIG = {
   robotEventWaitTimeoutMs,
   cameraObservationPostMs: 3000,
   cameraSnapshotMaxWidth: 320,
+  localVisionEnabled: process.env.LOCAL_VISION_ENABLED !== "false",
+  objectDetectionEnabledDefault: process.env.OBJECT_DETECTION_ENABLED_DEFAULT === "true",
+  objectDetectionIntervalMs: Number(process.env.OBJECT_DETECTION_INTERVAL_MS || 1000),
+  objectDetectorScoreThreshold: Number(process.env.OBJECT_DETECTOR_SCORE_THRESHOLD || 0.3),
+  objectDetectorMaxResults: Number(process.env.OBJECT_DETECTOR_MAX_RESULTS || 12),
+  objectDetectorModelPreset:
+    process.env.OBJECT_DETECTOR_MODEL_PRESET ||
+    "efficientdet_lite2_int8",
+  objectDetectorModelAssetPath:
+    process.env.OBJECT_DETECTOR_MODEL_ASSET_PATH ||
+    "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite2/int8/latest/efficientdet_lite2.tflite",
+  objectDetectorWasmBasePath:
+    process.env.OBJECT_DETECTOR_WASM_BASE_PATH ||
+    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm",
+  objectDetectorModuleUrl:
+    process.env.OBJECT_DETECTOR_MODULE_URL ||
+    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/+esm",
+  followLostTimeoutMs: Number(process.env.FOLLOW_LOST_TIMEOUT_MS || 2000),
+  maxObjectFollowSpeed: Number(process.env.MAX_OBJECT_FOLLOW_SPEED || 0.18),
   legacyCloudBridgeInactive: localFirstDisableKimiCloud
 };
 

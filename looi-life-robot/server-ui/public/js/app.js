@@ -31,6 +31,19 @@ import { PerformanceMonitor } from "./runtime/performanceMonitor.js";
 import { ReliabilityManager } from "./runtime/reliabilityManager.js";
 import { WakeLockManager } from "./runtime/wakeLockManager.js";
 import { createFaceController } from "./ui/faceCanvas.js";
+import {
+  DEFAULT_OBJECT_DETECTOR_MAX_RESULTS,
+  DEFAULT_OBJECT_DETECTOR_MODEL_PRESET,
+  DEFAULT_OBJECT_DETECTOR_SCORE_THRESHOLD,
+  OBJECT_DETECTOR_MODEL_PRESETS,
+  ObjectDetectorEngine
+} from "./vision/objectDetectorEngine.js";
+import { ObjectTracker } from "./vision/objectTracker.js";
+import { VisionState } from "./vision/visionState.js";
+import { FollowTargetController } from "./vision/followTargetController.js";
+import { VisionScenarioManager } from "./vision/visionScenarioManager.js";
+import { buildVisionContext, findMentionedObjectLabels } from "./vision/visionMetadataBuilder.js";
+import { getObjectAliases } from "./vision/objectLabelUtils.js";
 
 const DEFAULT_SPEED = 0.2;
 const DEFAULT_DURATION_MS = 400;
@@ -40,6 +53,7 @@ const LOCAL_VISION_SIZE_MAX = 220;
 const LOCAL_VISION_SIZE_STEP = 10;
 const SPEECH_FINAL_ONLY_STORAGE_KEY = "looi.useFinalSpeechOnly.v1";
 const INTERIM_STABILITY_MS = 300;
+const MEDIA_PIPE_LOG_LIMIT = 30;
 
 const ui = {
   canvas: document.getElementById("faceCanvas"),
@@ -52,6 +66,7 @@ const ui = {
   settingsBackdrop: document.getElementById("settingsBackdrop"),
   settingsPanel: document.getElementById("settingsPanel"),
   localVisionPreview: document.getElementById("localVisionPreview"),
+  localVisionOverlay: document.getElementById("localVisionOverlay"),
   localVisionState: document.getElementById("localVisionState"),
   localVisionDetail: document.getElementById("localVisionDetail"),
   localVisionSizeSlider: document.getElementById("localVisionSizeSlider"),
@@ -156,6 +171,7 @@ const ui = {
   stopCameraButton: document.getElementById("stopCameraButton"),
   captureSnapshotButton: document.getElementById("captureSnapshotButton"),
   cameraPreview: document.getElementById("cameraPreview"),
+  cameraObjectOverlay: document.getElementById("cameraObjectOverlay"),
   cameraCanvas: document.getElementById("cameraCanvas"),
   snapshotPreview: document.getElementById("snapshotPreview"),
   cameraUserVisible: document.getElementById("cameraUserVisible"),
@@ -163,6 +179,44 @@ const ui = {
   cameraUserDistance: document.getElementById("cameraUserDistance"),
   cameraFaceCount: document.getElementById("cameraFaceCount"),
   cameraLastObservation: document.getElementById("cameraLastObservation"),
+  cameraObjectCount: document.getElementById("cameraObjectCount"),
+  cameraObjectLabels: document.getElementById("cameraObjectLabels"),
+  cameraVisionMetadataAge: document.getElementById("cameraVisionMetadataAge"),
+  cameraMediaPipeQuality: document.getElementById("cameraMediaPipeQuality"),
+  cameraMediaPipeModel: document.getElementById("cameraMediaPipeModel"),
+  cameraMediaPipeSettings: document.getElementById("cameraMediaPipeSettings"),
+  cameraVisionMetadataSafety: document.getElementById("cameraVisionMetadataSafety"),
+  cameraVisionMetadataPreview: document.getElementById("cameraVisionMetadataPreview"),
+  mediaPipeDetectionLog: document.getElementById("mediaPipeDetectionLog"),
+  objectDetectorState: document.getElementById("objectDetectorState"),
+  objectDetectorModel: document.getElementById("objectDetectorModel"),
+  objectDetectionInterval: document.getElementById("objectDetectionInterval"),
+  objectDetectionLastRun: document.getElementById("objectDetectionLastRun"),
+  objectDetectionError: document.getElementById("objectDetectionError"),
+  objectDetectorModelSelect: document.getElementById("objectDetectorModelSelect"),
+  objectDetectorModelHelp: document.getElementById("objectDetectorModelHelp"),
+  startObjectDetectionButton: document.getElementById("startObjectDetectionButton"),
+  stopObjectDetectionButton: document.getElementById("stopObjectDetectionButton"),
+  objectDetectionIntervalSlider: document.getElementById("objectDetectionIntervalSlider"),
+  objectDetectionIntervalValue: document.getElementById("objectDetectionIntervalValue"),
+  objectScoreThresholdSlider: document.getElementById("objectScoreThresholdSlider"),
+  objectScoreThresholdValue: document.getElementById("objectScoreThresholdValue"),
+  objectMaxResultsSlider: document.getElementById("objectMaxResultsSlider"),
+  objectMaxResultsValue: document.getElementById("objectMaxResultsValue"),
+  objectCategoryAllowlistInput: document.getElementById("objectCategoryAllowlistInput"),
+  visibleObjectList: document.getElementById("visibleObjectList"),
+  visionSummary: document.getElementById("visionSummary"),
+  followTargetLabelInput: document.getElementById("followTargetLabelInput"),
+  setFollowTargetButton: document.getElementById("setFollowTargetButton"),
+  stopFollowingButton: document.getElementById("stopFollowingButton"),
+  clearFollowTargetButton: document.getElementById("clearFollowTargetButton"),
+  followScenarioState: document.getElementById("followScenarioState"),
+  activeFollowTarget: document.getElementById("activeFollowTarget"),
+  followTargetVisible: document.getElementById("followTargetVisible"),
+  followTargetPosition: document.getElementById("followTargetPosition"),
+  followTargetDistance: document.getElementById("followTargetDistance"),
+  followTargetLostFor: document.getElementById("followTargetLostFor"),
+  followControllerState: document.getElementById("followControllerState"),
   localBrainState: document.getElementById("localBrainState"),
   localBrainAdapterState: document.getElementById("localBrainAdapterState"),
   localBrainServerStatus: document.getElementById("localBrainServerStatus"),
@@ -178,6 +232,8 @@ const ui = {
   localSpeechAllowedToggle: document.getElementById("localSpeechAllowedToggle"),
   allowAutonomousMovementToggle: document.getElementById("allowAutonomousMovementToggle"),
   allowAutonomousSpeechToggle: document.getElementById("allowAutonomousSpeechToggle"),
+  followModeArmedToggle: document.getElementById("followModeArmedToggle"),
+  allowFollowMovementToggle: document.getElementById("allowFollowMovementToggle"),
   startLocalBrainButton: document.getElementById("startLocalBrainButton"),
   stopLocalBrainButton: document.getElementById("stopLocalBrainButton"),
   thinkNowButton: document.getElementById("thinkNowButton"),
@@ -307,6 +363,11 @@ let reliabilityManager = null;
 let speechInput = null;
 let voiceOutput = null;
 let cameraInput = null;
+let objectDetectorEngine = null;
+let objectTracker = null;
+let visionState = null;
+let followTargetController = null;
+let visionScenarioManager = null;
 let bodyCalibration = null;
 let personalityTuning = null;
 let lifeEventEmitter = null;
@@ -320,6 +381,9 @@ let lastTranscript = null;
 let lastEventPosted = null;
 let lastObservationEventAt = 0;
 let lastObservationSignature = "";
+let lastObjectDetectionResult = null;
+let recentObjectReference = null;
+let mediaPipeDetectionLogs = [];
 let learnedPhraseCache = [];
 let lifeEventsEnabled = false;
 let settingsOpen = false;
@@ -353,6 +417,7 @@ updateVoiceUi();
 updateAlwaysListeningUi();
 updateEmbodimentUi();
 updateCameraUi();
+renderMediaPipeDetectionLog();
 updateCalibrationUi();
 updatePersonalityUi();
 updateLifeEventsUi();
@@ -629,6 +694,24 @@ ui.allowAutonomousSpeechToggle.addEventListener("change", () => {
   patchBrainPolicy({ allowAutonomousSpeech: ui.allowAutonomousSpeechToggle.checked });
 });
 
+ui.followModeArmedToggle?.addEventListener("change", () => {
+  patchBrainPolicy({ followModeArmed: ui.followModeArmedToggle.checked });
+  log(
+    brainPolicy.followModeArmed
+      ? "Follow Mode armed. Target following still requires Local Motion, Allow Follow Movement, and a connected robot."
+      : "Follow Mode disarmed."
+  );
+});
+
+ui.allowFollowMovementToggle?.addEventListener("change", () => {
+  patchBrainPolicy({ allowFollowMovement: ui.allowFollowMovementToggle.checked });
+  log(
+    brainPolicy.allowFollowMovement
+      ? "Follow movement allowed while follow mode and local motion are armed."
+      : "Follow movement disabled."
+  );
+});
+
 ui.startLocalBrainButton.addEventListener("click", () => {
   primeLiveInputsFromUserGesture();
   startLocalBrainProductionMode().catch((error) => {
@@ -690,6 +773,107 @@ ui.captureSnapshotButton.addEventListener("click", () => {
   captureSnapshotFromUi().catch((error) => {
     log(`Snapshot failed: ${error.message}`, "error");
   });
+});
+
+ui.startObjectDetectionButton?.addEventListener("click", () => {
+  startObjectDetection({ source: "ui" }).catch((error) => {
+    log(`Object detection start failed: ${error.message}`, "error");
+  });
+});
+
+ui.stopObjectDetectionButton?.addEventListener("click", () => {
+  stopObjectDetection("ui_stop");
+});
+
+ui.objectDetectorModelSelect?.addEventListener("change", () => {
+  const presetKey = ui.objectDetectorModelSelect.value;
+  const preset = OBJECT_DETECTOR_MODEL_PRESETS[presetKey];
+
+  if (!preset || !objectDetectorEngine) {
+    return;
+  }
+
+  pushMediaPipeLog({
+    type: "model_change",
+    message: `Switching detector model to ${preset.label}.`
+  });
+  objectDetectorEngine
+    .setModelAssetPath?.(preset.url, {
+      modelPreset: presetKey,
+      modelName: preset.label
+    })
+    .then(() => {
+      updateObjectVisionUi();
+      updateCameraVisionMetadataUi();
+    })
+    .catch((error) => {
+      pushMediaPipeLog({
+        type: "error",
+        message: `Model switch failed: ${error.message}`
+      });
+      log(`Object detector model switch failed: ${error.message}`, "warn");
+    });
+});
+
+ui.objectDetectionIntervalSlider?.addEventListener("input", () => {
+  const intervalMs = Number(ui.objectDetectionIntervalSlider.value);
+  objectDetectorEngine?.setDetectionIntervalMs?.(intervalMs);
+  patchBrainPolicy({ objectDetectionIntervalMs: intervalMs });
+  pushMediaPipeLog({
+    type: "config",
+    message: `Detection interval set to ${intervalMs} ms.`
+  });
+  updateObjectVisionUi();
+});
+
+ui.objectScoreThresholdSlider?.addEventListener("input", () => {
+  const threshold = Number(ui.objectScoreThresholdSlider.value);
+  objectDetectorEngine?.setScoreThreshold?.(threshold);
+  pushMediaPipeLog({
+    type: "config",
+    message: `Score threshold set to ${threshold.toFixed(2)}.`
+  });
+  updateObjectVisionUi();
+});
+
+ui.objectMaxResultsSlider?.addEventListener("input", () => {
+  const maxResults = Number(ui.objectMaxResultsSlider.value);
+  objectDetectorEngine?.setMaxResults?.(maxResults);
+  pushMediaPipeLog({
+    type: "config",
+    message: `Max results set to ${maxResults}.`
+  });
+  updateObjectVisionUi();
+});
+
+ui.objectCategoryAllowlistInput?.addEventListener("change", () => {
+  const allowlist = objectDetectorEngine?.setCategoryAllowlist?.(ui.objectCategoryAllowlistInput.value) ?? [];
+  pushMediaPipeLog({
+    type: "config",
+    message: `Category allowlist ${allowlist.length ? allowlist.join(", ") : "cleared"}.`
+  });
+  updateObjectVisionUi();
+});
+
+ui.setFollowTargetButton?.addEventListener("click", () => {
+  const label = ui.followTargetLabelInput?.value?.trim();
+  if (!label) {
+    log("Follow target label is empty.", "warn");
+    return;
+  }
+
+  visionScenarioManager?.startFollowTarget?.({ label, mode: "gentle" });
+});
+
+ui.stopFollowingButton?.addEventListener("click", () => {
+  visionScenarioManager?.stopFollowing?.("ui_stop_following");
+  updateObjectVisionUi();
+});
+
+ui.clearFollowTargetButton?.addEventListener("click", () => {
+  visionScenarioManager?.stopFollowing?.("ui_clear_target");
+  recentObjectReference = null;
+  updateObjectVisionUi();
 });
 
 ui.startListeningButton.addEventListener("click", () => {
@@ -1111,7 +1295,24 @@ async function init() {
     eventThoughtCooldownMs:
       activeConfig.speechGateEventCooldownMs ??
       PUBLIC_CONFIG.speechGateEventCooldownMs ??
-      createDefaultBrainPolicy().eventThoughtCooldownMs
+      createDefaultBrainPolicy().eventThoughtCooldownMs,
+    localVisionEnabled: activeConfig.localVisionEnabled ?? PUBLIC_CONFIG.localVisionEnabled ?? true,
+    objectDetectionEnabledDefault:
+      activeConfig.objectDetectionEnabledDefault ??
+      PUBLIC_CONFIG.objectDetectionEnabledDefault ??
+      false,
+    objectDetectionIntervalMs:
+      activeConfig.objectDetectionIntervalMs ??
+      PUBLIC_CONFIG.objectDetectionIntervalMs ??
+      1000,
+    followLostTimeoutMs:
+      activeConfig.followLostTimeoutMs ??
+      PUBLIC_CONFIG.followLostTimeoutMs ??
+      2000,
+    maxObjectFollowSpeed:
+      activeConfig.maxObjectFollowSpeed ??
+      PUBLIC_CONFIG.maxObjectFollowSpeed ??
+      0.18
   });
   const wakeNames = Array.isArray(activeConfig.wakeNamesDefault)
     ? activeConfig.wakeNamesDefault
@@ -1160,6 +1361,13 @@ async function init() {
   localEventBus.subscribe("brain_thought_result", traceBrainThoughtResult);
   ["macro_started", "macro_result", "macro_interrupted"].forEach((type) => {
     localEventBus.subscribe(type, traceMacroEvent);
+  });
+  ["vision_objects_updated", "vision_follow_started", "vision_follow_stopped", "vision_follow_target_set"].forEach((type) => {
+    localEventBus.subscribe(type, () => updateObjectVisionUi());
+  });
+  localEventBus.subscribe("vision_target_lost", () => {
+    face?.setVisionIndicator?.(true, "lost");
+    updateObjectVisionUi();
   });
 
   attentionSystem = new AttentionSystem({
@@ -1219,6 +1427,24 @@ async function init() {
     activeConfig.defaultEsp32WsUrl || PUBLIC_CONFIG.defaultEsp32WsUrl;
   ui.speedSlider.max = activeConfig.maxSpeed?.toFixed(2) ?? "0.40";
   ui.durationSlider.max = String(activeConfig.maxDurationMs ?? PUBLIC_CONFIG.maxDurationMs);
+  populateObjectDetectorModelSelect(getConfiguredObjectDetectorModelPreset());
+  if (ui.objectDetectionIntervalSlider) {
+    ui.objectDetectionIntervalSlider.value = String(brainPolicy.objectDetectionIntervalMs);
+  }
+  if (ui.objectScoreThresholdSlider) {
+    ui.objectScoreThresholdSlider.value = String(
+      activeConfig.objectDetectorScoreThreshold ??
+      PUBLIC_CONFIG.objectDetectorScoreThreshold ??
+      DEFAULT_OBJECT_DETECTOR_SCORE_THRESHOLD
+    );
+  }
+  if (ui.objectMaxResultsSlider) {
+    ui.objectMaxResultsSlider.value = String(
+      activeConfig.objectDetectorMaxResults ??
+      PUBLIC_CONFIG.objectDetectorMaxResults ??
+      DEFAULT_OBJECT_DETECTOR_MAX_RESULTS
+    );
+  }
   updateSliderLabels();
 
   realRobotClient = new ESP32Client({
@@ -1288,9 +1514,72 @@ async function init() {
     analysisIntervalMs: 500,
     logger: (message, level = "info") => log(message, level)
   });
-  cameraInput.onStatus(updateCameraUi);
+  cameraInput.onStatus(handleCameraStatus);
   cameraInput.onObservation(handleCameraObservation);
   cameraInput.onSnapshot(handleCameraSnapshot);
+
+  objectTracker = new ObjectTracker({
+    maxLostMs: brainPolicy.followLostTimeoutMs,
+    logger: (message, level = "info") => log(message, level)
+  });
+  visionState = new VisionState({
+    logger: (message, level = "info") => log(message, level)
+  });
+  objectDetectorEngine = new ObjectDetectorEngine({
+    videoElement: ui.cameraPreview,
+    cameraInput,
+    modelPreset: getSelectedObjectDetectorModelPreset(),
+    modelAssetPath:
+      activeConfig.objectDetectorModelAssetPath ??
+      PUBLIC_CONFIG.objectDetectorModelAssetPath,
+    wasmBasePath:
+      activeConfig.objectDetectorWasmBasePath ??
+      PUBLIC_CONFIG.objectDetectorWasmBasePath,
+    moduleUrl:
+      activeConfig.objectDetectorModuleUrl ??
+      PUBLIC_CONFIG.objectDetectorModuleUrl,
+    detectionIntervalMs: brainPolicy.objectDetectionIntervalMs,
+    scoreThreshold: Number(ui.objectScoreThresholdSlider?.value ?? DEFAULT_OBJECT_DETECTOR_SCORE_THRESHOLD),
+    maxResults: Number(ui.objectMaxResultsSlider?.value ?? DEFAULT_OBJECT_DETECTOR_MAX_RESULTS),
+    logger: (message, level = "info") => log(message, level)
+  });
+  objectDetectorEngine.onDetections(handleObjectDetections);
+  objectDetectorEngine.onStatus((status) => {
+    visionState?.setDetectorStatus?.(status);
+    updateObjectVisionUi();
+  });
+  objectDetectorEngine.onError((message) => {
+    pushMediaPipeLog({
+      type: "error",
+      message
+    });
+    log(`Object detector error: ${message}`, "warn");
+    updateObjectVisionUi();
+  });
+  followTargetController = new FollowTargetController({
+    visionState,
+    objectTracker,
+    lifeEngine,
+    commandQueue,
+    macroSequencer,
+    eventBus: localEventBus,
+    voiceOutput,
+    getPolicy: getExecutionPolicy,
+    lostTimeoutMs: brainPolicy.followLostTimeoutMs,
+    logger: (message, level = "info") => log(message, level)
+  });
+  visionScenarioManager = new VisionScenarioManager({
+    cameraInput,
+    objectDetectorEngine,
+    objectTracker,
+    visionState,
+    followTargetController,
+    voiceOutput,
+    face,
+    eventBus: localEventBus,
+    getPolicy,
+    logger: (message, level = "info") => log(message, level)
+  });
 
   speechInput = new SpeechInput({
     language: ui.speechLanguageInput.value.trim() || "en-US",
@@ -1325,6 +1614,10 @@ async function init() {
     embodiedActionRouter,
     voiceOutput,
     cameraInput,
+    visionScenarioManager,
+    visionState,
+    followTargetController,
+    objectDetectorEngine,
     logger: (message, level = "info") => log(message, level),
     getRuntimeContext,
     getExecutionPolicy
@@ -1433,6 +1726,7 @@ async function init() {
   updateVoiceUi();
   updateAlwaysListeningUi();
   updateCameraUi();
+  updateObjectVisionUi();
   updateCalibrationUi();
   updatePersonalityUi();
   updateLifeEventsUi();
@@ -1454,6 +1748,7 @@ async function init() {
   globalThis.setInterval(() => {
     updateAlwaysListeningUi();
     updateEmbodimentUi();
+    updateObjectVisionUi();
   }, 1000);
   refreshLearnedPhrases().catch((error) => {
     log(`Learned phrase cache unavailable: ${error.message}`, "warn");
@@ -1583,6 +1878,10 @@ function setActiveRobotClient(nextClient) {
   });
   macroSequencer?.setCommandQueue?.(commandQueue);
   macroSequencer?.setLifeEngine?.(lifeEngine);
+  if (followTargetController) {
+    followTargetController.commandQueue = commandQueue;
+    followTargetController.lifeEngine = lifeEngine;
+  }
   renderCommandHistory(commandQueue?.getRecentCommands?.() ?? []);
   updateConnectionState(robotClient.getStatus());
   renderTelemetry(robotClient.getLatestTelemetry?.() ?? {});
@@ -1690,6 +1989,7 @@ async function emergencyStop(reason, message, level = "error") {
   }
 
   voiceOutput?.cancel?.(reason);
+  visionScenarioManager?.stopScenario?.(reason);
   macroSequencer?.interrupt?.(reason, 100);
   priorityScheduler?.interruptBelow?.(100, reason);
   priorityScheduler?.clear?.();
@@ -1737,6 +2037,22 @@ async function handleGatedTranscript(transcript = {}) {
       ? "speech_interim"
       : "speech";
   const eventType = source === "typed" ? "user_text" : "user_speech";
+
+  if (await handleLocalVisionControlPhrase(text)) {
+    updateAlwaysListeningUi();
+    updateLocalBrainUi();
+    return {
+      event: null,
+      gateResult: {
+        accepted: true,
+        shouldTriggerBrain: false,
+        shouldImmediateStop: false,
+        classification: "vision_control"
+      }
+    };
+  }
+
+  updateRecentObjectReferenceFromText(text);
   const gateResult = speechGate?.processTranscript?.({
     ...transcript,
     text,
@@ -2056,7 +2372,17 @@ async function captureSnapshotFromUi() {
 }
 
 function handleCameraCommandResult(result = {}) {
-  updateCameraUi(result.status);
+  handleCameraStatus(result.status ?? cameraInput?.getCameraStatus?.());
+
+  if (result.status && !result.status.running) {
+    stopObjectDetection("camera_stopped");
+    visionScenarioManager?.stopFollowing?.("camera_stopped");
+  }
+
+  if (result.status?.running && objectDetectorEngine?.isRunning?.()) {
+    const detectPromise = objectDetectorEngine.detectOnce?.();
+    detectPromise?.catch?.(() => {});
+  }
 
   if (result.ok) {
     log("Camera command completed.");
@@ -2066,6 +2392,184 @@ function handleCameraCommandResult(result = {}) {
   if (result.error) {
     log(`Camera command failed: ${result.error}`, "warn");
   }
+}
+
+function handleCameraStatus(status = cameraInput?.getCameraStatus?.()) {
+  const cameraStatus = status ?? cameraInput?.getCameraStatus?.() ?? {};
+  visionState?.setCameraStatus?.(cameraStatus);
+
+  if (cameraStatus.running === false) {
+    objectDetectorEngine?.stop?.();
+    if (followTargetController?.isRunning?.()) {
+      visionScenarioManager?.stopFollowing?.("camera_stopped");
+    }
+    objectTracker?.markAllLost?.();
+    visionState?.updateFromDetections?.(
+      {
+        timestamp: new Date().toISOString(),
+        detections: []
+      },
+      objectTracker?.getTracks?.() ?? []
+    );
+  }
+
+  updateCameraUi(cameraStatus);
+  updateObjectVisionUi();
+}
+
+async function startObjectDetection({ source = "manual" } = {}) {
+  if (!brainPolicy.localVisionEnabled) {
+    log("Local object vision is disabled.", "warn");
+    return null;
+  }
+
+  if (!cameraInput?.getCameraStatus?.().running) {
+    log("Start the camera before object detection.", "warn");
+    return null;
+  }
+
+  if (ui.objectDetectionIntervalSlider) {
+    objectDetectorEngine?.setDetectionIntervalMs?.(Number(ui.objectDetectionIntervalSlider.value));
+  }
+
+  if (ui.objectScoreThresholdSlider) {
+    objectDetectorEngine?.setScoreThreshold?.(Number(ui.objectScoreThresholdSlider.value));
+  }
+
+  if (ui.objectMaxResultsSlider) {
+    objectDetectorEngine?.setMaxResults?.(Number(ui.objectMaxResultsSlider.value));
+  }
+
+  if (ui.objectCategoryAllowlistInput) {
+    objectDetectorEngine?.setCategoryAllowlist?.(ui.objectCategoryAllowlistInput.value);
+  }
+
+  const status = await objectDetectorEngine?.start?.();
+  face?.setVisionIndicator?.(true, "detecting");
+  pushMediaPipeLog({
+    type: "status",
+    message: `Object detection ${status?.running ? "started" : "not started"} (${source}).`
+  });
+  log(`Object detection ${status?.running ? "started" : "not started"} (${source}).`);
+  updateObjectVisionUi();
+  return status;
+}
+
+function stopObjectDetection(reason = "object_detection_stop") {
+  objectDetectorEngine?.stop?.();
+  lastObjectDetectionResult = null;
+  renderObjectOverlays();
+
+  if (!followTargetController?.isRunning?.()) {
+    face?.setVisionIndicator?.(false);
+  }
+
+  localEventBus?.publish?.("vision_detector_stopped", { reason }, { source: "vision" });
+  pushMediaPipeLog({
+    type: "status",
+    message: `Object detection stopped (${reason}).`
+  });
+  updateObjectVisionUi();
+}
+
+function handleObjectDetections(result = {}) {
+  lastObjectDetectionResult = result;
+  const tracks = objectTracker?.update?.(result) ?? [];
+  visionState?.updateFromDetections?.(result, tracks);
+  updateRecentObjectReferenceFromVision();
+  updateObjectVisionUi();
+  renderObjectOverlays();
+  localEventBus?.publish?.("vision_objects_updated", {
+    vision: buildVisionContext({ visionState, cameraInput, objectTracker })
+  }, { source: "vision" });
+  pushMediaPipeDetectionResult(result);
+}
+
+function updateRecentObjectReferenceFromVision() {
+  const activeTarget = visionState?.getActiveTarget?.();
+  const visibleObjects = visionState?.getVisibleObjects?.() ?? [];
+  const currentReferenceLabel = recentObjectReference?.label;
+  const matchingVisible = currentReferenceLabel
+    ? visibleObjects.find((object) => object.label === currentReferenceLabel)
+    : null;
+
+  if (activeTarget?.visible) {
+    recentObjectReference = buildRecentObjectReference(activeTarget.label, {
+      trackId: activeTarget.trackId,
+      lastSeenAt: new Date().toISOString()
+    });
+    return;
+  }
+
+  if (matchingVisible) {
+    recentObjectReference = {
+      ...recentObjectReference,
+      trackId: matchingVisible.trackId,
+      lastSeenAt: new Date().toISOString()
+    };
+  }
+}
+
+function updateRecentObjectReferenceFromText(text) {
+  const knownLabels = [
+    ...(visionState?.getVisibleObjects?.() ?? []).map((object) => object.label),
+    visionState?.getActiveTarget?.()?.label
+  ].filter(Boolean);
+  const labels = findMentionedObjectLabels(text, knownLabels);
+
+  if (labels.length === 0) {
+    return;
+  }
+
+  const label = labels[0];
+  const visible = visionState?.findObject?.(label);
+  recentObjectReference = buildRecentObjectReference(label, {
+    trackId: visible?.trackId,
+    lastSeenAt: visible?.lastSeenAt ? new Date(visible.lastSeenAt).toISOString() : null
+  });
+}
+
+function buildRecentObjectReference(label, { trackId = null, lastSeenAt = null } = {}) {
+  return {
+    label,
+    aliases: getObjectAliases(label),
+    lastMentionedByUserAt: new Date().toISOString(),
+    lastSeenAt,
+    trackId: trackId ?? null
+  };
+}
+
+async function handleLocalVisionControlPhrase(text) {
+  const normalized = normalizeTranscriptForDedupe(text);
+
+  if (/\bstop (camera|looking|vision|detection)\b/.test(normalized)) {
+    visionScenarioManager?.stopFollowing?.("user_stop_camera");
+    stopObjectDetection("user_stop_camera");
+    const result = await cameraInput?.stopCamera?.();
+    if (result) {
+      handleCameraCommandResult(result);
+    }
+    log("Local vision and camera stopped by user request.");
+    return true;
+  }
+
+  if (
+    /\bstop following\b|\bcancel follow\b|\bcancel following\b|\bforget (the )?target\b/.test(normalized) ||
+    (/\bnever mind\b|\bcancel\b/.test(normalized) && followTargetController?.isRunning?.())
+  ) {
+    visionScenarioManager?.stopFollowing?.("user_stop_following");
+    if (brainPolicy.localSpeechAllowed) {
+      voiceOutput?.speak?.({
+        text: "Okay, I'll stop following it.",
+        tone: "soft",
+        interrupt: true
+      });
+    }
+    log("Follow target stopped by user request.");
+    return true;
+  }
+
+  return false;
 }
 
 function handleCameraSnapshot(snapshot) {
@@ -2176,6 +2680,10 @@ function isLocalStopPhrase(text) {
     .replace(/[^\w\s']/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+
+  if (/\bstop (following|camera|looking|vision|detection)\b/.test(normalized)) {
+    return false;
+  }
 
   return (
     /(^|\s)(stop|freeze|halt)(\s|$)/.test(normalized) ||
@@ -2575,6 +3083,12 @@ async function startLocalBrainProductionMode() {
     log(`Camera startup skipped: ${error.message}`, "warn");
   });
 
+  if (brainPolicy.localCameraAllowed && brainPolicy.localVisionEnabled) {
+    await startObjectDetection({ source: "local_brain_live" }).catch((error) => {
+      log(`Object detection startup skipped: ${error.message}`, "warn");
+    });
+  }
+
   voiceOutput?.speak?.({
     text: "I'm awake.",
     tone: "happy",
@@ -2683,6 +3197,7 @@ function setSettingsOpen(open) {
 function updateProductionChrome() {
   const brainRunning = Boolean(localBrainEngine?.isRunning?.());
   const cameraStatus = cameraInput?.getCameraStatus?.() ?? {};
+  const vision = buildVisionContext({ visionState, cameraInput, objectTracker });
 
   ui.localBrainQuickButton.textContent =
     brainRunning
@@ -2698,11 +3213,15 @@ function updateProductionChrome() {
   }
 
   ui.localVisionState.textContent = cameraStatus.running
-    ? `${cameraStatus.facingMode ?? "camera"} live`
+    ? objectDetectorEngine?.isRunning?.()
+      ? `${vision.objects?.length ?? 0} objects`
+      : `${cameraStatus.facingMode ?? "camera"} live`
     : "camera off";
-  ui.localVisionDetail.textContent = brainPolicy.localCameraAllowed
-    ? "Local Brain may request camera observations."
-    : "Local Brain camera actions are blocked until allowed.";
+  ui.localVisionDetail.textContent = objectDetectorEngine?.isRunning?.()
+    ? vision.summary ?? "Object detection running locally."
+    : brainPolicy.localCameraAllowed
+      ? "Local Brain may request camera observations."
+      : "Local Brain camera actions are blocked until allowed.";
 
   if (ui.localVisionPreview && cameraInput?.stream) {
     ui.localVisionPreview.srcObject = cameraInput.stream;
@@ -2998,6 +3517,12 @@ function updateLocalBrainUi() {
   ui.localSpeechAllowedToggle.checked = Boolean(brainPolicy.localSpeechAllowed);
   ui.allowAutonomousMovementToggle.checked = Boolean(brainPolicy.allowAutonomousMovement);
   ui.allowAutonomousSpeechToggle.checked = Boolean(brainPolicy.allowAutonomousSpeech);
+  if (ui.followModeArmedToggle) {
+    ui.followModeArmedToggle.checked = Boolean(brainPolicy.followModeArmed);
+  }
+  if (ui.allowFollowMovementToggle) {
+    ui.allowFollowMovementToggle.checked = Boolean(brainPolicy.allowFollowMovement);
+  }
 
   ui.localBrainState.textContent = status.running
     ? status.processing
@@ -3030,6 +3555,7 @@ function updateLocalBrainUi() {
   document.body.classList.toggle("local-motion-armed", Boolean(brainPolicy.localMotionArmed));
   document.body.classList.toggle("local-autonomous-mode", Boolean(brainPolicy.autonomousMode));
   renderLocalBrainThoughts();
+  updateObjectVisionUi();
   updateAlwaysListeningUi();
   updateProductionChrome();
 }
@@ -3045,6 +3571,12 @@ function patchBrainPolicy(partial = {}) {
     ...brainPolicy,
     ...partial
   });
+  if (followTargetController) {
+    followTargetController.lostTimeoutMs = brainPolicy.followLostTimeoutMs;
+  }
+  if (objectDetectorEngine && partial.objectDetectionIntervalMs) {
+    objectDetectorEngine.setDetectionIntervalMs(brainPolicy.objectDetectionIntervalMs);
+  }
   syncAutonomousScheduler();
   updateLocalBrainUi();
 }
@@ -3630,7 +4162,402 @@ function updateCameraUi(status = cameraInput?.getCameraStatus?.()) {
   ui.cameraLastObservation.textContent = observation.timestamp
     ? `${observation.detector ?? "none"} · ${observation.note ?? ""}`
     : "--";
+  updateCameraVisionMetadataUi();
   updateProductionChrome();
+}
+
+function updateCameraVisionMetadataUi() {
+  const vision = buildVisionContext({ visionState, cameraInput, objectTracker });
+  const detectorStatus = objectDetectorEngine?.getStatus?.() ?? {};
+  const visibleObjects = Array.isArray(vision.objects)
+    ? vision.objects.filter((object) => object.visible !== false)
+    : [];
+  const lastAge = Number(vision.lastDetectionAgeMs);
+  const quality = describeMediaPipeQuality({
+    detectorStatus,
+    objectCount: visibleObjects.length,
+    lastDetectionAgeMs: lastAge
+  });
+
+  if (ui.cameraObjectCount) {
+    ui.cameraObjectCount.textContent = String(visibleObjects.length);
+  }
+
+  if (ui.cameraObjectLabels) {
+    ui.cameraObjectLabels.textContent = visibleObjects.length
+      ? visibleObjects
+          .slice(0, 6)
+          .map((object) => `${object.label}${Number.isFinite(Number(object.confidence)) ? ` ${Math.round(Number(object.confidence) * 100)}%` : ""}`)
+          .join(", ")
+      : "--";
+  }
+
+  if (ui.cameraVisionMetadataAge) {
+    ui.cameraVisionMetadataAge.textContent = Number.isFinite(lastAge)
+      ? `${Math.round(lastAge / 100) / 10}s`
+      : "--";
+  }
+
+  if (ui.cameraMediaPipeQuality) {
+    ui.cameraMediaPipeQuality.textContent = quality;
+  }
+
+  if (ui.cameraMediaPipeModel) {
+    ui.cameraMediaPipeModel.textContent = detectorStatus.modelName
+      ? `${detectorStatus.modelName} · ${detectorStatus.modelQuality ?? "custom"} · ${detectorStatus.modelInputShape ?? "unknown"}`
+      : "MediaPipe ObjectDetector";
+  }
+
+  if (ui.cameraMediaPipeSettings) {
+    const threshold = Number(detectorStatus.scoreThreshold ?? 0);
+    const allowlist = Array.isArray(detectorStatus.categoryAllowlist) && detectorStatus.categoryAllowlist.length
+      ? detectorStatus.categoryAllowlist.join(", ")
+      : "all categories";
+    ui.cameraMediaPipeSettings.textContent =
+      `threshold ${Number.isFinite(threshold) ? threshold.toFixed(2) : "--"} · max ${detectorStatus.maxResults ?? "--"} · ${allowlist} · every ${detectorStatus.detectionIntervalMs ?? brainPolicy.objectDetectionIntervalMs}ms`;
+  }
+
+  if (ui.cameraVisionMetadataSafety) {
+    ui.cameraVisionMetadataSafety.textContent = "metadata only, no frames";
+  }
+
+  if (ui.cameraVisionMetadataPreview) {
+    ui.cameraVisionMetadataPreview.textContent = JSON.stringify(compactVisionMetadataPreview(vision), null, 2);
+  }
+}
+
+function updateObjectVisionUi() {
+  const detectorStatus = objectDetectorEngine?.getStatus?.() ?? {};
+  const vision = buildVisionContext({ visionState, cameraInput, objectTracker });
+  const scenario = vision.scenario ?? {};
+  const activeTarget = vision.activeTarget ?? null;
+  const followStatus = followTargetController?.getStatus?.() ?? {};
+  const lastAge = Number(vision.lastDetectionAgeMs);
+
+  if (ui.objectDetectorState) {
+    ui.objectDetectorState.textContent = detectorStatus.running
+      ? detectorStatus.ready
+        ? "running"
+        : "starting"
+      : detectorStatus.ready
+        ? "ready"
+        : "stopped";
+  }
+  if (ui.objectDetectorModel) {
+    ui.objectDetectorModel.textContent = detectorStatus.modelName
+      ? `${detectorStatus.modelName} (${detectorStatus.modelQuality ?? "custom"})`
+      : "--";
+  }
+  if (ui.objectDetectorModelSelect && detectorStatus.modelPreset && OBJECT_DETECTOR_MODEL_PRESETS[detectorStatus.modelPreset]) {
+    ui.objectDetectorModelSelect.value = detectorStatus.modelPreset;
+  }
+  if (ui.objectDetectorModelHelp) {
+    ui.objectDetectorModelHelp.textContent =
+      detectorStatus.modelDescription ||
+      "Custom MediaPipe object detector model. Keep the detection interval conservative on phones.";
+  }
+  if (ui.objectDetectionInterval) {
+    ui.objectDetectionInterval.textContent = `${detectorStatus.detectionIntervalMs ?? brainPolicy.objectDetectionIntervalMs} ms`;
+  }
+  if (ui.objectDetectionIntervalValue) {
+    ui.objectDetectionIntervalValue.textContent = `${detectorStatus.detectionIntervalMs ?? brainPolicy.objectDetectionIntervalMs} ms`;
+  }
+  if (ui.objectScoreThresholdValue) {
+    const threshold = Number(detectorStatus.scoreThreshold);
+    ui.objectScoreThresholdValue.textContent = Number.isFinite(threshold) ? threshold.toFixed(2) : "--";
+  }
+  if (ui.objectMaxResultsValue) {
+    ui.objectMaxResultsValue.textContent = `${detectorStatus.maxResults ?? "--"} objects`;
+  }
+  if (ui.objectDetectionLastRun) {
+    ui.objectDetectionLastRun.textContent = Number.isFinite(lastAge)
+      ? `${Math.round(lastAge / 100) / 10}s ago`
+      : "--";
+  }
+  if (ui.objectDetectionError) {
+    ui.objectDetectionError.textContent = detectorStatus.lastError ?? "--";
+  }
+  updateCameraVisionMetadataUi();
+  if (ui.visionSummary) {
+    ui.visionSummary.textContent = vision.summary ?? "No objects detected.";
+  }
+  if (ui.visibleObjectList) {
+    renderVisibleObjectList(vision.objects ?? []);
+  }
+  if (ui.followScenarioState) {
+    ui.followScenarioState.textContent = scenario.state ?? "idle";
+  }
+  if (ui.activeFollowTarget) {
+    ui.activeFollowTarget.textContent = activeTarget?.label ?? "--";
+  }
+  if (ui.followTargetVisible) {
+    ui.followTargetVisible.textContent = activeTarget ? String(Boolean(activeTarget.visible)) : "--";
+  }
+  if (ui.followTargetPosition) {
+    ui.followTargetPosition.textContent = activeTarget?.position ?? "--";
+  }
+  if (ui.followTargetDistance) {
+    ui.followTargetDistance.textContent = activeTarget?.distance ?? "--";
+  }
+  if (ui.followTargetLostFor) {
+    ui.followTargetLostFor.textContent = activeTarget?.lostForMs
+      ? `${Math.round(activeTarget.lostForMs / 100) / 10}s`
+      : "--";
+  }
+  if (ui.followControllerState) {
+    ui.followControllerState.textContent = followStatus.running
+      ? followStatus.motionAllowed
+        ? "running, motion allowed"
+        : "running, motion held"
+      : "stopped";
+  }
+
+  document.body.classList.toggle("object-vision-running", Boolean(detectorStatus.running));
+  document.body.classList.toggle("follow-scenario-running", Boolean(followStatus.running));
+  renderObjectOverlays();
+}
+
+function renderVisibleObjectList(objects = []) {
+  ui.visibleObjectList.replaceChildren();
+
+  if (!objects.length) {
+    const empty = document.createElement("div");
+    empty.className = "object-chip object-chip--empty";
+    empty.textContent = "No visible objects yet.";
+    ui.visibleObjectList.append(empty);
+    return;
+  }
+
+  objects.slice(0, 12).forEach((object) => {
+    const item = document.createElement("div");
+    item.className = "object-chip";
+    item.textContent = `${object.label} ${Math.round(Number(object.confidence || 0) * 100)}% · ${object.position} · ${object.distance}`;
+    ui.visibleObjectList.append(item);
+  });
+}
+
+function renderObjectOverlays() {
+  const frameWidth = Number(lastObjectDetectionResult?.frameWidth || 0);
+  const frameHeight = Number(lastObjectDetectionResult?.frameHeight || 0);
+  const detections = Array.isArray(lastObjectDetectionResult?.detections)
+    ? lastObjectDetectionResult.detections
+    : [];
+  renderObjectOverlay(ui.cameraObjectOverlay, detections, frameWidth, frameHeight);
+  renderObjectOverlay(ui.localVisionOverlay, detections, frameWidth, frameHeight);
+}
+
+function renderObjectOverlay(container, detections, frameWidth, frameHeight) {
+  if (!container) {
+    return;
+  }
+
+  container.replaceChildren();
+
+  if (!frameWidth || !frameHeight || !detections.length) {
+    return;
+  }
+
+  detections.slice(0, 8).forEach((object) => {
+    if (!object?.bbox) {
+      return;
+    }
+
+    const box = document.createElement("div");
+    box.className = "object-detection-box";
+    box.style.left = `${(Number(object.bbox.x || 0) / frameWidth) * 100}%`;
+    box.style.top = `${(Number(object.bbox.y || 0) / frameHeight) * 100}%`;
+    box.style.width = `${(Number(object.bbox.width || 0) / frameWidth) * 100}%`;
+    box.style.height = `${(Number(object.bbox.height || 0) / frameHeight) * 100}%`;
+
+    const label = document.createElement("span");
+    label.className = "object-detection-label";
+    label.textContent = `${object.label} ${Math.round(Number(object.confidence || 0) * 100)}% · ${object.position} · ${object.distance}`;
+    box.append(label);
+    container.append(box);
+  });
+}
+
+function populateObjectDetectorModelSelect(selectedPreset = DEFAULT_OBJECT_DETECTOR_MODEL_PRESET) {
+  if (!ui.objectDetectorModelSelect) {
+    return;
+  }
+
+  ui.objectDetectorModelSelect.replaceChildren();
+
+  Object.entries(OBJECT_DETECTOR_MODEL_PRESETS).forEach(([key, preset]) => {
+    const option = new Option(
+      `${preset.label} · ${preset.quality} · ${preset.inputShape}`,
+      key
+    );
+    option.title = preset.description ?? "";
+    ui.objectDetectorModelSelect.append(option);
+  });
+
+  ui.objectDetectorModelSelect.value = OBJECT_DETECTOR_MODEL_PRESETS[selectedPreset]
+    ? selectedPreset
+    : DEFAULT_OBJECT_DETECTOR_MODEL_PRESET;
+}
+
+function getConfiguredObjectDetectorModelPreset() {
+  const configuredPreset =
+    activeConfig.objectDetectorModelPreset ??
+    PUBLIC_CONFIG.objectDetectorModelPreset ??
+    DEFAULT_OBJECT_DETECTOR_MODEL_PRESET;
+
+  if (OBJECT_DETECTOR_MODEL_PRESETS[configuredPreset]) {
+    return configuredPreset;
+  }
+
+  const configuredPath =
+    activeConfig.objectDetectorModelAssetPath ??
+    PUBLIC_CONFIG.objectDetectorModelAssetPath;
+  const presetFromPath = Object.entries(OBJECT_DETECTOR_MODEL_PRESETS)
+    .find(([, preset]) => preset.url === configuredPath)?.[0];
+
+  return presetFromPath ?? DEFAULT_OBJECT_DETECTOR_MODEL_PRESET;
+}
+
+function getSelectedObjectDetectorModelPreset() {
+  return OBJECT_DETECTOR_MODEL_PRESETS[ui.objectDetectorModelSelect?.value]
+    ? ui.objectDetectorModelSelect.value
+    : getConfiguredObjectDetectorModelPreset();
+}
+
+function pushMediaPipeDetectionResult(result = {}) {
+  const detectorStatus = objectDetectorEngine?.getStatus?.() ?? {};
+  const detections = Array.isArray(result.detections) ? result.detections : [];
+  const labels = detections
+    .map((object) => `${object.label} ${Math.round(Number(object.confidence || 0) * 100)}% ${object.position}/${object.distance}`)
+    .join("; ");
+  const maxResults = Number(detectorStatus.maxResults);
+  const capReached = Number.isFinite(maxResults) && detections.length >= maxResults;
+  const reason = result.reason ? ` · reason ${result.reason}` : "";
+
+  pushMediaPipeLog({
+    type: "detect",
+    modelName: detectorStatus.modelName,
+    threshold: detectorStatus.scoreThreshold,
+    maxResults: detectorStatus.maxResults,
+    allowlist: detectorStatus.categoryAllowlist,
+    frameWidth: result.frameWidth,
+    frameHeight: result.frameHeight,
+    detectionCount: detections.length,
+    message: detections.length
+      ? `${labels}${capReached ? " · cap reached, raise max results if weaker objects are missing" : ""}`
+      : `none${reason} · try lower threshold, clearer lighting, or remove allowlist`
+  });
+}
+
+function pushMediaPipeLog(entry = {}) {
+  mediaPipeDetectionLogs = [
+    {
+      timestamp: entry.timestamp ?? new Date().toISOString(),
+      ...entry
+    },
+    ...mediaPipeDetectionLogs
+  ].slice(0, MEDIA_PIPE_LOG_LIMIT);
+  renderMediaPipeDetectionLog();
+}
+
+function renderMediaPipeDetectionLog() {
+  if (!ui.mediaPipeDetectionLog) {
+    return;
+  }
+
+  if (!mediaPipeDetectionLogs.length) {
+    ui.mediaPipeDetectionLog.textContent = "No MediaPipe detections yet.";
+    return;
+  }
+
+  ui.mediaPipeDetectionLog.textContent = mediaPipeDetectionLogs
+    .map(formatMediaPipeLogEntry)
+    .join("\n");
+}
+
+function formatMediaPipeLogEntry(entry = {}) {
+  const time = new Date(entry.timestamp ?? Date.now()).toLocaleTimeString();
+
+  if (entry.type === "detect") {
+    const threshold = Number(entry.threshold);
+    const allowlist = Array.isArray(entry.allowlist) && entry.allowlist.length
+      ? entry.allowlist.join(", ")
+      : "all categories";
+    const frame =
+      Number(entry.frameWidth) > 0 && Number(entry.frameHeight) > 0
+        ? `${Math.round(Number(entry.frameWidth))}x${Math.round(Number(entry.frameHeight))}`
+        : "--";
+
+    return `[${time}] detect · ${entry.modelName ?? "model"} · threshold ${Number.isFinite(threshold) ? threshold.toFixed(2) : "--"} · max ${entry.maxResults ?? "--"} · ${allowlist} · frame ${frame} · ${entry.detectionCount ?? 0} objects · ${entry.message ?? ""}`;
+  }
+
+  return `[${time}] ${entry.type ?? "info"} · ${entry.message ?? ""}`;
+}
+
+function describeMediaPipeQuality({ detectorStatus = {}, objectCount = 0, lastDetectionAgeMs = null } = {}) {
+  if (detectorStatus.lastError) {
+    return "error";
+  }
+
+  if (!detectorStatus.running) {
+    return detectorStatus.ready ? "ready, stopped" : "not running";
+  }
+
+  if (!detectorStatus.ready) {
+    return "loading model";
+  }
+
+  if (!Number.isFinite(Number(lastDetectionAgeMs))) {
+    return "waiting for first frame";
+  }
+
+  if (lastDetectionAgeMs > 3500) {
+    return "stale metadata";
+  }
+
+  if (lastDetectionAgeMs > 1800) {
+    return "slightly delayed";
+  }
+
+  return objectCount > 0 ? "fresh detections" : "fresh, no objects";
+}
+
+function compactVisionMetadataPreview(vision = {}) {
+  return {
+    summary: vision.summary ?? "No objects detected.",
+    objects: Array.isArray(vision.objects)
+      ? vision.objects.slice(0, 8).map((object) => ({
+          label: object.label,
+          visible: Boolean(object.visible),
+          confidence: roundForPreview(object.confidence),
+          position: object.position,
+          distance: object.distance,
+          trackId: object.trackId,
+          lastSeenMs: Number.isFinite(Number(object.lastSeenMs)) ? Math.round(Number(object.lastSeenMs)) : null
+        }))
+      : [],
+    activeTarget: vision.activeTarget ?? null,
+    scenario: vision.scenario
+      ? {
+          active: Boolean(vision.scenario.active),
+          type: vision.scenario.type ?? null,
+          targetLabel: vision.scenario.targetLabel ?? null,
+          state: vision.scenario.state ?? null,
+          reason: vision.scenario.reason ?? null
+        }
+      : null,
+    detectorRunning: Boolean(vision.detectorRunning),
+    cameraRunning: Boolean(vision.cameraRunning),
+    currentCameraFacingMode: vision.currentCameraFacingMode ?? "unknown",
+    lastDetectionAgeMs: Number.isFinite(Number(vision.lastDetectionAgeMs))
+      ? Math.round(Number(vision.lastDetectionAgeMs))
+      : null,
+    safety: "metadata_only_no_raw_images"
+  };
+}
+
+function roundForPreview(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? Math.round(numeric * 100) / 100 : null;
 }
 
 function setupVoiceList() {
@@ -3665,6 +4592,12 @@ function getExecutionPolicy() {
     autonomousMode: brainPolicy.autonomousMode,
     allowAutonomousMovement: brainPolicy.allowAutonomousMovement,
     allowAutonomousSpeech: brainPolicy.allowAutonomousSpeech,
+    localVisionEnabled: brainPolicy.localVisionEnabled,
+    followModeArmed: brainPolicy.followModeArmed,
+    allowFollowMovement: brainPolicy.allowFollowMovement,
+    followLostTimeoutMs: brainPolicy.followLostTimeoutMs,
+    objectDetectionIntervalMs: brainPolicy.objectDetectionIntervalMs,
+    maxObjectFollowSpeed: brainPolicy.maxObjectFollowSpeed,
     simulatorMode,
     robotConnected: Boolean(robotClient?.isConnected?.()),
     allowSpeak: brainPolicy.localSpeechAllowed,
@@ -3729,6 +4662,8 @@ function getStatusSnapshot() {
     calibration: bodyCalibration?.getSettings?.() ?? null,
     recentCommands: commandQueue?.getRecentCommands?.({ limit: 5 }) ?? [],
     camera: compactCameraStatus(cameraInput?.getCameraStatus?.()),
+    vision: buildVisionContext({ visionState, cameraInput, objectTracker }),
+    recentObjectReference,
     voice: {
       speechListening: Boolean(speechInput?.getStatus?.().listening),
       alwaysListening: Boolean(speechInput?.getStatus?.().alwaysListening),
@@ -3745,6 +4680,7 @@ function getStatusSnapshot() {
 function getRuntimeContext() {
   const lifeState = lifeEngine?.getState?.() ?? null;
   const cameraStatus = compactCameraStatus(cameraInput?.getCameraStatus?.());
+  const vision = buildVisionContext({ visionState, cameraInput, objectTracker });
 
   return {
     lifeState,
@@ -3778,6 +4714,8 @@ function getRuntimeContext() {
     recentEvents: localEventBus?.getRecentEvents?.({ limit: 30 }) ?? [],
     cameraStatus,
     latestObservation: cameraStatus.observation,
+    vision,
+    recentObjectReference,
     speechStatus: speechInput?.getStatus?.() ?? null,
     voiceStatus: voiceOutput?.getStatus?.() ?? null,
     voice: getStatusSnapshot().voice,

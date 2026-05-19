@@ -26,7 +26,9 @@ const ACTION_TYPES = new Set([
   "open_back_camera",
   "switch_camera",
   "close_camera",
-  "capture_snapshot"
+  "capture_snapshot",
+  "set_follow_target",
+  "follow_target_stop"
 ]);
 
 const CAMERA_ACTIONS = new Set([
@@ -59,6 +61,10 @@ export class ToolExecutor {
     embodiedActionRouter,
     voiceOutput,
     cameraInput,
+    visionScenarioManager,
+    visionState,
+    followTargetController,
+    objectDetectorEngine,
     logger,
     getRuntimeContext,
     getExecutionPolicy
@@ -71,6 +77,10 @@ export class ToolExecutor {
     this.embodiedActionRouter = embodiedActionRouter;
     this.voiceOutput = voiceOutput;
     this.cameraInput = cameraInput;
+    this.visionScenarioManager = visionScenarioManager;
+    this.visionState = visionState;
+    this.followTargetController = followTargetController;
+    this.objectDetectorEngine = objectDetectorEngine;
     this.logger = logger;
     this.getRuntimeContext = getRuntimeContext;
     this.getExecutionPolicy = getExecutionPolicy;
@@ -101,6 +111,24 @@ export class ToolExecutor {
     this.cameraInput = cameraInput;
   }
 
+  setVisionRuntime({ visionScenarioManager, visionState, followTargetController, objectDetectorEngine } = {}) {
+    if (visionScenarioManager) {
+      this.visionScenarioManager = visionScenarioManager;
+    }
+
+    if (visionState) {
+      this.visionState = visionState;
+    }
+
+    if (followTargetController) {
+      this.followTargetController = followTargetController;
+    }
+
+    if (objectDetectorEngine) {
+      this.objectDetectorEngine = objectDetectorEngine;
+    }
+  }
+
   setEmbodiedActionRouter(embodiedActionRouter) {
     this.embodiedActionRouter = embodiedActionRouter;
   }
@@ -127,6 +155,7 @@ export class ToolExecutor {
     this.scenarioToken += 1;
     this.activeScenario = null;
     this.face?.dismissPhoto?.();
+    this.visionScenarioManager?.stopScenario?.(reason);
     const dropped = this.executionQueue.splice(0);
     const stopResult = await this.executeStop({ reason }, { id: "emergency_stop", type: "stop" });
 
@@ -184,6 +213,10 @@ export class ToolExecutor {
         return this.executeCloseCamera(action);
       case "capture_snapshot":
         return this.executeCaptureSnapshot(args, action);
+      case "set_follow_target":
+        return this.executeSetFollowTarget(args, action);
+      case "follow_target_stop":
+        return this.executeFollowTargetStop(args, action);
       default:
         return this.buildResult("rejected", {
           action,
@@ -585,6 +618,7 @@ export class ToolExecutor {
     this.scenarioToken += 1;
     this.activeScenario = null;
     this.face?.dismissPhoto?.();
+    this.visionScenarioManager?.stopScenario?.(reason);
 
     const routed = await this.executeEmbodiedRoute({
       ...action,
@@ -924,6 +958,63 @@ export class ToolExecutor {
         cameraStatus: sanitizeCameraStatus(result.status),
         snapshot: sanitizeSnapshotMetadata(result.snapshot)
       }
+    });
+  }
+
+  async executeSetFollowTarget(args = {}, action = {}) {
+    const nonPhysical = this.ensureNonPhysicalAllowed(action);
+    if (nonPhysical) {
+      return nonPhysical;
+    }
+
+    if (!this.visionScenarioManager?.startFollowTarget) {
+      return this.buildResult("failed", {
+        action,
+        executed: false,
+        physical: false,
+        message: "Vision follow scenario manager is not available."
+      });
+    }
+
+    const label = normalizeShortText(args.label ?? args.target ?? args.object, 80);
+
+    if (!label) {
+      return this.buildResult("rejected", {
+        action,
+        executed: false,
+        physical: false,
+        message: "set_follow_target requires a label."
+      });
+    }
+
+    const scenarioResult = await this.visionScenarioManager.startFollowTarget({
+      label,
+      aliases: Array.isArray(args.aliases) ? args.aliases : [],
+      trackId: normalizeShortText(args.trackId, 80) || null,
+      mode: ["gentle", "curious", "cautious"].includes(args.mode) ? args.mode : "gentle"
+    });
+
+    return this.buildResult(scenarioResult.status ?? "completed", {
+      action,
+      executed: Boolean(scenarioResult.executed),
+      physical: false,
+      message: scenarioResult.message ?? `Started following ${label}.`,
+      detail: scenarioResult.detail ?? {}
+    });
+  }
+
+  async executeFollowTargetStop(args = {}, action = {}) {
+    const reason = normalizeShortText(args.reason, 120) || "user_request";
+    const scenarioResult = this.visionScenarioManager?.stopFollowing?.(reason)
+      ?? this.followTargetController?.stop?.(reason)
+      ?? { status: "completed", executed: true, message: "Follow target stopped.", detail: { reason } };
+
+    return this.buildResult(scenarioResult.status ?? "completed", {
+      action,
+      executed: true,
+      physical: false,
+      message: scenarioResult.message ?? "Stopped following target.",
+      detail: scenarioResult.detail ?? { reason }
     });
   }
 
@@ -1417,6 +1508,8 @@ function compactRuntimeContext(context = {}) {
     lifeSignals: context.lifeSignals ?? null,
     learnedPhraseCount: Number(context.learnedPhraseCount || 0),
     cameraStatus: sanitizeCameraStatus(context.cameraStatus ?? context.camera),
+    vision: context.vision ?? null,
+    recentObjectReference: context.recentObjectReference ?? null,
     latestObservation:
       context.latestObservation ??
       context.camera?.latestObservation ??

@@ -13,6 +13,8 @@ export function sanitizeBrainContext(input = {}) {
     policy: compactPolicy(context.policy ?? context.localPolicy),
     telemetry: compactTelemetry(context.telemetry ?? context.latestTelemetry ?? context.robotTelemetry),
     camera: compactCameraState(context.camera ?? context.cameraStatus),
+    vision: compactVisionState(context.vision),
+    recentObjectReference: compactRecentObjectReference(context.recentObjectReference),
     speech: compactSpeechState(context.speech ?? context.speechStatus ?? context.voice),
     voice: compactSpeechState(context.voice ?? context.voiceStatus),
     personality: compactPersonality(context.personality),
@@ -128,8 +130,66 @@ function compactPolicy(policy) {
     localMotionArmed: Boolean(value.localMotionArmed),
     localCameraAllowed: Boolean(value.localCameraAllowed),
     localSpeechAllowed: value.localSpeechAllowed !== false,
+    localVisionEnabled: value.localVisionEnabled !== false,
     allowAutonomousMovement: Boolean(value.allowAutonomousMovement),
-    allowAutonomousSpeech: value.allowAutonomousSpeech !== false
+    allowAutonomousSpeech: value.allowAutonomousSpeech !== false,
+    followModeArmed: Boolean(value.followModeArmed),
+    allowFollowMovement: Boolean(value.allowFollowMovement)
+  };
+}
+
+function compactVisionState(vision) {
+  const state = isPlainObject(vision) ? vision : {};
+  return removeDataUrls({
+    summary: shortText(state.summary, 300),
+    objects: Array.isArray(state.objects)
+      ? state.objects.slice(0, 12).map((object) => ({
+          label: shortText(object?.label, 80),
+          visible: Boolean(object?.visible),
+          confidence: finiteOrNull(object?.confidence),
+          position: shortText(object?.position, 40),
+          distance: shortText(object?.distance, 40),
+          trackId: shortText(object?.trackId, 100),
+          lastSeenMs: finiteOrNull(object?.lastSeenMs)
+        }))
+      : [],
+    activeTarget: isPlainObject(state.activeTarget)
+      ? {
+          label: shortText(state.activeTarget.label, 80),
+          visible: Boolean(state.activeTarget.visible),
+          position: shortText(state.activeTarget.position, 40),
+          distance: shortText(state.activeTarget.distance, 40),
+          trackId: shortText(state.activeTarget.trackId, 100),
+          lostForMs: finiteOrNull(state.activeTarget.lostForMs)
+        }
+      : null,
+    scenario: isPlainObject(state.scenario)
+      ? {
+          active: Boolean(state.scenario.active),
+          type: shortText(state.scenario.type, 80),
+          targetLabel: shortText(state.scenario.targetLabel, 80),
+          targetTrackId: shortText(state.scenario.targetTrackId, 100),
+          state: shortText(state.scenario.state, 80),
+          reason: shortText(state.scenario.reason, 120)
+        }
+      : null,
+    detectorRunning: Boolean(state.detectorRunning),
+    cameraRunning: Boolean(state.cameraRunning),
+    currentCameraFacingMode: shortText(state.currentCameraFacingMode, 40),
+    lastDetectionAgeMs: finiteOrNull(state.lastDetectionAgeMs)
+  });
+}
+
+function compactRecentObjectReference(reference) {
+  const value = isPlainObject(reference) ? reference : {};
+  return {
+    label: shortText(value.label, 80),
+    aliases: Array.isArray(value.aliases)
+      ? value.aliases.slice(0, 8).map((item) => shortText(item, 80)).filter(Boolean)
+      : [],
+    lastMentionedByUserAt: shortText(value.lastMentionedByUserAt, 80),
+    lastSeenAt: shortText(value.lastSeenAt, 80),
+    trackId: shortText(value.trackId, 100)
   };
 }
 
@@ -156,7 +216,7 @@ function removeSecretsAndLargeFields(value) {
   const result = {};
 
   Object.entries(value).forEach(([key, child]) => {
-    if (key === "dataUrl" || key === "imageData" || key === "raw" || key === "logs") {
+    if (key === "dataUrl" || key === "imageData" || key === "raw" || key === "logs" || key === "frame" || key === "frames" || key === "base64") {
       return;
     }
 

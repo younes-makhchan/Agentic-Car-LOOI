@@ -368,6 +368,9 @@ export class LocalBrainEngine {
         listening: brainRuntimeContext.speechStatus?.listening,
         speaking: brainRuntimeContext.voiceStatus?.speaking
       },
+      vision: brainRuntimeContext.vision ?? null,
+      recentObjectReference: brainRuntimeContext.recentObjectReference ?? null,
+      camera: brainRuntimeContext.cameraStatus ?? brainRuntimeContext.camera ?? null,
       recentEvents:
         brainRuntimeContext.recentEvents ??
         this.eventBus?.getRecentEvents?.({ limit: 5 }) ??

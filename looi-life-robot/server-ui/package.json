@@ -20,11 +20,13 @@
     "smoke:calibration": "node scripts/smoke-calibration.mjs",
     "smoke:personality": "node scripts/smoke-memory-personality.mjs",
     "smoke:esp32": "node scripts/smoke-esp32-gateway.mjs",
+    "smoke:object-follow": "node scripts/smoke-object-follow.mjs",
     "kimi:agent": "node scripts/run-kimi-agent.mjs",
     "kimi:agent:once": "node scripts/run-kimi-agent.mjs --once",
     "smoke:kimi": "node scripts/smoke-kimi-agent.mjs"
   },
   "dependencies": {
+    "@mediapipe/tasks-vision": "^0.10.35",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.21.2",
