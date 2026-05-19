@@ -383,15 +383,21 @@ export class GeminiLiveRuntime {
   }
 
   async handleTransportMessage(rawMessage) {
-    const message = await parseTransportMessage(rawMessage);
+    const parsed = await parseTransportMessage(rawMessage);
+    const message = parsed?.message ?? null;
 
     if (!message) {
-      this.log("GEMINI RX unparsable websocket message", "warn");
+      this.log(
+        `GEMINI RX unparsable websocket message kind=${parsed?.kind ?? "unknown"} size=${parsed?.size ?? "unknown"} preview=${parsed?.preview ?? ""}`,
+        "warn"
+      );
       return;
     }
 
     this.audioDebug.receivedMessages += 1;
-    this.log(`GEMINI RX message #${this.audioDebug.receivedMessages}: ${summarizeServerMessage(message)}`);
+    this.log(
+      `GEMINI RX message #${this.audioDebug.receivedMessages}: kind=${parsed.kind} size=${parsed.size ?? "unknown"} keys=${Object.keys(message).join(",") || "none"} summary=${summarizeServerMessage(message)}`
+    );
     this.patchStatus({
       lastServerMessageDebug: summarizeServerMessage(message)
     });
@@ -415,6 +421,11 @@ export class GeminiLiveRuntime {
       this.log(
         `GEMINI RX audio chunks=${audioChunks.length} bytes~=${bytes} totalChunks=${this.audioDebug.receivedAudioChunks} totalBytes~=${this.audioDebug.receivedAudioBytes}`
       );
+      audioChunks.forEach((chunk, index) => {
+        this.log(
+          `GEMINI RX audio[${index}] mime=${chunk.mimeType || "unknown"} base64Chars=${String(chunk.data || "").length} bytes~=${estimateBase64Bytes(chunk.data)}`
+        );
+      });
     } else {
       this.log("GEMINI RX no audio chunks in this message");
     }
@@ -942,9 +953,15 @@ function createBrowserAudioContext() {
 
 function parseJsonText(text) {
   try {
-    return JSON.parse(text);
+    return {
+      message: JSON.parse(text),
+      preview: text.slice(0, 300)
+    };
   } catch (_error) {
-    return null;
+    return {
+      message: null,
+      preview: text.slice(0, 300)
+    };
   }
 }
 
@@ -952,26 +969,55 @@ async function parseTransportMessage(rawMessage) {
   const data = rawMessage?.data ?? rawMessage;
 
   if (typeof data === "string") {
-    return parseJsonText(data);
+    return {
+      ...parseJsonText(data),
+      kind: "string",
+      size: data.length
+    };
   }
 
   if (data instanceof ArrayBuffer) {
-    return parseJsonText(new TextDecoder().decode(new Uint8Array(data)));
+    const text = new TextDecoder().decode(new Uint8Array(data));
+    return {
+      ...parseJsonText(text),
+      kind: "arraybuffer",
+      size: data.byteLength
+    };
   }
 
   if (ArrayBuffer.isView(data)) {
-    return parseJsonText(new TextDecoder().decode(data));
+    const text = new TextDecoder().decode(data);
+    return {
+      ...parseJsonText(text),
+      kind: "typedarray",
+      size: data.byteLength
+    };
   }
 
   if (typeof Blob !== "undefined" && data instanceof Blob) {
-    return parseJsonText(await data.text());
+    const text = await data.text();
+    return {
+      ...parseJsonText(text),
+      kind: "messageevent.blob",
+      size: data.size
+    };
   }
 
   if (data && typeof data === "object") {
-    return data;
+    return {
+      message: data,
+      kind: "object",
+      size: null,
+      preview: Object.prototype.toString.call(data)
+    };
   }
 
-  return null;
+  return {
+    message: null,
+    kind: typeof data,
+    size: null,
+    preview: ""
+  };
 }
 
 function extractAudioChunks(message = {}) {
