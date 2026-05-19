@@ -28,7 +28,9 @@ const ACTION_TYPES = new Set([
   "open_back_camera",
   "switch_camera",
   "close_camera",
-  "capture_snapshot"
+  "capture_snapshot",
+  "set_follow_target",
+  "follow_target_stop"
 ]);
 
 const CAMERA_ACTIONS = new Set([
@@ -61,6 +63,9 @@ export class ToolExecutor {
     embodiedActionRouter,
     voiceOutput,
     cameraInput,
+    visionScenarioManager,
+    visionState,
+    followTargetController,
     logger,
     getRuntimeContext,
     getExecutionPolicy
@@ -73,6 +78,9 @@ export class ToolExecutor {
     this.embodiedActionRouter = embodiedActionRouter;
     this.voiceOutput = voiceOutput;
     this.cameraInput = cameraInput;
+    this.visionScenarioManager = visionScenarioManager;
+    this.visionState = visionState;
+    this.followTargetController = followTargetController;
     this.logger = logger;
     this.getRuntimeContext = getRuntimeContext;
     this.getExecutionPolicy = getExecutionPolicy;
@@ -103,6 +111,18 @@ export class ToolExecutor {
     this.cameraInput = cameraInput;
   }
 
+  setVisionControllers({ visionScenarioManager, visionState, followTargetController } = {}) {
+    if (visionScenarioManager) {
+      this.visionScenarioManager = visionScenarioManager;
+    }
+    if (visionState) {
+      this.visionState = visionState;
+    }
+    if (followTargetController) {
+      this.followTargetController = followTargetController;
+    }
+  }
+
   setEmbodiedActionRouter(embodiedActionRouter) {
     this.embodiedActionRouter = embodiedActionRouter;
   }
@@ -128,6 +148,7 @@ export class ToolExecutor {
   async emergencyStop(reason = "tool_executor_emergency_stop") {
     this.scenarioToken += 1;
     this.activeScenario = null;
+    this.visionScenarioManager?.stopFollowing?.(reason) ?? this.followTargetController?.stop?.(reason);
     this.face?.dismissPhoto?.();
     const dropped = this.executionQueue.splice(0);
     const stopResult = await this.executeStop({ reason }, { id: "emergency_stop", type: "stop" });
@@ -186,6 +207,10 @@ export class ToolExecutor {
         return this.executeCloseCamera(action);
       case "capture_snapshot":
         return this.executeCaptureSnapshot(args, action);
+      case "set_follow_target":
+        return this.executeSetFollowTarget(args, action);
+      case "follow_target_stop":
+        return this.executeFollowTargetStop(args, action);
       default:
         return this.buildResult("rejected", {
           action,
@@ -586,6 +611,7 @@ export class ToolExecutor {
     const reason = normalizeShortText(args.reason, 160) || "cloud_stop";
     this.scenarioToken += 1;
     this.activeScenario = null;
+    this.visionScenarioManager?.stopFollowing?.(reason) ?? this.followTargetController?.stop?.(reason);
     this.face?.dismissPhoto?.();
 
     const routed = await this.executeEmbodiedRoute({
@@ -926,6 +952,75 @@ export class ToolExecutor {
         cameraStatus: sanitizeCameraStatus(result.status),
         snapshot: sanitizeSnapshotMetadata(result.snapshot)
       }
+    });
+  }
+
+  async executeSetFollowTarget(args = {}, action = {}) {
+    const label = normalizeShortText(args.label, 80);
+    const mode = ["gentle", "curious", "cautious"].includes(args.mode) ? args.mode : "gentle";
+
+    if (!label) {
+      return this.buildResult("rejected", {
+        action,
+        executed: false,
+        physical: false,
+        message: "Follow target requires a label."
+      });
+    }
+
+    if (!this.visionScenarioManager?.startFollowTarget) {
+      return this.buildResult("failed", {
+        action,
+        executed: false,
+        physical: false,
+        message: "Vision follow scenario manager is unavailable."
+      });
+    }
+
+    const scenarioResult = await this.visionScenarioManager.startFollowTarget({
+      label,
+      mode,
+      trackId: args.trackId ?? null
+    });
+
+    return this.buildResult(scenarioResult.status ?? "completed", {
+      action,
+      executed: Boolean(scenarioResult.executed),
+      physical: false,
+      message: scenarioResult.message ?? `Started following ${label}.`,
+      detail: scenarioResult.detail ?? {}
+    });
+  }
+
+  async executeFollowTargetStop(args = {}, action = {}) {
+    const reason = normalizeShortText(args.reason, 120) || "follow_target_stop";
+    const followActive = Boolean(this.followTargetController?.isRunning?.());
+
+    if (
+      action.source === "gemini_live" &&
+      followActive &&
+      !isExplicitFollowStopIntent(readLatestUserIntent(this.getRuntimeContext?.())) &&
+      !/emergency/i.test(reason)
+    ) {
+      return this.buildResult("rejected", {
+        action,
+        executed: false,
+        physical: false,
+        message: "Ignored follow stop because the latest user intent did not explicitly stop following.",
+        detail: { reason }
+      });
+    }
+
+    const scenarioResult = this.visionScenarioManager?.stopFollowing?.(reason)
+      ?? this.followTargetController?.stop?.(reason)
+      ?? { ok: true, reason };
+
+    return this.buildResult("completed", {
+      action,
+      executed: true,
+      physical: false,
+      message: "Stopped following target.",
+      detail: scenarioResult.detail ?? scenarioResult
     });
   }
 
@@ -1395,6 +1490,24 @@ function safeStringify(value) {
   }
 }
 
+function readLatestUserIntent(context = {}) {
+  return String(
+    context?.geminiLive?.lastInputTranscript ??
+    context?.voice?.geminiLive?.lastInputTranscript ??
+    context?.voice?.lastTranscript?.text ??
+    context?.voice?.lastTranscript ??
+    context?.speechStatus?.lastTranscript?.text ??
+    context?.speechStatus?.lastTranscript ??
+    ""
+  );
+}
+
+function isExplicitFollowStopIntent(text) {
+  return /\b(stop following|stop tracking|cancel follow|cancel tracking|forget the target|never mind|nevermind|stop)\b/i.test(
+    String(text ?? "")
+  );
+}
+
 function wait(ms) {
   return new Promise((resolve) => {
     setTimeout(resolve, Math.max(0, Number(ms) || 0));
@@ -1419,6 +1532,13 @@ function compactRuntimeContext(context = {}) {
     lifeSignals: context.lifeSignals ?? null,
     learnedPhraseCount: Number(context.learnedPhraseCount || 0),
     cameraStatus: sanitizeCameraStatus(context.cameraStatus ?? context.camera),
+    vision: sanitizeVisionContext(context.vision),
+    recentObjectReference: context.recentObjectReference
+      ? {
+          label: normalizeShortText(context.recentObjectReference.label, 80),
+          trackId: normalizeShortText(context.recentObjectReference.trackId, 80)
+        }
+      : null,
     latestObservation:
       context.latestObservation ??
       context.camera?.latestObservation ??
@@ -1426,6 +1546,43 @@ function compactRuntimeContext(context = {}) {
       null,
     voice: context.voice ?? null,
     timestamp: new Date().toISOString()
+  };
+}
+
+function sanitizeVisionContext(vision = {}) {
+  return {
+    visibleLabels: normalizeShortText(vision.visibleLabels, 240),
+    objects: Array.isArray(vision.objects)
+      ? vision.objects.slice(0, 12).map((object) => ({
+          label: normalizeShortText(object?.label, 80),
+          visible: Boolean(object?.visible),
+          confidence: Number.isFinite(Number(object?.confidence)) ? Number(object.confidence) : null,
+          position: normalizeShortText(object?.position, 40),
+          distance: normalizeShortText(object?.distance, 40),
+          trackId: normalizeShortText(object?.trackId, 80),
+          lastSeenMs: Number.isFinite(Number(object?.lastSeenMs)) ? Number(object.lastSeenMs) : null
+        }))
+      : [],
+    activeTarget: vision.activeTarget
+      ? {
+          label: normalizeShortText(vision.activeTarget.label, 80),
+          visible: Boolean(vision.activeTarget.visible),
+          position: normalizeShortText(vision.activeTarget.position, 40),
+          distance: normalizeShortText(vision.activeTarget.distance, 40),
+          trackId: normalizeShortText(vision.activeTarget.trackId, 80),
+          lostForMs: Number.isFinite(Number(vision.activeTarget.lostForMs))
+            ? Number(vision.activeTarget.lostForMs)
+            : null
+        }
+      : null,
+    scenario: vision.scenario
+      ? {
+          active: Boolean(vision.scenario.active),
+          type: normalizeShortText(vision.scenario.type, 80),
+          targetLabel: normalizeShortText(vision.scenario.targetLabel, 80),
+          state: normalizeShortText(vision.scenario.state, 80)
+        }
+      : null
   };
 }
 

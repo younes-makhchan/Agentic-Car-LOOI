@@ -32,6 +32,18 @@ import { PerformanceMonitor } from "./runtime/performanceMonitor.js";
 import { ReliabilityManager } from "./runtime/reliabilityManager.js";
 import { WakeLockManager } from "./runtime/wakeLockManager.js";
 import { createFaceController } from "./ui/faceCanvas.js";
+import {
+  DEFAULT_OBJECT_DETECTOR_MAX_RESULTS,
+  DEFAULT_OBJECT_DETECTOR_MODEL_PRESET,
+  DEFAULT_OBJECT_DETECTOR_SCORE_THRESHOLD,
+  OBJECT_DETECTOR_MODEL_PRESETS,
+  ObjectDetectorEngine
+} from "./vision/objectDetectorEngine.js";
+import { ObjectTracker } from "./vision/objectTracker.js";
+import { VisionState } from "./vision/visionState.js";
+import { buildVisionContext, findMentionedObjectLabels } from "./vision/visionMetadataBuilder.js";
+import { FollowTargetController } from "./vision/followTargetController.js";
+import { VisionScenarioManager } from "./vision/visionScenarioManager.js";
 
 const DEFAULT_SPEED = 0.2;
 const DEFAULT_DURATION_MS = 400;
@@ -53,6 +65,7 @@ const ui = {
   settingsBackdrop: document.getElementById("settingsBackdrop"),
   settingsPanel: document.getElementById("settingsPanel"),
   localVisionPreview: document.getElementById("localVisionPreview"),
+  localVisionOverlay: document.getElementById("localVisionOverlay"),
   localVisionState: document.getElementById("localVisionState"),
   localVisionDetail: document.getElementById("localVisionDetail"),
   localVisionSizeSlider: document.getElementById("localVisionSizeSlider"),
@@ -151,12 +164,18 @@ const ui = {
   cameraFacingMode: document.getElementById("cameraFacingMode"),
   cameraLastError: document.getElementById("cameraLastError"),
   cameraVisionSupport: document.getElementById("cameraVisionSupport"),
+  geminiVisionAssistToggle: document.getElementById("geminiVisionAssistToggle"),
+  geminiVisionAssistIntervalSlider: document.getElementById("geminiVisionAssistIntervalSlider"),
+  geminiVisionAssistIntervalValue: document.getElementById("geminiVisionAssistIntervalValue"),
+  geminiVisionAssistState: document.getElementById("geminiVisionAssistState"),
+  geminiVisionAssistLastFrame: document.getElementById("geminiVisionAssistLastFrame"),
   startFrontCameraButton: document.getElementById("startFrontCameraButton"),
   startBackCameraButton: document.getElementById("startBackCameraButton"),
   switchCameraButton: document.getElementById("switchCameraButton"),
   stopCameraButton: document.getElementById("stopCameraButton"),
   captureSnapshotButton: document.getElementById("captureSnapshotButton"),
   cameraPreview: document.getElementById("cameraPreview"),
+  objectDetectionOverlay: document.getElementById("objectDetectionOverlay"),
   cameraCanvas: document.getElementById("cameraCanvas"),
   snapshotPreview: document.getElementById("snapshotPreview"),
   cameraUserVisible: document.getElementById("cameraUserVisible"),
@@ -164,6 +183,32 @@ const ui = {
   cameraUserDistance: document.getElementById("cameraUserDistance"),
   cameraFaceCount: document.getElementById("cameraFaceCount"),
   cameraLastObservation: document.getElementById("cameraLastObservation"),
+  startObjectDetectionButton: document.getElementById("startObjectDetectionButton"),
+  stopObjectDetectionButton: document.getElementById("stopObjectDetectionButton"),
+  objectDetectorModelSelect: document.getElementById("objectDetectorModelSelect"),
+  objectDetectionIntervalSlider: document.getElementById("objectDetectionIntervalSlider"),
+  objectDetectionIntervalValue: document.getElementById("objectDetectionIntervalValue"),
+  objectScoreThresholdSlider: document.getElementById("objectScoreThresholdSlider"),
+  objectScoreThresholdValue: document.getElementById("objectScoreThresholdValue"),
+  objectMaxResultsInput: document.getElementById("objectMaxResultsInput"),
+  objectCategoryAllowlistInput: document.getElementById("objectCategoryAllowlistInput"),
+  objectDetectorState: document.getElementById("objectDetectorState"),
+  objectDetectorModel: document.getElementById("objectDetectorModel"),
+  objectDetectorQuality: document.getElementById("objectDetectorQuality"),
+  objectDetectorParams: document.getElementById("objectDetectorParams"),
+  objectDetectionLastRun: document.getElementById("objectDetectionLastRun"),
+  objectDetectionMetadataCount: document.getElementById("objectDetectionMetadataCount"),
+  objectDetectionError: document.getElementById("objectDetectionError"),
+  visibleObjectLabels: document.getElementById("visibleObjectLabels"),
+  visionMetadataPreview: document.getElementById("visionMetadataPreview"),
+  followTargetLabelInput: document.getElementById("followTargetLabelInput"),
+  setFollowTargetButton: document.getElementById("setFollowTargetButton"),
+  stopFollowingButton: document.getElementById("stopFollowingButton"),
+  activeFollowTarget: document.getElementById("activeFollowTarget"),
+  followScenarioState: document.getElementById("followScenarioState"),
+  followControllerState: document.getElementById("followControllerState"),
+  followModeArmedToggle: document.getElementById("followModeArmedToggle"),
+  allowFollowMovementToggle: document.getElementById("allowFollowMovementToggle"),
   localBrainState: document.getElementById("localBrainState"),
   localBrainAdapterState: document.getElementById("localBrainAdapterState"),
   localBrainServerStatus: document.getElementById("localBrainServerStatus"),
@@ -318,6 +363,11 @@ let speechInput = null;
 let voiceOutput = null;
 let geminiLiveRuntime = null;
 let cameraInput = null;
+let objectDetectorEngine = null;
+let objectTracker = null;
+let visionState = null;
+let followTargetController = null;
+let visionScenarioManager = null;
 let bodyCalibration = null;
 let personalityTuning = null;
 let lifeEventEmitter = null;
@@ -331,6 +381,12 @@ let lastTranscript = null;
 let lastEventPosted = null;
 let lastObservationEventAt = 0;
 let lastObservationSignature = "";
+let recentObjectReference = null;
+let geminiVisionAssistEnabled = true;
+let geminiVisionAssistIntervalMs = 1500;
+let geminiVisionAssistTimer = null;
+let geminiVisionAssistLastFrameAt = 0;
+let geminiVisionAssistSending = false;
 let learnedPhraseCache = [];
 let lifeEventsEnabled = false;
 let settingsOpen = false;
@@ -636,8 +692,51 @@ ui.allowAutonomousMovementToggle.addEventListener("change", () => {
   );
 });
 
+ui.followModeArmedToggle?.addEventListener("change", () => {
+  patchBrainPolicy({ followModeArmed: ui.followModeArmedToggle.checked });
+  log(
+    brainPolicy.followModeArmed
+      ? "Follow Mode armed. Follow movement still requires Local Motion and Allow Follow Movement."
+      : "Follow Mode disarmed."
+  );
+});
+
+ui.allowFollowMovementToggle?.addEventListener("change", () => {
+  patchBrainPolicy({ allowFollowMovement: ui.allowFollowMovementToggle.checked });
+  log(
+    brainPolicy.allowFollowMovement
+      ? "Follow Movement allowed while follow mode and local motion are armed."
+      : "Follow Movement disabled."
+  );
+});
+
 ui.allowAutonomousSpeechToggle.addEventListener("change", () => {
   patchBrainPolicy({ allowAutonomousSpeech: ui.allowAutonomousSpeechToggle.checked });
+});
+
+ui.geminiVisionAssistToggle?.addEventListener("change", () => {
+  geminiVisionAssistEnabled = Boolean(ui.geminiVisionAssistToggle.checked);
+  syncGeminiVisionAssist("toggle");
+  log(
+    geminiVisionAssistEnabled
+      ? "Gemini Live Vision enabled for normal conversation. It pauses during MediaPipe follow."
+      : "Gemini Live Vision disabled.",
+    geminiVisionAssistEnabled ? "warn" : "info"
+  );
+});
+
+ui.geminiVisionAssistIntervalSlider?.addEventListener("input", () => {
+  geminiVisionAssistIntervalMs = clampNumber(
+    ui.geminiVisionAssistIntervalSlider.value,
+    1000,
+    5000,
+    1500
+  );
+  if (ui.geminiVisionAssistIntervalValue) {
+    ui.geminiVisionAssistIntervalValue.textContent = `${Math.round(geminiVisionAssistIntervalMs)} ms`;
+  }
+  stopGeminiVisionAssist("interval_change");
+  syncGeminiVisionAssist("interval_change");
 });
 
 ui.startLocalBrainButton.addEventListener("click", () => {
@@ -649,6 +748,7 @@ ui.startLocalBrainButton.addEventListener("click", () => {
 });
 
 ui.stopLocalBrainButton.addEventListener("click", () => {
+  stopGeminiVisionAssist("ui_stop_local_brain");
   geminiLiveRuntime?.stop?.("ui_stop_local_brain");
   localBrainEngine?.stop?.();
   autonomousScheduler?.stop?.();
@@ -1103,6 +1203,70 @@ ui.speedSlider.addEventListener("input", updateSliderLabels);
 ui.durationSlider.addEventListener("input", updateSliderLabels);
 ui.localVisionSizeSlider?.addEventListener("input", () => {
   applyLocalVisionWidgetSize(ui.localVisionSizeSlider.value);
+  drawObjectDetectionOverlays(objectDetectorEngine?.lastResult?.detections ?? []);
+});
+globalThis.addEventListener?.("resize", () => {
+  drawObjectDetectionOverlays(objectDetectorEngine?.lastResult?.detections ?? []);
+});
+ui.startObjectDetectionButton?.addEventListener("click", () => {
+  startObjectDetectionFromUi().catch((error) => log(`Object detector start failed: ${error.message}`, "warn"));
+});
+ui.stopObjectDetectionButton?.addEventListener("click", () => {
+  objectDetectorEngine?.stop?.();
+  followTargetController?.stop?.("object_detector_stopped");
+  updateVisionUi();
+});
+ui.objectDetectorModelSelect?.addEventListener("change", () => {
+  const preset = ui.objectDetectorModelSelect.value || DEFAULT_OBJECT_DETECTOR_MODEL_PRESET;
+  const model = OBJECT_DETECTOR_MODEL_PRESETS[preset];
+  if (!model || !objectDetectorEngine?.setModelAssetPath) {
+    return;
+  }
+  objectDetectorEngine.setModelAssetPath(model.url, { modelPreset: preset, modelName: model.label })
+    .then(updateVisionUi)
+    .catch((error) => log(`Object detector model switch failed: ${error.message}`, "warn"));
+});
+ui.objectDetectionIntervalSlider?.addEventListener("input", () => {
+  const value = Number(ui.objectDetectionIntervalSlider.value);
+  objectDetectorEngine?.setDetectionIntervalMs?.(value);
+  if (ui.objectDetectionIntervalValue) {
+    ui.objectDetectionIntervalValue.textContent = `${Math.round(value)} ms`;
+  }
+  updateVisionUi();
+});
+ui.objectScoreThresholdSlider?.addEventListener("input", () => {
+  const value = Number(ui.objectScoreThresholdSlider.value);
+  objectDetectorEngine?.setScoreThreshold?.(value);
+  if (ui.objectScoreThresholdValue) {
+    ui.objectScoreThresholdValue.textContent = value.toFixed(2);
+  }
+  updateVisionUi();
+});
+ui.objectMaxResultsInput?.addEventListener("change", () => {
+  objectDetectorEngine?.setMaxResults?.(Number(ui.objectMaxResultsInput.value));
+  updateVisionUi();
+});
+ui.objectCategoryAllowlistInput?.addEventListener("change", () => {
+  objectDetectorEngine?.setCategoryAllowlist?.(ui.objectCategoryAllowlistInput.value);
+  updateVisionUi();
+});
+ui.setFollowTargetButton?.addEventListener("click", () => {
+  const label = ui.followTargetLabelInput?.value?.trim();
+  if (!label) {
+    log("Follow target requires a label.", "warn");
+    return;
+  }
+  visionScenarioManager?.startFollowTarget?.({ label, mode: "gentle" })
+    ?.then?.((result) => {
+      log(result.message, result.executed ? "info" : "warn");
+      updateVisionUi();
+      sendFollowVisionContext("manual_follow_target", { force: true, allowStopped: !result.executed });
+    });
+});
+ui.stopFollowingButton?.addEventListener("click", () => {
+  visionScenarioManager?.stopFollowing?.("manual_stop_following");
+  updateVisionUi();
+  sendFollowVisionContext("manual_stop_following", { force: true, allowStopped: true });
 });
 
 init();
@@ -1121,6 +1285,25 @@ async function init() {
       activeConfig.localBrainMaxThoughtsPerMinute ??
       PUBLIC_CONFIG.localBrainMaxThoughtsPerMinute ??
       12,
+    localVisionEnabled: activeConfig.localVisionEnabled ?? PUBLIC_CONFIG.localVisionEnabled ?? true,
+    objectDetectionEnabledDefault:
+      activeConfig.objectDetectionEnabledDefault ??
+      PUBLIC_CONFIG.objectDetectionEnabledDefault ??
+      false,
+    objectDetectionIntervalMs:
+      activeConfig.objectDetectionIntervalMs ??
+      PUBLIC_CONFIG.objectDetectionIntervalMs ??
+      1000,
+    followModeArmed: false,
+    allowFollowMovement: false,
+    followLostTimeoutMs:
+      activeConfig.followLostTimeoutMs ??
+      PUBLIC_CONFIG.followLostTimeoutMs ??
+      2000,
+    maxObjectFollowSpeed:
+      activeConfig.maxObjectFollowSpeed ??
+      PUBLIC_CONFIG.maxObjectFollowSpeed ??
+      0.18,
     eventThoughtCooldownMs:
       activeConfig.speechGateEventCooldownMs ??
       PUBLIC_CONFIG.speechGateEventCooldownMs ??
@@ -1140,6 +1323,22 @@ async function init() {
   if (ui.idleMicroBehaviorToggle) ui.idleMicroBehaviorToggle.checked = idleMicroBehaviorEnabled;
   if (ui.attentionBodyTrackingToggle) ui.attentionBodyTrackingToggle.checked = attentionBodyTrackingEnabled;
   if (ui.keepRobotAwakeToggle) ui.keepRobotAwakeToggle.checked = keepRobotAwakeEnabled;
+  geminiVisionAssistEnabled = activeConfig.geminiVisionAssistDefault ?? PUBLIC_CONFIG.geminiVisionAssistDefault ?? true;
+  geminiVisionAssistIntervalMs = clampNumber(
+    activeConfig.geminiVisionAssistIntervalMs ?? PUBLIC_CONFIG.geminiVisionAssistIntervalMs,
+    1000,
+    5000,
+    1500
+  );
+  if (ui.geminiVisionAssistToggle) {
+    ui.geminiVisionAssistToggle.checked = geminiVisionAssistEnabled;
+  }
+  if (ui.geminiVisionAssistIntervalSlider) {
+    ui.geminiVisionAssistIntervalSlider.value = String(geminiVisionAssistIntervalMs);
+  }
+  if (ui.geminiVisionAssistIntervalValue) {
+    ui.geminiVisionAssistIntervalValue.textContent = `${Math.round(geminiVisionAssistIntervalMs)} ms`;
+  }
 
   localEventBus = new LocalEventBus({
     logger: (message, level = "info") => log(message, level)
@@ -1305,6 +1504,52 @@ async function init() {
   cameraInput.onObservation(handleCameraObservation);
   cameraInput.onSnapshot(handleCameraSnapshot);
 
+  setupObjectDetectorModelOptions();
+  visionState = new VisionState({
+    logger: (message, level = "info") => log(message, level)
+  });
+  objectTracker = new ObjectTracker({
+    maxLostMs: brainPolicy.followLostTimeoutMs,
+    logger: (message, level = "info") => log(message, level)
+  });
+  objectDetectorEngine = new ObjectDetectorEngine({
+    videoElement: ui.cameraPreview,
+    cameraInput,
+    modelPreset:
+      activeConfig.objectDetectorModelPreset ??
+      PUBLIC_CONFIG.objectDetectorModelPreset ??
+      DEFAULT_OBJECT_DETECTOR_MODEL_PRESET,
+    modelAssetPath:
+      activeConfig.objectDetectorModelAssetPath ??
+      PUBLIC_CONFIG.objectDetectorModelAssetPath,
+    wasmBasePath:
+      activeConfig.objectDetectorWasmBasePath ??
+      PUBLIC_CONFIG.objectDetectorWasmBasePath,
+    moduleUrl:
+      activeConfig.objectDetectorModuleUrl ??
+      PUBLIC_CONFIG.objectDetectorModuleUrl,
+    scoreThreshold:
+      activeConfig.objectDetectorScoreThreshold ??
+      PUBLIC_CONFIG.objectDetectorScoreThreshold ??
+      DEFAULT_OBJECT_DETECTOR_SCORE_THRESHOLD,
+    maxResults:
+      activeConfig.objectDetectorMaxResults ??
+      PUBLIC_CONFIG.objectDetectorMaxResults ??
+      DEFAULT_OBJECT_DETECTOR_MAX_RESULTS,
+    detectionIntervalMs: brainPolicy.objectDetectionIntervalMs,
+    logger: (message, level = "info") => log(message, level)
+  });
+  objectDetectorEngine.onDetections(handleObjectDetections);
+  objectDetectorEngine.onStatus((status) => {
+    visionState?.setDetectorStatus?.(status);
+    updateVisionUi();
+    sendFollowVisionContext("detector_status");
+  });
+  objectDetectorEngine.onError((message) => {
+    log(`Object detector error: ${message}`, "warn");
+    updateVisionUi();
+  });
+
   speechInput = new SpeechInput({
     language: ui.speechLanguageInput.value.trim() || "en-US",
     continuous: ui.continuousListeningToggle.checked,
@@ -1338,9 +1583,42 @@ async function init() {
     embodiedActionRouter,
     voiceOutput,
     cameraInput,
+    visionScenarioManager: null,
+    visionState,
+    followTargetController: null,
     logger: (message, level = "info") => log(message, level),
     getRuntimeContext,
     getExecutionPolicy
+  });
+
+  followTargetController = new FollowTargetController({
+    visionState,
+    objectTracker,
+    lifeEngine,
+    commandQueue,
+    macroSequencer,
+    eventBus: localEventBus,
+    voiceOutput,
+    getPolicy: getExecutionPolicy,
+    lostTimeoutMs: brainPolicy.followLostTimeoutMs,
+    logger: (message, level = "info") => log(message, level)
+  });
+  visionScenarioManager = new VisionScenarioManager({
+    cameraInput,
+    objectDetectorEngine,
+    objectTracker,
+    visionState,
+    followTargetController,
+    voiceOutput,
+    face,
+    eventBus: localEventBus,
+    getPolicy: getExecutionPolicy,
+    logger: (message, level = "info") => log(message, level)
+  });
+  toolExecutor.setVisionControllers?.({
+    visionScenarioManager,
+    visionState,
+    followTargetController
   });
 
   geminiLiveRuntime = new GeminiLiveRuntime({
@@ -1348,10 +1626,38 @@ async function init() {
     face,
     lifeEngine,
     eventBus: localEventBus,
+    getRuntimeContext,
     logger: (message, level = "info") => log(message, level)
   });
   geminiLiveRuntime.configure(activeConfig);
   geminiLiveRuntime.onStatus(updateGeminiLiveUi);
+  [
+    "vision_follow_starting",
+    "vision_follow_started",
+    "vision_follow_stopped",
+    "vision_follow_target_set",
+    "vision_follow_not_found",
+    "vision_target_lost"
+  ].forEach((type) => {
+    localEventBus.subscribe(type, () => {
+      if (type === "vision_follow_starting") {
+        stopGeminiVisionAssist("follow_starting");
+        updateVisionUi();
+        syncGeminiVisionAssist(type);
+        return;
+      }
+      updateVisionUi();
+      sendFollowVisionContext(type, {
+        force: [
+          "vision_follow_started",
+          "vision_follow_not_found",
+          "vision_target_lost"
+        ].includes(type),
+        allowStopped: ["vision_follow_stopped", "vision_follow_not_found"].includes(type)
+      });
+      syncGeminiVisionAssist(type);
+    });
+  });
 
   localServerBrainAdapter = new LocalServerBrainAdapter({
     logger: (message, level = "info") => log(message, level)
@@ -1477,6 +1783,7 @@ async function init() {
   globalThis.setInterval(() => {
     updateAlwaysListeningUi();
     updateEmbodimentUi();
+    updateGeminiVisionAssistUi();
   }, 1000);
   refreshLearnedPhrases().catch((error) => {
     log(`Learned phrase cache unavailable: ${error.message}`, "warn");
@@ -1753,6 +2060,12 @@ async function handleGatedTranscript(transcript = {}) {
 
   if (!text) {
     return null;
+  }
+
+  updateRecentObjectReferenceFromText(text);
+  if (isStopFollowIntent(text)) {
+    visionScenarioManager?.stopFollowing?.("user_stop_following");
+    sendFollowVisionContext("user_stop_following", { force: true, allowStopped: true });
   }
 
   const source = transcript.source === "typed"
@@ -2083,6 +2396,13 @@ function handleCameraCommandResult(result = {}) {
   updateCameraUi(result.status);
 
   if (result.ok) {
+    if (result.status?.running === false) {
+      visionScenarioManager?.stopFollowing?.("camera_stopped");
+      drawObjectDetectionOverlays([]);
+      face?.setVisionIndicator?.(false);
+      syncGeminiVisionAssist("camera_stopped");
+    }
+    syncGeminiVisionAssist("camera_started");
     log("Camera command completed.");
     return;
   }
@@ -2759,9 +3079,12 @@ function updateProductionChrome() {
   ui.localVisionState.textContent = cameraStatus.running
     ? `${cameraStatus.facingMode ?? "camera"} live`
     : "camera off";
-  ui.localVisionDetail.textContent = brainPolicy.localCameraAllowed
-    ? "Local Brain may request camera observations."
-    : "Local Brain camera actions are blocked until allowed.";
+  const visionContext = getVisionContext();
+  ui.localVisionDetail.textContent = visionContext.visibleLabels
+    ? `Objects: ${visionContext.visibleLabels}`
+    : brainPolicy.localCameraAllowed
+      ? "No object metadata yet."
+      : "Local Brain camera actions are blocked until allowed.";
 
   if (ui.localVisionPreview && cameraInput?.stream) {
     ui.localVisionPreview.srcObject = cameraInput.stream;
@@ -3059,6 +3382,12 @@ function updateLocalBrainUi() {
   ui.localSpeechAllowedToggle.checked = Boolean(brainPolicy.localSpeechAllowed);
   ui.allowAutonomousMovementToggle.checked = Boolean(brainPolicy.allowAutonomousMovement);
   ui.allowAutonomousSpeechToggle.checked = Boolean(brainPolicy.allowAutonomousSpeech);
+  if (ui.followModeArmedToggle) {
+    ui.followModeArmedToggle.checked = Boolean(brainPolicy.followModeArmed);
+  }
+  if (ui.allowFollowMovementToggle) {
+    ui.allowFollowMovementToggle.checked = Boolean(brainPolicy.allowFollowMovement);
+  }
 
   ui.localBrainState.textContent = geminiPrimaryActive
     ? geminiStatus.connected
@@ -3138,8 +3467,10 @@ function updateGeminiLiveUi(status = geminiLiveRuntime?.getStatus?.() ?? {}) {
   }
 
   if (ui.geminiLiveFrameState) {
-    ui.geminiLiveFrameState.textContent = status.lastServerMessageDebug || "--";
+    ui.geminiLiveFrameState.textContent = status.lastVideoFrameDebug || status.lastServerMessageDebug || "--";
   }
+
+  syncGeminiVisionAssist("gemini_status");
 
   if (ui.geminiLiveInputTranscript) {
     ui.geminiLiveInputTranscript.textContent = status.lastInputTranscript || "--";
@@ -3156,6 +3487,129 @@ function updateGeminiLiveUi(status = geminiLiveRuntime?.getStatus?.() ?? {}) {
   if (ui.geminiLiveLatency) {
     ui.geminiLiveLatency.textContent = Number.isFinite(Number(status.latencyMs))
       ? `${Math.round(Number(status.latencyMs))} ms`
+      : "--";
+  }
+}
+
+function syncGeminiVisionAssist(reason = "sync") {
+  const state = getGeminiVisionAssistState(reason);
+  updateGeminiVisionAssistUi(state);
+
+  if (!state.shouldRun) {
+    stopGeminiVisionAssist(state.reason);
+    return;
+  }
+
+  if (geminiVisionAssistTimer) {
+    return;
+  }
+
+  sendGeminiVisionAssistFrame(reason).catch((error) => {
+    log(`Gemini vision frame failed: ${error.message}`, "warn");
+  });
+  geminiVisionAssistTimer = globalThis.setInterval(() => {
+    sendGeminiVisionAssistFrame("interval").catch((error) => {
+      log(`Gemini vision frame failed: ${error.message}`, "warn");
+    });
+  }, geminiVisionAssistIntervalMs);
+  updateGeminiVisionAssistUi(getGeminiVisionAssistState(reason));
+}
+
+function stopGeminiVisionAssist(reason = "stop") {
+  if (geminiVisionAssistTimer) {
+    globalThis.clearInterval(geminiVisionAssistTimer);
+    geminiVisionAssistTimer = null;
+  }
+  updateGeminiVisionAssistUi(getGeminiVisionAssistState(reason));
+}
+
+async function sendGeminiVisionAssistFrame(reason = "frame") {
+  const state = getGeminiVisionAssistState(reason);
+  if (!state.shouldRun || geminiVisionAssistSending) {
+    return false;
+  }
+
+  geminiVisionAssistSending = true;
+  try {
+    const result = await cameraInput?.captureSnapshot?.({
+      includeDataUrl: true,
+      maxWidth: 320,
+      quality: 0.55,
+      emit: false,
+      record: false
+    });
+
+    if (!result?.ok || !result.snapshot?.dataUrl) {
+      updateGeminiVisionAssistUi({
+        ...state,
+        shouldRun: false,
+        reason: result?.error ?? "snapshot_unavailable"
+      });
+      return false;
+    }
+
+    const sent = await geminiLiveRuntime?.sendVideoFrame?.({
+      data: result.snapshot.dataUrl,
+      mimeType: "image/jpeg",
+      width: result.snapshot.width,
+      height: result.snapshot.height,
+      reason
+    });
+
+    if (sent) {
+      geminiVisionAssistLastFrameAt = Date.now();
+      updateGeminiVisionAssistUi(getGeminiVisionAssistState(reason));
+    }
+    return Boolean(sent);
+  } finally {
+    geminiVisionAssistSending = false;
+  }
+}
+
+function getGeminiVisionAssistState(reason = "") {
+  const geminiStatus = geminiLiveRuntime?.getStatus?.() ?? {};
+  const cameraStatus = cameraInput?.getCameraStatus?.() ?? {};
+  const followActive = isFollowVisionModeActive();
+  const blockedReason = !geminiVisionAssistEnabled
+    ? "disabled"
+    : !geminiStatus.connected
+      ? "gemini_not_connected"
+      : !cameraStatus.running
+        ? "camera_off"
+        : followActive
+          ? "paused_for_follow"
+          : "running";
+  const shouldRun = Boolean(
+    geminiVisionAssistEnabled &&
+    geminiStatus.connected &&
+    cameraStatus.running &&
+    !followActive
+  );
+
+  return {
+    shouldRun,
+    enabled: geminiVisionAssistEnabled,
+    connected: Boolean(geminiStatus.connected),
+    cameraRunning: Boolean(cameraStatus.running),
+    followActive,
+    reason: shouldRun ? reason || "running" : blockedReason
+  };
+}
+
+function updateGeminiVisionAssistUi(state = getGeminiVisionAssistState()) {
+  if (ui.geminiVisionAssistToggle) {
+    ui.geminiVisionAssistToggle.checked = geminiVisionAssistEnabled;
+  }
+  if (ui.geminiVisionAssistState) {
+    ui.geminiVisionAssistState.textContent = state.shouldRun
+      ? "sending frames"
+      : state.followActive
+        ? "paused for follow"
+        : state.reason || "off";
+  }
+  if (ui.geminiVisionAssistLastFrame) {
+    ui.geminiVisionAssistLastFrame.textContent = geminiVisionAssistLastFrameAt
+      ? `${Math.round((Date.now() - geminiVisionAssistLastFrameAt) / 1000)}s ago`
       : "--";
   }
 }
@@ -3756,6 +4210,7 @@ function updateCameraUi(status = cameraInput?.getCameraStatus?.()) {
     observation: null
   };
   const observation = cameraStatus.observation ?? {};
+  visionState?.setCameraStatus?.(cameraStatus);
 
   ui.cameraSupportState.textContent = cameraStatus.supported
     ? cameraStatus.running
@@ -3783,7 +4238,257 @@ function updateCameraUi(status = cameraInput?.getCameraStatus?.()) {
   ui.cameraLastObservation.textContent = observation.timestamp
     ? `${observation.detector ?? "none"} · ${observation.note ?? ""}`
     : "--";
+  updateVisionUi();
   updateProductionChrome();
+}
+
+function setupObjectDetectorModelOptions() {
+  if (!ui.objectDetectorModelSelect) {
+    return;
+  }
+
+  ui.objectDetectorModelSelect.replaceChildren();
+  Object.entries(OBJECT_DETECTOR_MODEL_PRESETS).forEach(([key, preset]) => {
+    ui.objectDetectorModelSelect.append(new Option(preset.label, key));
+  });
+  ui.objectDetectorModelSelect.value =
+    activeConfig.objectDetectorModelPreset ??
+    PUBLIC_CONFIG.objectDetectorModelPreset ??
+    DEFAULT_OBJECT_DETECTOR_MODEL_PRESET;
+}
+
+async function startObjectDetectionFromUi() {
+  if (!objectDetectorEngine) {
+    throw new Error("Object detector is not initialized.");
+  }
+
+  if (!brainPolicy.localVisionEnabled) {
+    throw new Error("Local object vision is disabled.");
+  }
+
+  const cameraStatus = cameraInput?.getCameraStatus?.() ?? {};
+  if (!cameraStatus.running) {
+    if (!brainPolicy.localCameraAllowed) {
+      throw new Error("Start the camera or enable Local Camera Allowed first.");
+    }
+    const result = await cameraInput.startCamera({ facingMode: cameraStatus.facingMode || "user" });
+    handleCameraCommandResult(result);
+    if (!result?.ok) {
+      throw new Error(result?.error || "Camera could not start.");
+    }
+  }
+
+  const status = await objectDetectorEngine.start();
+  face?.setVisionIndicator?.(Boolean(status.running), "detecting");
+  updateVisionUi();
+  return status;
+}
+
+function handleObjectDetections(result = {}) {
+  const tracks = objectTracker?.update?.(result) ?? [];
+  visionState?.updateFromDetections?.(result, tracks);
+  updateVisionUi();
+  drawObjectDetectionOverlays(result.detections ?? []);
+  localEventBus?.publish?.("vision_objects_updated", {
+    visibleLabels: getVisionContext().visibleLabels,
+    objectCount: getVisionContext().objects.length,
+    activeTarget: getVisionContext().activeTarget
+  }, { source: "vision" });
+  sendFollowVisionContext("vision_objects_updated");
+}
+
+function getVisionContext() {
+  return buildVisionContext({
+    visionState,
+    cameraInput,
+    objectTracker
+  });
+}
+
+function isFollowVisionModeActive() {
+  const scenario = visionState?.getStatus?.().scenario ?? {};
+  const scenarioActive = Boolean(
+    scenario.active &&
+    scenario.type === "follow_object" &&
+    scenario.state !== "idle" &&
+    scenario.state !== "not_found"
+  );
+  return Boolean(followTargetController?.isRunning?.() || scenarioActive);
+}
+
+function sendFollowVisionContext(reason = "follow_context", { force = false, allowStopped = false } = {}) {
+  if (!geminiLiveRuntime?.sendVisionContext) {
+    return false;
+  }
+
+  if (!allowStopped && !isFollowVisionModeActive()) {
+    return false;
+  }
+
+  const sendPromise = geminiLiveRuntime.sendVisionContext({ force, reason });
+  sendPromise?.catch?.((error) => {
+    log(`Gemini follow vision context failed: ${error.message}`, "warn");
+  });
+  return sendPromise;
+}
+
+function updateRecentObjectReferenceFromText(text) {
+  const context = getVisionContext();
+  const knownLabels = context.objects.map((object) => object.label).filter(Boolean);
+  const labels = findMentionedObjectLabels(text, knownLabels);
+  const label = labels[0];
+
+  if (!label) {
+    return recentObjectReference;
+  }
+
+  const object = visionState?.findObject?.(label);
+  recentObjectReference = {
+    label,
+    aliases: labels,
+    lastMentionedByUserAt: new Date().toISOString(),
+    lastSeenAt: object?.lastSeenAt ?? null,
+    trackId: object?.trackId ?? object?.id ?? null
+  };
+  return recentObjectReference;
+}
+
+function isStopFollowIntent(text) {
+  const normalized = String(text ?? "").toLowerCase();
+  return /\b(stop following|stop tracking|cancel follow|cancel tracking|forget the target|never mind|nevermind)\b/.test(normalized);
+}
+
+function updateVisionUi() {
+  const detectorStatus = objectDetectorEngine?.getStatus?.() ?? {};
+  const context = getVisionContext();
+  const activeTarget = context.activeTarget;
+  const followStatus = followTargetController?.getStatus?.() ?? {};
+
+  if (ui.objectDetectorModelSelect && detectorStatus.modelPreset) {
+    ui.objectDetectorModelSelect.value = detectorStatus.modelPreset;
+  }
+  if (ui.objectDetectionIntervalSlider && detectorStatus.detectionIntervalMs !== undefined) {
+    ui.objectDetectionIntervalSlider.value = String(detectorStatus.detectionIntervalMs);
+  }
+  if (ui.objectDetectionIntervalValue && detectorStatus.detectionIntervalMs !== undefined) {
+    ui.objectDetectionIntervalValue.textContent = `${Math.round(Number(detectorStatus.detectionIntervalMs))} ms`;
+  }
+  if (ui.objectMaxResultsInput && detectorStatus.maxResults !== undefined && document.activeElement !== ui.objectMaxResultsInput) {
+    ui.objectMaxResultsInput.value = String(detectorStatus.maxResults);
+  }
+  if (
+    ui.objectCategoryAllowlistInput &&
+    Array.isArray(detectorStatus.categoryAllowlist) &&
+    document.activeElement !== ui.objectCategoryAllowlistInput
+  ) {
+    ui.objectCategoryAllowlistInput.value = detectorStatus.categoryAllowlist.join(",");
+  }
+  if (ui.objectDetectorState) {
+    ui.objectDetectorState.textContent = detectorStatus.running ? "running" : detectorStatus.ready ? "ready" : "stopped";
+  }
+  if (ui.objectDetectorModel) {
+    ui.objectDetectorModel.textContent = detectorStatus.modelName ?? "--";
+  }
+  if (ui.objectDetectorQuality) {
+    ui.objectDetectorQuality.textContent = [
+      detectorStatus.modelQuality,
+      detectorStatus.modelInputShape,
+      detectorStatus.modelQuantization
+    ].filter(Boolean).join(" · ") || "--";
+  }
+  if (ui.objectDetectorParams) {
+    ui.objectDetectorParams.textContent = [
+      detectorStatus.detectionIntervalMs ? `${Math.round(detectorStatus.detectionIntervalMs)} ms` : null,
+      detectorStatus.scoreThreshold !== undefined ? `threshold ${Number(detectorStatus.scoreThreshold).toFixed(2)}` : null,
+      detectorStatus.maxResults ? `max ${detectorStatus.maxResults}` : null,
+      detectorStatus.categoryAllowlist?.length ? `allow ${detectorStatus.categoryAllowlist.join(", ")}` : "all categories"
+    ].filter(Boolean).join(" · ");
+  }
+  if (ui.objectDetectionLastRun) {
+    ui.objectDetectionLastRun.textContent =
+      context.lastDetectionAgeMs === null || context.lastDetectionAgeMs === undefined
+        ? "--"
+        : `${Math.round(context.lastDetectionAgeMs / 1000)}s ago`;
+  }
+  if (ui.objectDetectionMetadataCount) {
+    ui.objectDetectionMetadataCount.textContent = String(context.objects.length);
+  }
+  if (ui.objectDetectionError) {
+    ui.objectDetectionError.textContent = detectorStatus.lastError ?? "--";
+  }
+  if (ui.visibleObjectLabels) {
+    ui.visibleObjectLabels.textContent = context.visibleLabels || "--";
+  }
+  if (ui.visionMetadataPreview) {
+    ui.visionMetadataPreview.textContent = JSON.stringify(context, null, 2);
+  }
+  if (ui.activeFollowTarget) {
+    ui.activeFollowTarget.textContent = activeTarget?.label
+      ? `${activeTarget.label} · ${activeTarget.visible ? "visible" : "not visible"}`
+      : "--";
+  }
+  if (ui.followScenarioState) {
+    ui.followScenarioState.textContent = context.scenario?.state ?? "idle";
+  }
+  if (ui.followControllerState) {
+    ui.followControllerState.textContent = followStatus.running
+      ? `running · motion ${followStatus.motionAllowed ? "allowed" : "held"}`
+      : "stopped";
+  }
+  if (ui.objectScoreThresholdValue && detectorStatus.scoreThreshold !== undefined) {
+    ui.objectScoreThresholdValue.textContent = Number(detectorStatus.scoreThreshold).toFixed(2);
+  }
+  drawObjectDetectionOverlays(objectDetectorEngine?.lastResult?.detections ?? []);
+}
+
+function drawObjectDetectionOverlays(detections = []) {
+  drawObjectDetectionOverlay(ui.objectDetectionOverlay, detections);
+  drawObjectDetectionOverlay(ui.localVisionOverlay, detections);
+}
+
+function drawObjectDetectionOverlay(canvas, detections = []) {
+  if (!canvas) {
+    return;
+  }
+
+  const rect = canvas.getBoundingClientRect();
+  const width = Math.round(rect.width || canvas.clientWidth || 0);
+  const height = Math.round(rect.height || canvas.clientHeight || 0);
+  if (width <= 0 || height <= 0) {
+    return;
+  }
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, width, height);
+
+  detections.slice(0, 12).forEach((detection) => {
+    const bbox = detection.bbox ?? {};
+    const frameWidth = Number(objectDetectorEngine?.lastResult?.frameWidth || ui.cameraPreview?.videoWidth || width);
+    const frameHeight = Number(objectDetectorEngine?.lastResult?.frameHeight || ui.cameraPreview?.videoHeight || height);
+    const scale = Math.max(width / Math.max(1, frameWidth), height / Math.max(1, frameHeight));
+    const renderedWidth = frameWidth * scale;
+    const renderedHeight = frameHeight * scale;
+    const offsetX = (width - renderedWidth) / 2;
+    const offsetY = (height - renderedHeight) / 2;
+    const x = Number(bbox.x || 0) * scale + offsetX;
+    const y = Number(bbox.y || 0) * scale + offsetY;
+    const boxWidth = Number(bbox.width || 0) * scale;
+    const boxHeight = Number(bbox.height || 0) * scale;
+    const label = `${detection.label} ${Math.round(Number(detection.confidence || 0) * 100)}% · ${detection.position}/${detection.distance}`;
+
+    ctx.strokeStyle = "rgba(126, 224, 186, 0.95)";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x, y, boxWidth, boxHeight);
+    ctx.font = "12px sans-serif";
+    const textWidth = ctx.measureText(label).width + 10;
+    const labelX = Math.max(0, Math.min(width - 12, x));
+    const labelY = Math.max(0, Math.min(height - 18, y - 20));
+    ctx.fillStyle = "rgba(5, 8, 16, 0.82)";
+    ctx.fillRect(labelX, labelY, Math.max(0, Math.min(textWidth, width - labelX)), 18);
+    ctx.fillStyle = "#dfffee";
+    ctx.fillText(label, labelX + 5, labelY + 13);
+  });
 }
 
 function setupVoiceList() {
@@ -3822,6 +4527,11 @@ function getExecutionPolicy() {
     autonomousMode: brainPolicy.autonomousMode,
     allowAutonomousMovement: brainPolicy.allowAutonomousMovement,
     allowAutonomousSpeech: brainPolicy.allowAutonomousSpeech,
+    localVisionEnabled: brainPolicy.localVisionEnabled,
+    followModeArmed: brainPolicy.followModeArmed,
+    allowFollowMovement: brainPolicy.allowFollowMovement,
+    followLostTimeoutMs: brainPolicy.followLostTimeoutMs,
+    maxObjectFollowSpeed: brainPolicy.maxObjectFollowSpeed,
     simulatorMode,
     robotConnected: Boolean(robotClient?.isConnected?.()),
     allowSpeak: brainPolicy.localSpeechAllowed,
@@ -3887,6 +4597,8 @@ function getStatusSnapshot() {
     calibration: bodyCalibration?.getSettings?.() ?? null,
     recentCommands: commandQueue?.getRecentCommands?.({ limit: 5 }) ?? [],
     camera: compactCameraStatus(cameraInput?.getCameraStatus?.()),
+    vision: getVisionContext(),
+    recentObjectReference,
     voice: {
       speechListening: Boolean(speechInput?.getStatus?.().listening),
       alwaysListening: Boolean(speechInput?.getStatus?.().alwaysListening),
@@ -3938,6 +4650,8 @@ function getRuntimeContext() {
     recentEvents: localEventBus?.getRecentEvents?.({ limit: 30 }) ?? [],
     cameraStatus,
     latestObservation: cameraStatus.observation,
+    vision: getVisionContext(),
+    recentObjectReference,
     speechStatus: speechInput?.getStatus?.() ?? null,
     voiceStatus: voiceOutput?.getStatus?.() ?? null,
     voice: getStatusSnapshot().voice,

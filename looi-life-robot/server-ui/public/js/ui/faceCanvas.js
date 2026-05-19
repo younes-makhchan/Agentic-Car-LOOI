@@ -12,7 +12,11 @@ const FACE_STATE = {
   lookTimer: 0,
   photoTimer: 0,
   previewTimer: 0,
-  latestPhotoUrl: ""
+  latestPhotoUrl: "",
+  visionIndicator: {
+    active: false,
+    mode: "detecting"
+  }
 };
 
 const BLINK_TIME_MS = 360;
@@ -279,6 +283,32 @@ export function updateFaceState(partialState = {}) {
   if (typeof partialState.speaking === "boolean") {
     setSpeaking(partialState.speaking);
   }
+
+  if (partialState.visionIndicator) {
+    setVisionIndicator(
+      partialState.visionIndicator.active,
+      partialState.visionIndicator.mode
+    );
+  }
+}
+
+export function setVisionIndicator(active, mode = "detecting") {
+  FACE_STATE.visionIndicator = {
+    active: Boolean(active),
+    mode: ["detecting", "searching", "following", "lost"].includes(mode) ? mode : "detecting"
+  };
+
+  if (!rootRef) {
+    return;
+  }
+
+  const indicator = rootRef.querySelector(".looi-vision-indicator");
+  if (!indicator) {
+    return;
+  }
+
+  indicator.hidden = !FACE_STATE.visionIndicator.active;
+  indicator.dataset.mode = FACE_STATE.visionIndicator.mode;
 }
 
 export function createFaceController(element) {
@@ -299,6 +329,7 @@ export function createFaceController(element) {
     takePicture,
     showPhoto,
     dismissPhoto,
+    setVisionIndicator,
     updateFaceState
   };
 }
@@ -344,11 +375,19 @@ function createEyeDom() {
     <div class="looi-camera-icon__flash-dot"></div>
   `;
 
+  const visionIndicator = document.createElement("div");
+  visionIndicator.className = "looi-vision-indicator";
+  visionIndicator.hidden = true;
+  visionIndicator.innerHTML = `
+    <span class="looi-vision-indicator__lens"></span>
+    <span class="looi-vision-indicator__handle"></span>
+  `;
+
   const eyes = document.createElement("div");
   eyes.className = "looi-eyes";
   eyes.append(createEye(), createEye());
 
-  fragment.append(flash, preview, cameraIcon, eyes);
+  fragment.append(flash, preview, cameraIcon, visionIndicator, eyes);
   return fragment;
 }
 

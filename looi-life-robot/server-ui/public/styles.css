@@ -299,6 +299,75 @@ body {
   pointer-events: none;
 }
 
+.looi-vision-indicator {
+  position: absolute;
+  z-index: 7;
+  right: clamp(58px, 12vw, 160px);
+  top: clamp(58px, 10vh, 120px);
+  width: clamp(42px, 5vw, 68px);
+  height: clamp(42px, 5vw, 68px);
+  opacity: 0.82;
+  pointer-events: none;
+  filter: drop-shadow(0 0 18px rgba(126, 224, 186, 0.45));
+}
+
+.looi-vision-indicator[hidden] {
+  display: none;
+}
+
+.looi-vision-indicator__lens {
+  position: absolute;
+  inset: 4px 10px 13px 4px;
+  border: 3px solid rgba(126, 224, 186, 0.9);
+  border-radius: 50%;
+  background: rgba(5, 8, 16, 0.34);
+}
+
+.looi-vision-indicator__handle {
+  position: absolute;
+  right: 6px;
+  bottom: 8px;
+  width: 42%;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(126, 224, 186, 0.9);
+  transform: rotate(44deg);
+  transform-origin: center;
+}
+
+.looi-vision-indicator[data-mode="searching"] {
+  animation: looiVisionPulse 900ms ease-in-out infinite alternate;
+}
+
+.looi-vision-indicator[data-mode="following"] {
+  opacity: 1;
+  filter: drop-shadow(0 0 22px rgba(97, 211, 255, 0.58));
+}
+
+.looi-vision-indicator[data-mode="following"] .looi-vision-indicator__lens,
+.looi-vision-indicator[data-mode="following"] .looi-vision-indicator__handle {
+  border-color: rgba(97, 211, 255, 0.95);
+  background-color: rgba(97, 211, 255, 0.95);
+}
+
+.looi-vision-indicator[data-mode="lost"] .looi-vision-indicator__lens,
+.looi-vision-indicator[data-mode="lost"] .looi-vision-indicator__handle {
+  border-color: rgba(255, 189, 89, 0.96);
+  background-color: rgba(255, 189, 89, 0.96);
+}
+
+@keyframes looiVisionPulse {
+  from {
+    transform: scale(0.96);
+    opacity: 0.55;
+  }
+
+  to {
+    transform: scale(1.04);
+    opacity: 1;
+  }
+}
+
 .looi-eye-system.is-taking-picture .looi-eyes {
   animation: looiPictureEyesMove var(--photo-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
 }
@@ -700,6 +769,8 @@ body {
 }
 
 .panel-card {
+  min-width: 0;
+  max-width: 100%;
   padding: 1rem;
   border-radius: 1.25rem;
   background: var(--panel);
@@ -1177,6 +1248,7 @@ button {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.75rem;
+  min-width: 0;
 }
 
 .button-grid--single {
@@ -1191,6 +1263,8 @@ button {
   display: grid;
   gap: 1rem;
   margin-top: 0.85rem;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
 }
 
 .calibration-grid {
@@ -1210,6 +1284,7 @@ button {
 .slider-field {
   display: grid;
   gap: 0.45rem;
+  min-width: 0;
 }
 
 .slider-field span {
@@ -1221,8 +1296,17 @@ button {
 }
 
 .slider-field input[type="range"] {
+  min-width: 0;
   width: 100%;
   accent-color: var(--glow);
+}
+
+.slider-field input,
+.slider-field select,
+.button-grid input,
+.button-grid button {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .transcript-grid {
@@ -1286,6 +1370,75 @@ button {
 
 #snapshotPreview[hidden] {
   display: none;
+}
+
+.vision-preview-shell {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  border-radius: 1rem;
+}
+
+.vision-preview-shell video {
+  display: block;
+}
+
+.object-detection-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  border-radius: 1rem;
+}
+
+.vision-preview-shell--compact .object-detection-overlay {
+  border-radius: 0.85rem;
+}
+
+.object-vision-panel {
+  min-width: 0;
+  max-width: 100%;
+  margin-top: 0.95rem;
+  display: grid;
+  gap: 0.85rem;
+  padding: 0.9rem;
+  border: 1px solid rgba(122, 193, 255, 0.16);
+  border-radius: 1.1rem;
+  background:
+    radial-gradient(circle at top left, rgba(126, 224, 186, 0.08), transparent 42%),
+    rgba(6, 10, 17, 0.66);
+}
+
+.object-vision-panel__header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.75rem;
+  align-items: start;
+  min-width: 0;
+}
+
+.object-vision-panel h3 {
+  margin: 0 0 0.25rem;
+  font-size: 1rem;
+}
+
+.object-vision-panel p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.button-grid--compact {
+  grid-template-columns: 1fr;
+  min-width: min(9rem, 100%);
+}
+
+#visionMetadataPreview {
+  max-height: 12rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .debug-grid {
@@ -1597,6 +1750,14 @@ button:active {
   .button-grid--triple {
     grid-template-columns: 1fr;
   }
+
+  .object-vision-panel__header {
+    grid-template-columns: 1fr;
+  }
+
+  .button-grid--compact {
+    width: 100%;
+  }
 }
 
 /* Production robot-face mode */
@@ -1637,7 +1798,7 @@ body {
 .control-panel {
   position: fixed;
   inset: 0 0 0 auto;
-  z-index: 90;
+  z-index: 300;
   width: min(430px, 94vw);
   height: 100vh;
   height: 100dvh;
@@ -1691,7 +1852,7 @@ body {
 .settings-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 80;
+  z-index: -240;
   display: none;
   min-height: 0;
   padding: 0;
@@ -1712,15 +1873,7 @@ body {
 }
 
 .settings-open .production-actions {
-  opacity: 0;
-  pointer-events: none;
-  transform: translateY(-0.5rem);
-}
-
-.settings-open .looi-vision-widget {
-  opacity: 0;
-  pointer-events: none;
-  transform: translateY(0.5rem);
+  z-index: 230;
 }
 
 .production-actions {

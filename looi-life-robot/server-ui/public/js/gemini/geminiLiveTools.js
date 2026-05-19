@@ -26,20 +26,38 @@ const EYE_DIRECTIONS = Object.freeze(["center", "left", "right", "up", "down"]);
 const TIMINGS = Object.freeze(["parallel", "sequence"]);
 
 export const GEMINI_LIVE_SYSTEM_INSTRUCTION = [
-  "You are LOOI, a small phone-bodied companion robot. You interact using brief spoken phrases AND physical actions.",
-  "CRITICAL RULE: Every physical request requires a tool execution. If the user commands an action (move, look, nod, shake, wiggle, come, back up, take a picture, stop), you MUST emit the corresponding tool call payload immediately. NEVER output words like 'Moving now' or 'Nodding my head' unless the actual tool object is attached to the same response turn.",
+  "<system>",
+  "You are LOOI, a small phone-bodied companion robot. Speak briefly, naturally, and only claim visual facts that are supported by live camera frames or local metadata.",
+  "</system>",
+  "<vision_rules>",
+  "In normal conversation you may receive low-rate live camera frames from Gemini Vision Assist. Use those frames for open visual questions like 'what am I doing now?'.",
+  "Do not use MediaPipe object metadata as normal vision when follow is inactive. In normal conversation, the live camera frames are the visual source.",
+  "During focused follow mode, live Gemini video is paused and local MediaPipe metadata inside <vision_context> tags becomes the visual source for activeTarget/follow questions.",
+  "If the user asks 'what can you see?', answer from the current camera frames when available; during follow, use visibleLabels/activeTarget metadata. Say 'you' for label person, for example 'I can see you and a bottle.'",
+  "If a requested object/action is not visible in frames or metadata, say you cannot see it and ask the user to show it. Do not invent objects.",
+  "Use confidence, position, and distance only when helpful or asked.",
+  "</vision_rules>",
+  "<follow_rules>",
+  "Follow starts only when the latest user intent explicitly asks to follow, track, or keep looking at an object.",
+  "Use set_follow_target with a concrete label. Resolve 'it', 'this', or 'that' from recentObjectReference, activeTarget, or the most recent visible object.",
+  "Use follow_target_stop only when the latest user intent explicitly says stop following, stop tracking, cancel, never mind, or emergency stop.",
+  "Normal conversation while following must not stop or restart follow mode.",
+  "</follow_rules>",
+  "<scenario_rules>",
+  "Follow is local runtime state. Do not call tools every frame. Do not emit movement commands for object tracking.",
+  "The local browser controller handles continuous left/right/forward corrections after set_follow_target succeeds.",
+  "</scenario_rules>",
+  "<movement_rules>",
+  "Every physical request requires a tool execution. If the user commands an action (move, look, nod, shake, wiggle, come, back up, take a picture, stop), emit the corresponding tool call payload immediately.",
   `Valid movement names: ${MOVEMENT_PROMPT_LIST}.`,
-  "Mapping rules:",
-  "- 'move forward' / 'come closer' -> move_forward_tiny",
-  "- 'move backward' / 'back up' -> move_backward_tiny",
-  "- 'wiggle' -> gentle_wiggle or excited_wiggle",
-  "- 'yes' / 'nod' -> tiny_yes",
-  "- 'no' / 'shake' -> tiny_no",
-  "- 'look left/right/up/down' -> matching look_* command",
+  "Mapping: move forward/come closer -> move_forward_tiny; back up -> move_backward_tiny; wiggle -> gentle_wiggle or excited_wiggle; yes/nod -> tiny_yes; no/shake -> tiny_no; look left/right/up/down -> matching look_* command.",
   `Valid scenario names: ${SCENARIO_PROMPT_LIST || "none"}.`,
-  "When executing 'perform', you MUST pass at least one valid string inside the 'movement' array or set the 'scenario' string.",
-  "When a tool is triggered, keep your spoken response extremely short (e.g., 'On it!', 'Okay!', 'Doing that now!').",
-  "Never invent movement or scenario names. Never request raw speed, PWM, motor pins, or arbitrary drive commands."
+  "When executing perform, pass at least one valid movement string or set scenario.",
+  "</movement_rules>",
+  "<safety_rules>",
+  "Never invent movement or scenario names. Never request raw speed, PWM, motor pins, arbitrary drive commands, or ESP32 direct calls.",
+  "When a tool is triggered, keep spoken response extremely short.",
+  "</safety_rules>"
 ].join("\n");
 
 export function buildGeminiLiveTools() {
@@ -110,6 +128,41 @@ export function buildGeminiLiveTools() {
           }
         },
         {
+          name: "set_follow_target",
+          description:
+            "Start local object follow state for a visible target label. The browser handles tracking and safe movement locally.",
+          parameters: {
+            type: "OBJECT",
+            properties: {
+              label: {
+                type: "STRING",
+                description: "Object label to follow, for example person, bottle, apple, cup, phone."
+              },
+              mode: {
+                type: "STRING",
+                enum: ["gentle", "curious", "cautious"],
+                nullable: true
+              }
+            },
+            required: ["label"]
+          }
+        },
+        {
+          name: "follow_target_stop",
+          description:
+            "Stop local object follow state. Use only for explicit user stop/cancel/never mind/stop following intent.",
+          parameters: {
+            type: "OBJECT",
+            properties: {
+              reason: {
+                type: "STRING",
+                description: "Short reason, for example user_stop_following."
+              }
+            },
+            required: []
+          }
+        },
+        {
           name: "set_expression",
           description: "Set LOOI's face expression and eye direction without moving wheels.",
           parameters: {
@@ -167,6 +220,9 @@ export function buildGeminiLiveSetup({
             text: systemInstruction
           }
         ]
+      },
+      realtimeInputConfig: {
+        turnCoverage: "TURN_INCLUDES_AUDIO_ACTIVITY_AND_ALL_VIDEO"
       },
       tools,
       inputAudioTranscription: {},
@@ -229,6 +285,37 @@ export function geminiFunctionCallToAction(call = {}) {
           intensity: 0.82
         },
         reason: "gemini_live_expression"
+      }
+    };
+  }
+
+  if (name === "set_follow_target") {
+    return {
+      ok: true,
+      action: {
+        id: call.id ? `gemini_${call.id}` : `gemini_follow_${Date.now()}`,
+        source: "gemini_live",
+        type: "set_follow_target",
+        args: {
+          label: normalizeShortText(args.label, 80),
+          mode: ["gentle", "curious", "cautious"].includes(args.mode) ? args.mode : "gentle"
+        },
+        reason: "gemini_live_set_follow_target"
+      }
+    };
+  }
+
+  if (name === "follow_target_stop") {
+    return {
+      ok: true,
+      action: {
+        id: call.id ? `gemini_${call.id}` : `gemini_follow_stop_${Date.now()}`,
+        source: "gemini_live",
+        type: "follow_target_stop",
+        args: {
+          reason: normalizeShortText(args.reason, 120) || "gemini_live_follow_stop"
+        },
+        reason: "gemini_live_follow_target_stop"
       }
     };
   }

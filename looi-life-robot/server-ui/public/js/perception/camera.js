@@ -158,7 +158,9 @@ export class CameraInput {
   async captureSnapshot({
     maxWidth = 320,
     quality = 0.65,
-    includeDataUrl = true
+    includeDataUrl = true,
+    emit = true,
+    record = true
   } = {}) {
     if (!this.running || !this.videoElement) {
       return {
@@ -215,9 +217,13 @@ export class CameraInput {
       note: "small local thumbnail"
     };
 
-    this.lastSnapshot = snapshot;
-    this.emitSnapshot(snapshot);
-    this.emitStatus();
+    if (record) {
+      this.lastSnapshot = snapshot;
+    }
+    if (emit) {
+      this.emitSnapshot(snapshot);
+      this.emitStatus();
+    }
 
     return {
       ok: true,

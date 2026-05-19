@@ -1,6 +1,6 @@
 import { normalizeScenarioName } from "../embodiment/scenarioCatalog.js";
 
-export const LOCAL_BRAIN_ALLOWED_ACTIONS = new Set(["perform"]);
+export const LOCAL_BRAIN_ALLOWED_ACTIONS = new Set(["perform", "set_follow_target", "follow_target_stop"]);
 
 const RAW_MOTOR_KEYS = new Set([
   "pwm",
@@ -117,15 +117,50 @@ export function validateBrainAction(action) {
     };
   }
 
+  if (type === "set_follow_target" && typeof args.label !== "string") {
+    return {
+      ok: false,
+      error: "set_follow_target requires label."
+    };
+  }
+
   return {
     ok: true,
-    action: {
-      id: typeof action.id === "string" ? action.id.slice(0, 80) : undefined,
-      source: normalizeText(action.source, "local_brain"),
-      type: "perform",
-      args: sanitizePerformArgs(args),
-      reason: typeof action.reason === "string" ? action.reason.slice(0, 240) : undefined
-    }
+    action: sanitizeAllowedAction(action, type, args)
+  };
+}
+
+function sanitizeAllowedAction(action, type, args) {
+  const base = {
+    id: typeof action.id === "string" ? action.id.slice(0, 80) : undefined,
+    source: normalizeText(action.source, "local_brain"),
+    type,
+    reason: typeof action.reason === "string" ? action.reason.slice(0, 240) : undefined
+  };
+
+  if (type === "set_follow_target") {
+    return {
+      ...base,
+      args: {
+        label: typeof args.label === "string" ? args.label.slice(0, 80) : "",
+        mode: ["gentle", "curious", "cautious"].includes(args.mode) ? args.mode : "gentle"
+      }
+    };
+  }
+
+  if (type === "follow_target_stop") {
+    return {
+      ...base,
+      args: {
+        reason: typeof args.reason === "string" ? args.reason.slice(0, 120) : "user_stop_following"
+      }
+    };
+  }
+
+  return {
+    ...base,
+    type: "perform",
+    args: sanitizePerformArgs(args)
   };
 }
 

@@ -45,7 +45,10 @@
         <span>LOOI Eyes</span>
         <strong id="localVisionState">camera off</strong>
       </div>
-      <video id="localVisionPreview" autoplay playsinline muted></video>
+      <div class="vision-preview-shell vision-preview-shell--compact">
+        <video id="localVisionPreview" autoplay playsinline muted></video>
+        <canvas id="localVisionOverlay" class="object-detection-overlay" aria-hidden="true"></canvas>
+      </div>
       <p id="localVisionDetail">Local Brain camera actions are blocked until allowed.</p>
     </aside>
 
@@ -681,6 +684,38 @@
             Camera access requires your browser permission. The Local Brain cannot request
             camera actions unless explicitly allowed.
           </p>
+          <div class="object-vision-panel object-vision-panel--cloud">
+            <div class="object-vision-panel__header">
+              <div>
+                <h3>Gemini Live Vision</h3>
+                <p>
+                  Normal conversation uses Gemini camera frames. When follow starts,
+                  Gemini video pauses and MediaPipe takes over local tracking until follow stops.
+                </p>
+              </div>
+              <label class="checkbox-field">
+                <input id="geminiVisionAssistToggle" type="checkbox" checked />
+                <span>Gemini Vision</span>
+              </label>
+            </div>
+            <div class="slider-grid">
+              <label class="slider-field" for="geminiVisionAssistIntervalSlider">
+                <span>Gemini video interval</span>
+                <strong id="geminiVisionAssistIntervalValue">1500 ms</strong>
+                <input id="geminiVisionAssistIntervalSlider" type="range" min="1000" max="5000" step="250" value="1500" />
+              </label>
+            </div>
+            <div class="status-grid">
+              <div class="status-row">
+                <span>Gemini vision state</span>
+                <strong id="geminiVisionAssistState">off</strong>
+              </div>
+              <div class="status-row">
+                <span>Last Gemini frame</span>
+                <strong id="geminiVisionAssistLastFrame">--</strong>
+              </div>
+            </div>
+          </div>
           <div class="slider-grid camera-widget-size-control">
             <label class="slider-field" for="localVisionSizeSlider">
               <span>Live video widget size</span>
@@ -706,9 +741,110 @@
             </button>
           </div>
           <div class="camera-preview-grid">
-            <video id="cameraPreview" autoplay playsinline muted></video>
+            <div class="vision-preview-shell">
+              <video id="cameraPreview" autoplay playsinline muted></video>
+              <canvas id="objectDetectionOverlay" class="object-detection-overlay" aria-hidden="true"></canvas>
+            </div>
             <img id="snapshotPreview" alt="Latest small camera snapshot" hidden />
             <canvas id="cameraCanvas" hidden></canvas>
+          </div>
+          <div class="object-vision-panel">
+            <div class="object-vision-panel__header">
+              <div>
+                <h3>Object Vision / Follow</h3>
+                <p>
+                  MediaPipe runs only for focused object follow. It tracks the selected
+                  target locally and never drives through Gemini frame-by-frame.
+                </p>
+              </div>
+              <div class="button-grid button-grid--compact">
+                <button id="startObjectDetectionButton" type="button">Start Detector</button>
+                <button id="stopObjectDetectionButton" type="button">Stop Detector</button>
+              </div>
+            </div>
+            <div class="slider-grid">
+              <label class="slider-field" for="objectDetectorModelSelect">
+                <span>Vision model</span>
+                <select id="objectDetectorModelSelect"></select>
+              </label>
+              <label class="slider-field" for="objectDetectionIntervalSlider">
+                <span>Detection interval</span>
+                <strong id="objectDetectionIntervalValue">1000 ms</strong>
+                <input id="objectDetectionIntervalSlider" type="range" min="200" max="5000" step="100" value="1000" />
+              </label>
+              <label class="slider-field" for="objectScoreThresholdSlider">
+                <span>Threshold</span>
+                <strong id="objectScoreThresholdValue">0.50</strong>
+                <input id="objectScoreThresholdSlider" type="range" min="0.2" max="0.9" step="0.05" value="0.5" />
+              </label>
+              <label class="slider-field" for="objectMaxResultsInput">
+                <span>Max results</span>
+                <input id="objectMaxResultsInput" type="number" min="1" max="30" step="1" value="12" />
+              </label>
+              <label class="slider-field slider-field--wide" for="objectCategoryAllowlistInput">
+                <span>Category allowlist</span>
+                <input id="objectCategoryAllowlistInput" type="text" placeholder="optional: person,bottle,cup,cell phone" />
+              </label>
+            </div>
+            <div class="status-grid">
+              <div class="status-row">
+                <span>Detector</span>
+                <strong id="objectDetectorState">stopped</strong>
+              </div>
+              <div class="status-row">
+                <span>Model</span>
+                <strong id="objectDetectorModel">--</strong>
+              </div>
+              <div class="status-row">
+                <span>Quality</span>
+                <strong id="objectDetectorQuality">--</strong>
+              </div>
+              <div class="status-row">
+                <span>Interval / threshold</span>
+                <strong id="objectDetectorParams">--</strong>
+              </div>
+              <div class="status-row">
+                <span>Last run age</span>
+                <strong id="objectDetectionLastRun">--</strong>
+              </div>
+              <div class="status-row">
+                <span>Metadata objects</span>
+                <strong id="objectDetectionMetadataCount">0</strong>
+              </div>
+              <div class="status-row">
+                <span>Detector error</span>
+                <strong id="objectDetectionError">--</strong>
+              </div>
+            </div>
+            <div class="debug-grid">
+              <label class="debug-field">
+                <span>Visible labels sent to Gemini</span>
+                <strong id="visibleObjectLabels">--</strong>
+              </label>
+              <label class="debug-field">
+                <span>Vision metadata preview</span>
+                <pre id="visionMetadataPreview">No object metadata yet.</pre>
+              </label>
+            </div>
+            <div class="button-grid">
+              <input id="followTargetLabelInput" type="text" placeholder="apple, bottle, person..." />
+              <button id="setFollowTargetButton" type="button">Follow Target</button>
+              <button id="stopFollowingButton" type="button">Stop Following</button>
+            </div>
+            <div class="status-grid">
+              <div class="status-row">
+                <span>Active target</span>
+                <strong id="activeFollowTarget">--</strong>
+              </div>
+              <div class="status-row">
+                <span>Follow scenario</span>
+                <strong id="followScenarioState">idle</strong>
+              </div>
+              <div class="status-row">
+                <span>Controller</span>
+                <strong id="followControllerState">stopped</strong>
+              </div>
+            </div>
           </div>
           <div class="status-grid">
             <div class="status-row">
@@ -841,6 +977,14 @@
             <label class="checkbox-field">
               <input id="allowAutonomousMovementToggle" type="checkbox" />
               <span>Allow Autonomous Movement</span>
+            </label>
+            <label class="checkbox-field">
+              <input id="followModeArmedToggle" type="checkbox" />
+              <span>Follow Mode Armed</span>
+            </label>
+            <label class="checkbox-field">
+              <input id="allowFollowMovementToggle" type="checkbox" />
+              <span>Allow Follow Movement</span>
             </label>
             <label class="checkbox-field">
               <input id="allowAutonomousSpeechToggle" type="checkbox" checked />

@@ -17,6 +17,7 @@ export class GeminiLiveRuntime {
     lifeEngine,
     eventBus,
     logger,
+    getRuntimeContext,
     fetchToken,
     transportFactory,
     mediaDevices,
@@ -28,6 +29,7 @@ export class GeminiLiveRuntime {
     this.lifeEngine = lifeEngine;
     this.eventBus = eventBus;
     this.logger = logger;
+    this.getRuntimeContext = getRuntimeContext;
     this.fetchToken = fetchToken ?? defaultFetchToken;
     this.transportFactory = transportFactory ?? createWebSocketTransport;
     this.mediaDevices = mediaDevices ?? globalThis.navigator?.mediaDevices ?? null;
@@ -44,6 +46,8 @@ export class GeminiLiveRuntime {
     this.nextOutputTime = 0;
     this.audioStatusTimer = 0;
     this.pendingToolCalls = new Map();
+    this.lastVisionContextSignature = "";
+    this.lastVisionContextSentAt = 0;
     this.runToken = 0;
     this.audioDebug = {
       sentInputFrames: 0,
@@ -71,6 +75,9 @@ export class GeminiLiveRuntime {
       outputAudioState: "",
       lastAudioDebug: "",
       lastServerMessageDebug: "",
+      lastVideoFrameAt: 0,
+      sentVideoFrames: 0,
+      lastVideoFrameDebug: "",
       model: "",
       voice: "",
       thinkingLevel: "",
@@ -241,6 +248,64 @@ export class GeminiLiveRuntime {
     return true;
   }
 
+  async sendVisionContext({ force = false, reason = "" } = {}) {
+    if (!this.status.connected || typeof this.getRuntimeContext !== "function") {
+      return false;
+    }
+
+    const context = this.getRuntimeContext() ?? {};
+    const payload = compactVisionContext(context.vision, {
+      recentObjectReference: context.recentObjectReference,
+      reason
+    });
+    const text = safeStringify(payload);
+    const signature = safeStringify(stableVisionSignature(payload));
+
+    if (!force && signature === this.lastVisionContextSignature) {
+      this.log(`GEMINI vision context skipped unchanged reason=${reason || "none"}`, "debug");
+      return false;
+    }
+
+    this.lastVisionContextSignature = signature;
+    this.lastVisionContextSentAt = this.now();
+    this.log(
+      `GEMINI vision context sent reason=${reason || "none"} force=${Boolean(force)} bytes=${text.length}`,
+      "debug"
+    );
+    return this.sendText(`<vision_context>${text}</vision_context>`);
+  }
+
+  async sendVideoFrame({
+    data,
+    mimeType = "image/jpeg",
+    width = null,
+    height = null,
+    reason = "gemini_vision"
+  } = {}) {
+    const cleanData = stripDataUrlPrefix(data);
+
+    if (!cleanData || !this.status.connected) {
+      return false;
+    }
+
+    this.sendJson({
+      realtimeInput: {
+        video: {
+          data: cleanData,
+          mimeType
+        }
+      }
+    });
+
+    const sentVideoFrames = Number(this.status.sentVideoFrames || 0) + 1;
+    this.patchStatus({
+      lastVideoFrameAt: this.now(),
+      sentVideoFrames,
+      lastVideoFrameDebug: `${reason}: ${mimeType} ${width ?? "?"}x${height ?? "?"} bytes~${estimateBase64Bytes(cleanData)}`
+    });
+    return true;
+  }
+
   async openTransport(url, runToken) {
     await new Promise((resolve, reject) => {
       let settled = false;
@@ -388,16 +453,13 @@ export class GeminiLiveRuntime {
 
     if (!message) {
       this.log(
-        `GEMINI RX unparsable websocket message kind=${parsed?.kind ?? "unknown"} size=${parsed?.size ?? "unknown"} preview=${parsed?.preview ?? ""}`,
+        `Gemini Live unparsable websocket message kind=${parsed?.kind ?? "unknown"} size=${parsed?.size ?? "unknown"} preview=${parsed?.preview ?? ""}`,
         "warn"
       );
       return;
     }
 
     this.audioDebug.receivedMessages += 1;
-    this.log(
-      `GEMINI RX message #${this.audioDebug.receivedMessages}: kind=${parsed.kind} size=${parsed.size ?? "unknown"} keys=${Object.keys(message).join(",") || "none"} summary=${summarizeServerMessage(message)}`
-    );
     this.patchStatus({
       lastServerMessageDebug: summarizeServerMessage(message)
     });
@@ -405,6 +467,9 @@ export class GeminiLiveRuntime {
     if (message.setupComplete) {
       this.patchStatus({ setupComplete: true });
       this.log("GEMINI STEP 5 setup complete");
+      this.sendVisionContext({ force: true, reason: "setup_complete" }).catch((error) => {
+        this.log(`Gemini vision context send failed: ${error.message}`, "warn");
+      });
     }
 
     this.handleTranscriptions(message);
@@ -418,22 +483,12 @@ export class GeminiLiveRuntime {
       const bytes = audioChunks.reduce((total, chunk) => total + estimateBase64Bytes(chunk.data), 0);
       this.audioDebug.receivedAudioChunks += audioChunks.length;
       this.audioDebug.receivedAudioBytes += bytes;
-      this.log(
-        `GEMINI RX audio chunks=${audioChunks.length} bytes~=${bytes} totalChunks=${this.audioDebug.receivedAudioChunks} totalBytes~=${this.audioDebug.receivedAudioBytes}`
-      );
-      audioChunks.forEach((chunk, index) => {
-        this.log(
-          `GEMINI RX audio[${index}] mime=${chunk.mimeType || "unknown"} base64Chars=${String(chunk.data || "").length} bytes~=${estimateBase64Bytes(chunk.data)}`
-        );
-      });
-    } else {
-      this.log("GEMINI RX no audio chunks in this message");
     }
     audioChunks.forEach((chunk) => this.enqueueOutputAudio(chunk.data, chunk.mimeType));
 
-    const functionCalls = Array.isArray(message.toolCall?.functionCalls)
-      ? message.toolCall.functionCalls
-      : [];
+    const functionCalls = readFunctionCalls(message);
+    const cancelledToolCallIds = readToolCallCancellationIds(message);
+    this.log(`Gemini tool requests: ${summarizeToolRequests(functionCalls, cancelledToolCallIds)}`);
 
     if (functionCalls.length) {
       this.handleToolCalls(functionCalls).catch((error) => {
@@ -442,7 +497,6 @@ export class GeminiLiveRuntime {
       });
     }
 
-    const cancelledToolCallIds = readToolCallCancellationIds(message);
     if (cancelledToolCallIds.length) {
       this.handleToolCallCancellation(cancelledToolCallIds).catch((error) => {
         this.patchStatus({ lastError: error.message });
@@ -509,7 +563,6 @@ export class GeminiLiveRuntime {
       lastToolCall: `${name} ${safeStringify(call.args ?? {})}`,
       lastToolCallAt: this.now()
     });
-    this.log(`GEMINI STEP 6 tool call ${name}: ${safeStringify(call.args ?? {})}`);
 
     if (!mapped.ok) {
       this.log(`Gemini Live rejected tool ${name}: ${mapped.reason}`, "warn");
@@ -1066,9 +1119,7 @@ function summarizeServerMessage(message = {}) {
     return inlineData?.data && /audio\/pcm/i.test(mimeType);
   }).length;
   const textCount = parts.filter((part) => typeof part.text === "string" && part.text.trim()).length;
-  const toolCount = Array.isArray(message.toolCall?.functionCalls)
-    ? message.toolCall.functionCalls.length
-    : 0;
+  const toolCount = readFunctionCalls(message).length;
   const cancelCount = readToolCallCancellationIds(message).length;
   const labels = [];
 
@@ -1085,6 +1136,16 @@ function summarizeServerMessage(message = {}) {
   return labels.join(" | ");
 }
 
+function readFunctionCalls(message = {}) {
+  const calls = message.toolCall?.functionCalls
+    ?? message.tool_call?.function_calls
+    ?? message.toolCall?.function_calls
+    ?? message.tool_call?.functionCalls
+    ?? [];
+
+  return Array.isArray(calls) ? calls : [];
+}
+
 function readToolCallCancellationIds(message = {}) {
   const cancellation = message.toolCallCancellation ?? message.tool_call_cancellation;
   const ids = cancellation?.ids ?? cancellation?.functionCallIds ?? cancellation?.function_call_ids ?? [];
@@ -1092,6 +1153,21 @@ function readToolCallCancellationIds(message = {}) {
   return Array.isArray(ids)
     ? ids.map((id) => String(id ?? "").trim()).filter(Boolean)
     : [];
+}
+
+function summarizeToolRequests(functionCalls = [], cancelledIds = []) {
+  const calls = Array.isArray(functionCalls) ? functionCalls : [];
+  const parts = calls.map((call) => {
+    const name = String(call?.name ?? "unknown").trim() || "unknown";
+    const args = shortText(safeStringify(call?.args ?? {}), 220);
+    return `${name}(${args})`;
+  });
+
+  if (Array.isArray(cancelledIds) && cancelledIds.length) {
+    parts.push(`cancelled:${cancelledIds.join(",")}`);
+  }
+
+  return parts.length ? parts.join(" | ") : "none";
 }
 
 function parseAudioRate(mimeType = "") {
@@ -1130,4 +1206,128 @@ function safeStringify(value) {
   } catch (_error) {
     return String(value);
   }
+}
+
+function stripDataUrlPrefix(value) {
+  const text = String(value ?? "");
+  const commaIndex = text.indexOf(",");
+  return text.startsWith("data:") && commaIndex >= 0 ? text.slice(commaIndex + 1) : text;
+}
+
+function compactVisionContext(vision = {}, { recentObjectReference = null, reason = "" } = {}) {
+  const objects = Array.isArray(vision?.objects)
+    ? vision.objects.slice(0, 12).map((object) => ({
+        label: shortText(object.label, 80),
+        visible: Boolean(object.visible),
+        confidence: finiteOrNull(object.confidence),
+        position: shortText(object.position, 40),
+        distance: shortText(object.distance, 40),
+        trackId: shortText(object.trackId, 80),
+        lastSeenMs: finiteOrNull(object.lastSeenMs)
+      }))
+    : [];
+  const followScenarioActive = Boolean(
+    vision?.scenario?.active &&
+    vision?.scenario?.type === "follow_object" &&
+    vision?.scenario?.state !== "idle" &&
+    vision?.scenario?.state !== "not_found"
+  );
+  const useMediaPipeObjects = Boolean(followScenarioActive || vision?.activeTarget);
+
+  return {
+    mode: useMediaPipeObjects ? "mediapipe_follow" : "gemini_live_video",
+    reason: shortText(reason, 80),
+    visibleLabels: useMediaPipeObjects ? shortText(vision?.visibleLabels, 240) : "",
+    objects: useMediaPipeObjects ? objects : [],
+    activeTarget: useMediaPipeObjects && vision?.activeTarget
+      ? {
+          label: shortText(vision.activeTarget.label, 80),
+          visible: Boolean(vision.activeTarget.visible),
+          position: shortText(vision.activeTarget.position, 40),
+          distance: shortText(vision.activeTarget.distance, 40),
+          trackId: shortText(vision.activeTarget.trackId, 80),
+          lostForMs: finiteOrNull(vision.activeTarget.lostForMs)
+      }
+      : null,
+    scenario: vision?.scenario
+      ? {
+          active: Boolean(vision.scenario.active),
+          type: shortText(vision.scenario.type, 80),
+          targetLabel: shortText(vision.scenario.targetLabel, 80),
+          state: shortText(vision.scenario.state, 80),
+          reason: shortText(vision.scenario.reason, 120)
+        }
+      : null,
+    detectorRunning: useMediaPipeObjects ? Boolean(vision?.detectorRunning) : false,
+    cameraRunning: Boolean(vision?.cameraRunning),
+    currentCameraFacingMode: shortText(vision?.currentCameraFacingMode, 40),
+    lastDetectionAgeMs: useMediaPipeObjects ? finiteOrNull(vision?.lastDetectionAgeMs) : null,
+    recentObjectReference: recentObjectReference
+      ? {
+          label: shortText(recentObjectReference.label, 80),
+          trackId: shortText(recentObjectReference.trackId, 80),
+          lastMentionedByUserAt: shortText(recentObjectReference.lastMentionedByUserAt, 80),
+          lastSeenAt: finiteOrNull(recentObjectReference.lastSeenAt)
+        }
+      : null
+  };
+}
+
+function stableVisionSignature(payload = {}) {
+  return {
+    mode: payload.mode,
+    visibleLabels: payload.visibleLabels,
+    objects: Array.isArray(payload.objects)
+      ? payload.objects
+          .map((object) => ({
+            label: object.label,
+            visible: Boolean(object.visible),
+            position: object.position,
+            distance: object.distance
+          }))
+          .sort(compareVisionSignatureObjects)
+      : [],
+    activeTarget: payload.activeTarget
+      ? {
+          label: payload.activeTarget.label,
+          visible: Boolean(payload.activeTarget.visible),
+          position: payload.activeTarget.position,
+          distance: payload.activeTarget.distance
+        }
+      : null,
+    scenario: payload.scenario
+      ? {
+          active: Boolean(payload.scenario.active),
+          type: payload.scenario.type,
+          targetLabel: payload.scenario.targetLabel,
+          state: payload.scenario.state
+        }
+      : null,
+    detectorRunning: payload.detectorRunning,
+    cameraRunning: payload.cameraRunning,
+    currentCameraFacingMode: payload.currentCameraFacingMode,
+    recentObjectReference: payload.recentObjectReference
+      ? {
+          label: payload.recentObjectReference.label
+        }
+      : null
+  };
+}
+
+function compareVisionSignatureObjects(a, b) {
+  return [
+    String(a.label ?? "").localeCompare(String(b.label ?? "")),
+    String(a.position ?? "").localeCompare(String(b.position ?? "")),
+    String(a.distance ?? "").localeCompare(String(b.distance ?? "")),
+    Number(a.visible) - Number(b.visible)
+  ].find((value) => value !== 0) ?? 0;
+}
+
+function finiteOrNull(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+function shortText(value, max = 120) {
+  return String(value ?? "").slice(0, max);
 }

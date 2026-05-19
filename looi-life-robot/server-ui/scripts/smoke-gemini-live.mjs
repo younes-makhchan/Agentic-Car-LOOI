@@ -21,6 +21,7 @@ if (typeof globalThis.atob !== "function") {
 const sentMessages = [];
 const actions = [];
 const stops = [];
+const runtimeLogs = [];
 let fakeTransport = null;
 let holdNextAction = false;
 let heldActionResolve = null;
@@ -128,13 +129,21 @@ assert.equal(setup.setup.model, "models/gemini-3.1-flash-live-preview");
 assert.equal(setup.setup.generationConfig.responseModalities[0], "AUDIO");
 assert.equal(setup.setup.generationConfig.temperature, 0.15);
 assert.equal(setup.setup.generationConfig.thinkingConfig.thinkingLevel, "minimal");
+assert.equal(
+  setup.setup.realtimeInputConfig.turnCoverage,
+  "TURN_INCLUDES_AUDIO_ACTIVITY_AND_ALL_VIDEO"
+);
 assert.ok(setup.setup.tools[0].functionDeclarations.some((tool) => tool.name === "perform"));
+assert.ok(setup.setup.tools[0].functionDeclarations.some((tool) => tool.name === "set_follow_target"));
+assert.ok(setup.setup.tools[0].functionDeclarations.some((tool) => tool.name === "follow_target_stop"));
 assert.deepEqual(
   setup.setup.tools[0].functionDeclarations.find((tool) => tool.name === "perform").parameters.required,
   ["movement", "timing", "iterateMovement"]
 );
 assert.ok(setup.setup.systemInstruction.parts[0].text.includes("move_forward_tiny"));
 assert.ok(setup.setup.systemInstruction.parts[0].text.includes("take_picture"));
+assert.ok(setup.setup.systemInstruction.parts[0].text.includes("<vision_rules>"));
+assert.ok(setup.setup.systemInstruction.parts[0].text.includes("person"));
 
 const runtime = new GeminiLiveRuntime({
   toolExecutor,
@@ -150,7 +159,46 @@ const runtime = new GeminiLiveRuntime({
   }),
   transportFactory: createFakeTransport,
   audioContextFactory: () => FakeAudioContext,
-  logger: () => {}
+  getRuntimeContext: () => ({
+    vision: {
+      visibleLabels: "person, bottle",
+      objects: [
+        {
+          label: "person",
+          visible: true,
+          confidence: 0.86,
+          position: "center",
+          distance: "near",
+          trackId: "track_1",
+          lastSeenMs: 120
+        }
+      ],
+      activeTarget: {
+        label: "bottle",
+        visible: true,
+        position: "left",
+        distance: "medium",
+        trackId: "track_2",
+        lostForMs: 0
+      },
+      scenario: {
+        active: true,
+        type: "follow_object",
+        targetLabel: "bottle",
+        state: "following"
+      },
+      detectorRunning: true,
+      cameraRunning: true,
+      currentCameraFacingMode: "environment",
+      lastDetectionAgeMs: 120
+    },
+    recentObjectReference: {
+      label: "bottle",
+      trackId: "track_2",
+      lastMentionedByUserAt: new Date().toISOString()
+    }
+  }),
+  logger: (message, level = "info") => runtimeLogs.push({ level, message })
 });
 runtime.configure({
   geminiLiveEnabled: true,
@@ -163,6 +211,16 @@ runtime.configure({
 await runtime.start({ captureAudio: false });
 assert.equal(runtime.getStatus().connected, true);
 assert.equal(sentMessages[0].setup.model, "models/gemini-3.1-flash-live-preview");
+const sentVideoFrame = await runtime.sendVideoFrame({
+  data: "data:image/jpeg;base64,aGVsbG8=",
+  mimeType: "image/jpeg",
+  width: 2,
+  height: 2,
+  reason: "smoke"
+});
+assert.equal(sentVideoFrame, true);
+assert.equal(sentMessages.at(-1).realtimeInput.video.mimeType, "image/jpeg");
+assert.equal(sentMessages.at(-1).realtimeInput.video.data, "aGVsbG8=");
 
 const pcm = float32ToPcm16(new Float32Array([0, 0.2, -0.2, 0.1]));
 const audioData = arrayBufferToBase64(pcm.buffer);
@@ -187,6 +245,12 @@ await wait(5);
 assert.equal(runtime.getStatus().setupComplete, true);
 assert.equal(runtime.getStatus().lastInputTranscript, "move backward more");
 assert.equal(runtime.getStatus().lastOutputTranscript, "I can move back a little.");
+assert.ok(runtimeLogs.some((entry) => entry.message === "Gemini tool requests: none"));
+const visionContextMessage = sentMessages.find((message) => message.realtimeInput?.text?.startsWith("<vision_context>"));
+assert.ok(visionContextMessage, "Gemini Live should receive vision context text");
+assert.ok(visionContextMessage.realtimeInput.text.includes('"mode":"mediapipe_follow"'));
+assert.ok(visionContextMessage.realtimeInput.text.includes('"visibleLabels":"person, bottle"'));
+assert.equal(/data:image|base64|dataUrl|imageData/i.test(visionContextMessage.realtimeInput.text), false);
 
 fakeTransport.emit({
   toolCall: {
@@ -207,6 +271,8 @@ await wait(5);
 assert.equal(actions.at(-1).type, "perform");
 assert.deepEqual(actions.at(-1).args.movement, ["gentle_wiggle", "move_backward_tiny"]);
 assert.equal(sentMessages.at(-1).toolResponse.functionResponses[0].response.output.accepted, true);
+assert.ok(runtimeLogs.some((entry) => /Gemini tool requests: perform\(/.test(entry.message)));
+assert.equal(runtimeLogs.some((entry) => /GEMINI RX/.test(entry.message)), false);
 
 fakeTransport.emit({
   toolCall: {
@@ -223,6 +289,21 @@ await wait(5);
 assert.equal(actions.at(-1).type, "perform");
 assert.equal(actions.at(-1).args.scenario, "take_picture");
 assert.deepEqual(actions.at(-1).args.movement, []);
+
+fakeTransport.emit({
+  toolCall: {
+    functionCalls: [
+      {
+        id: "follow_1",
+        name: "set_follow_target",
+        args: { label: "bottle", mode: "gentle" }
+      }
+    ]
+  }
+});
+await wait(5);
+assert.equal(actions.at(-1).type, "set_follow_target");
+assert.equal(actions.at(-1).args.label, "bottle");
 
 holdNextAction = true;
 fakeTransport.emit({

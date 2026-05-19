@@ -7,6 +7,13 @@ export function createDefaultBrainPolicy() {
     localSpeechAllowed: true,
     allowAutonomousSpeech: true,
     allowAutonomousMovement: false,
+    localVisionEnabled: true,
+    objectDetectionEnabledDefault: false,
+    objectDetectionIntervalMs: 1000,
+    followModeArmed: false,
+    allowFollowMovement: false,
+    followLostTimeoutMs: 2000,
+    maxObjectFollowSpeed: 0.18,
     maxThoughtsPerMinute: 12,
     minAutonomousThoughtIntervalMs: 3000,
     eventThoughtCooldownMs: 800,
@@ -31,6 +38,31 @@ export function clampBrainPolicy(policy = {}) {
     allowAutonomousMovement: toBoolean(
       value.allowAutonomousMovement,
       defaults.allowAutonomousMovement
+    ),
+    localVisionEnabled: toBoolean(value.localVisionEnabled, defaults.localVisionEnabled),
+    objectDetectionEnabledDefault: toBoolean(
+      value.objectDetectionEnabledDefault,
+      defaults.objectDetectionEnabledDefault
+    ),
+    objectDetectionIntervalMs: clampInteger(
+      value.objectDetectionIntervalMs,
+      200,
+      5000,
+      defaults.objectDetectionIntervalMs
+    ),
+    followModeArmed: toBoolean(value.followModeArmed, defaults.followModeArmed),
+    allowFollowMovement: toBoolean(value.allowFollowMovement, defaults.allowFollowMovement),
+    followLostTimeoutMs: clampInteger(
+      value.followLostTimeoutMs,
+      500,
+      8000,
+      defaults.followLostTimeoutMs
+    ),
+    maxObjectFollowSpeed: clampNumber(
+      value.maxObjectFollowSpeed,
+      0.05,
+      0.18,
+      defaults.maxObjectFollowSpeed
     ),
     maxThoughtsPerMinute: clampInteger(
       value.maxThoughtsPerMinute,
@@ -75,4 +107,14 @@ function clampInteger(value, min, max, fallback) {
   }
 
   return Math.min(max, Math.max(min, Math.round(numeric)));
+}
+
+function clampNumber(value, min, max, fallback) {
+  const numeric = Number(value);
+
+  if (!Number.isFinite(numeric)) {
+    return fallback;
+  }
+
+  return Math.min(max, Math.max(min, numeric));
 }
