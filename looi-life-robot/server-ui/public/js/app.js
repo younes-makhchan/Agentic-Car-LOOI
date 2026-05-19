@@ -5,6 +5,7 @@ import { EmbodiedActionRouter } from "./embodiment/embodiedActionRouter.js";
 import { IdleMicroBehavior } from "./embodiment/idleMicroBehavior.js";
 import { MotionMacroSequencer } from "./embodiment/motionMacroSequencer.js";
 import { PriorityScheduler } from "./embodiment/priorityScheduler.js";
+import { GeminiLiveRuntime } from "./gemini/geminiLiveRuntime.js";
 import { LifeEngine } from "./life/lifeEngine.js";
 import { LocalBrainEngine } from "./localBrain/localBrainEngine.js";
 import { LocalServerBrainAdapter } from "./localBrain/localServerBrainAdapter.js";
@@ -170,6 +171,13 @@ const ui = {
   localBrainModel: document.getElementById("localBrainModel"),
   localBrainLatency: document.getElementById("localBrainLatency"),
   localBrainLastThought: document.getElementById("localBrainLastThought"),
+  geminiLiveState: document.getElementById("geminiLiveState"),
+  geminiLiveMicState: document.getElementById("geminiLiveMicState"),
+  geminiLiveAudioState: document.getElementById("geminiLiveAudioState"),
+  geminiLiveInputTranscript: document.getElementById("geminiLiveInputTranscript"),
+  geminiLiveOutputTranscript: document.getElementById("geminiLiveOutputTranscript"),
+  geminiLiveLastToolCall: document.getElementById("geminiLiveLastToolCall"),
+  geminiLiveLatency: document.getElementById("geminiLiveLatency"),
   localBrainThoughtList: document.getElementById("localBrainThoughtList"),
   localBrainEnabledToggle: document.getElementById("localBrainEnabledToggle"),
   autonomousModeToggle: document.getElementById("autonomousModeToggle"),
@@ -306,6 +314,7 @@ let performanceMonitor = null;
 let reliabilityManager = null;
 let speechInput = null;
 let voiceOutput = null;
+let geminiLiveRuntime = null;
 let cameraInput = null;
 let bodyCalibration = null;
 let personalityTuning = null;
@@ -638,9 +647,11 @@ ui.startLocalBrainButton.addEventListener("click", () => {
 });
 
 ui.stopLocalBrainButton.addEventListener("click", () => {
+  geminiLiveRuntime?.stop?.("ui_stop_local_brain");
   localBrainEngine?.stop?.();
   autonomousScheduler?.stop?.();
   updateLocalBrainUi();
+  updateGeminiLiveUi();
 });
 
 ui.thinkNowButton.addEventListener("click", () => {
@@ -1330,6 +1341,16 @@ async function init() {
     getExecutionPolicy
   });
 
+  geminiLiveRuntime = new GeminiLiveRuntime({
+    toolExecutor,
+    face,
+    lifeEngine,
+    eventBus: localEventBus,
+    logger: (message, level = "info") => log(message, level)
+  });
+  geminiLiveRuntime.configure(activeConfig);
+  geminiLiveRuntime.onStatus(updateGeminiLiveUi);
+
   localServerBrainAdapter = new LocalServerBrainAdapter({
     logger: (message, level = "info") => log(message, level)
   });
@@ -1689,6 +1710,7 @@ async function emergencyStop(reason, message, level = "error") {
     return;
   }
 
+  geminiLiveRuntime?.interrupt?.(reason);
   voiceOutput?.cancel?.(reason);
   macroSequencer?.interrupt?.(reason, 100);
   priorityScheduler?.interruptBelow?.(100, reason);
@@ -2507,6 +2529,15 @@ async function startProductionRuntime() {
 }
 
 async function startLocalBrainProductionMode() {
+  const useGeminiLive = isGeminiLivePrimary();
+  const geminiStartPromise = useGeminiLive
+    ? geminiLiveRuntime.start({
+        model: activeConfig.geminiLiveModel,
+        voice: activeConfig.geminiLiveVoice,
+        thinkingLevel: activeConfig.geminiLiveThinkingLevel
+      }).catch((error) => ({ error }))
+    : null;
+
   await startProductionRuntime();
   await ensureOfficialRobotConnection();
 
@@ -2557,39 +2588,61 @@ async function startLocalBrainProductionMode() {
   }
   updateLifeEventsUi();
 
-  speechInput?.setLanguage?.(ui.speechLanguageInput.value.trim() || "en-US");
-  ui.continuousListeningToggle.checked = true;
-  ui.alwaysListeningToggle.checked = true;
-  speechInput?.startAlwaysListening?.();
+  if (useGeminiLive) {
+    speechInput?.stop?.();
+    ui.continuousListeningToggle.checked = false;
+    ui.alwaysListeningToggle.checked = false;
+    const geminiStartResult = await geminiStartPromise;
+    if (geminiStartResult?.error) {
+      throw geminiStartResult.error;
+    }
+  } else {
+    speechInput?.setLanguage?.(ui.speechLanguageInput.value.trim() || "en-US");
+    ui.continuousListeningToggle.checked = true;
+    ui.alwaysListeningToggle.checked = true;
+    speechInput?.startAlwaysListening?.();
+  }
   attentionSystem?.wake?.("live_start", activeConfig.conversationWindowMs ?? 30000);
   speechGate?.openAttentionWindow?.("live_start");
 
-  ui.audioLevelMonitorToggle.checked = true;
-  setAudioLevelMonitorEnabled(true).catch((error) => {
-    ui.audioLevelMonitorToggle.checked = false;
-    log(`Audio activity monitor unavailable: ${error.message}`, "warn");
-    updateAlwaysListeningUi();
-  });
+  if (!useGeminiLive) {
+    ui.audioLevelMonitorToggle.checked = true;
+    setAudioLevelMonitorEnabled(true).catch((error) => {
+      ui.audioLevelMonitorToggle.checked = false;
+      log(`Audio activity monitor unavailable: ${error.message}`, "warn");
+      updateAlwaysListeningUi();
+    });
+  }
 
   await openCameraFromUi("user").catch((error) => {
     log(`Camera startup skipped: ${error.message}`, "warn");
   });
 
-  voiceOutput?.speak?.({
-    text: "I'm awake.",
-    tone: "happy",
-    interrupt: true
-  });
+  if (!useGeminiLive) {
+    voiceOutput?.speak?.({
+      text: "I'm awake.",
+      tone: "happy",
+      interrupt: true
+    });
+  }
 
   face.setExpression("happy");
-  log("Local Brain Live started: brain, ears, speech, camera, LOOI mode, movement permissions, and autonomous mode are enabled.", "warn");
+  log(
+    useGeminiLive
+      ? "Gemini Live started: speech-to-speech ears, Gemini audio, camera, LOOI mode, movement permissions, and autonomous mode are enabled."
+      : "Local Brain Live started: brain, ears, speech, camera, LOOI mode, movement permissions, and autonomous mode are enabled.",
+    "warn"
+  );
   updateAlwaysListeningUi();
+  updateGeminiLiveUi();
   updateEmbodimentUi();
   updateProductionChrome();
 }
 
 function primeLiveInputsFromUserGesture() {
-  primeSpeechFromUserGesture();
+  if (!isGeminiLivePrimary()) {
+    primeSpeechFromUserGesture();
+  }
   primeCameraFromUserGesture();
 }
 
@@ -2682,18 +2735,22 @@ function setSettingsOpen(open) {
 
 function updateProductionChrome() {
   const brainRunning = Boolean(localBrainEngine?.isRunning?.());
+  const geminiRunning = Boolean(geminiLiveRuntime?.getStatus?.().running);
+  const liveRunning = brainRunning || geminiRunning;
   const cameraStatus = cameraInput?.getCameraStatus?.() ?? {};
 
   ui.localBrainQuickButton.textContent =
-    brainRunning
-      ? "Local Brain Live"
+    liveRunning
+      ? geminiRunning
+        ? "Gemini Live"
+        : "Local Brain Live"
       : "Start Local Brain";
   ui.localBrainQuickButton.classList.toggle(
     "local-brain-quick-button--live",
-    brainRunning
+    liveRunning
   );
 
-  if (brainRunning) {
+  if (liveRunning) {
     ui.productionStartButton.textContent = "Enter LOOI Face";
   }
 
@@ -2710,7 +2767,7 @@ function updateProductionChrome() {
     ui.localVisionPreview.srcObject = null;
   }
 
-  document.body.classList.toggle("local-brain-running", brainRunning);
+  document.body.classList.toggle("local-brain-running", liveRunning);
   document.body.classList.toggle("local-motion-armed", brainPolicy.localMotionArmed);
   document.body.classList.toggle("looi-mode-active", looiModeEnabled);
 }
@@ -2990,6 +3047,8 @@ function updateLocalBrainUi() {
     lastThoughtAt: 0,
     recentThoughts: []
   };
+  const geminiStatus = geminiLiveRuntime?.getStatus?.() ?? {};
+  const geminiPrimaryActive = Boolean(geminiStatus.running || geminiStatus.connecting || geminiStatus.connected);
 
   ui.localBrainEnabledToggle.checked = Boolean(brainPolicy.localBrainEnabled);
   ui.autonomousModeToggle.checked = Boolean(brainPolicy.autonomousMode);
@@ -2999,14 +3058,20 @@ function updateLocalBrainUi() {
   ui.allowAutonomousMovementToggle.checked = Boolean(brainPolicy.allowAutonomousMovement);
   ui.allowAutonomousSpeechToggle.checked = Boolean(brainPolicy.allowAutonomousSpeech);
 
-  ui.localBrainState.textContent = status.running
+  ui.localBrainState.textContent = geminiPrimaryActive
+    ? geminiStatus.connected
+      ? "Gemini Live"
+      : "Gemini starting"
+    : status.running
     ? status.processing
       ? "thinking"
       : "running"
     : "stopped";
-  ui.localBrainState.classList.toggle("local-brain-state--running", Boolean(status.running));
-  ui.localBrainState.classList.toggle("local-brain-state--stopped", !status.running);
-  ui.localBrainAdapterState.textContent = status.fallbackUsed
+  ui.localBrainState.classList.toggle("local-brain-state--running", Boolean(geminiPrimaryActive || status.running));
+  ui.localBrainState.classList.toggle("local-brain-state--stopped", !geminiPrimaryActive && !status.running);
+  ui.localBrainAdapterState.textContent = geminiPrimaryActive
+    ? "Gemini Live STS"
+    : status.fallbackUsed
     ? "fallback active"
     : status.adapterAvailable
       ? "server adapter"
@@ -3018,8 +3083,12 @@ function updateLocalBrainUi() {
       : "checking";
   ui.localBrainServerStatus.classList.toggle("local-server-state--available", Boolean(status.adapterAvailable));
   ui.localBrainServerStatus.classList.toggle("local-server-state--unavailable", !status.adapterAvailable);
-  ui.localBrainProvider.textContent = status.provider ?? activeConfig.localBrainProvider ?? "unknown";
-  ui.localBrainModel.textContent = status.model || activeConfig.localBrainModel || "--";
+  ui.localBrainProvider.textContent = geminiPrimaryActive
+    ? "gemini-live"
+    : status.provider ?? activeConfig.localBrainProvider ?? "unknown";
+  ui.localBrainModel.textContent = geminiPrimaryActive
+    ? geminiStatus.model || activeConfig.geminiLiveModel || "--"
+    : status.model || activeConfig.localBrainModel || "--";
   ui.localBrainLatency.textContent = Number.isFinite(Number(status.latestLatencyMs))
     ? `${Math.round(Number(status.latestLatencyMs))} ms`
     : "--";
@@ -3032,6 +3101,52 @@ function updateLocalBrainUi() {
   renderLocalBrainThoughts();
   updateAlwaysListeningUi();
   updateProductionChrome();
+}
+
+function updateGeminiLiveUi(status = geminiLiveRuntime?.getStatus?.() ?? {}) {
+  const state = status.running
+    ? status.connected
+      ? "connected"
+      : "running"
+    : status.connecting
+      ? "connecting"
+      : activeConfig.geminiLiveEnabled
+        ? status.configured === false || activeConfig.geminiLiveConfigured === false
+          ? "not configured"
+          : "stopped"
+        : "disabled";
+
+  if (ui.geminiLiveState) {
+    ui.geminiLiveState.textContent = state;
+    ui.geminiLiveState.classList.toggle("local-server-state--available", Boolean(status.connected || status.running));
+    ui.geminiLiveState.classList.toggle("local-server-state--unavailable", !status.connected && !status.running);
+  }
+
+  if (ui.geminiLiveMicState) {
+    ui.geminiLiveMicState.textContent = status.micStreaming ? "streaming" : status.connecting ? "starting" : "off";
+  }
+
+  if (ui.geminiLiveAudioState) {
+    ui.geminiLiveAudioState.textContent = status.audioPlaying ? "playing" : "idle";
+  }
+
+  if (ui.geminiLiveInputTranscript) {
+    ui.geminiLiveInputTranscript.textContent = status.lastInputTranscript || "--";
+  }
+
+  if (ui.geminiLiveOutputTranscript) {
+    ui.geminiLiveOutputTranscript.textContent = status.lastOutputTranscript || "--";
+  }
+
+  if (ui.geminiLiveLastToolCall) {
+    ui.geminiLiveLastToolCall.textContent = status.lastToolCall || status.lastToolResult || "--";
+  }
+
+  if (ui.geminiLiveLatency) {
+    ui.geminiLiveLatency.textContent = Number.isFinite(Number(status.latencyMs))
+      ? `${Math.round(Number(status.latencyMs))} ms`
+      : "--";
+  }
 }
 
 async function refreshLocalBrainServerStatus() {
@@ -3356,6 +3471,8 @@ function updateAlwaysListeningUi() {
     starting: false,
     alwaysListening: false
   };
+  const geminiStatus = geminiLiveRuntime?.getStatus?.() ?? {};
+  const geminiPrimaryActive = Boolean(geminiStatus.running || geminiStatus.connecting || geminiStatus.connected);
   const gateStatus = speechGate?.getStatus?.() ?? {
     attentionOpen: false,
     attentionRemainingMs: 0,
@@ -3387,7 +3504,13 @@ function updateAlwaysListeningUi() {
   }
 
   if (ui.earsState) {
-    ui.earsState.textContent = speechStatus.alwaysListening
+    ui.earsState.textContent = geminiPrimaryActive
+      ? geminiStatus.micStreaming
+        ? "Gemini Live"
+        : geminiStatus.connecting
+          ? "Gemini starting"
+          : "Gemini connected"
+      : speechStatus.alwaysListening
       ? speechStatus.listening
         ? "ears on"
         : speechStatus.starting
@@ -3400,11 +3523,11 @@ function updateAlwaysListeningUi() {
         : "ears off";
     ui.earsState.classList.toggle(
       "ears-state--on",
-      Boolean(speechStatus.alwaysListening || speechStatus.listening || speechStatus.starting)
+      Boolean(geminiPrimaryActive || speechStatus.alwaysListening || speechStatus.listening || speechStatus.starting)
     );
     ui.earsState.classList.toggle(
       "ears-state--off",
-      !speechStatus.alwaysListening && !speechStatus.listening && !speechStatus.starting
+      !geminiPrimaryActive && !speechStatus.alwaysListening && !speechStatus.listening && !speechStatus.starting
     );
   }
 
@@ -3471,7 +3594,12 @@ function updateAlwaysListeningUi() {
     ui.lastAutonomousReason.textContent = schedulerStatus.lastReason ?? "--";
   }
 
-  document.body.classList.toggle("ears-on", Boolean(speechStatus.alwaysListening || speechStatus.listening));
+  updateGeminiLiveUi(geminiStatus);
+
+  document.body.classList.toggle(
+    "ears-on",
+    Boolean(geminiPrimaryActive || speechStatus.alwaysListening || speechStatus.listening)
+  );
   document.body.classList.toggle("attention-active", ["attentive", "conversation", "busy"].includes(attentionStatus.mode));
   document.body.classList.toggle("stop-cooldown", attentionStatus.mode === "stop_cooldown");
 }
@@ -3562,8 +3690,16 @@ function updateVoiceUi() {
     muted: false,
     speaking: false
   };
+  const geminiStatus = geminiLiveRuntime?.getStatus?.() ?? {};
+  const geminiPrimaryActive = Boolean(geminiStatus.running || geminiStatus.connecting || geminiStatus.connected);
 
-  ui.speechSupportState.textContent = speechStatus.supported
+  ui.speechSupportState.textContent = geminiPrimaryActive
+    ? geminiStatus.micStreaming
+      ? "Gemini Live mic"
+      : geminiStatus.connecting
+        ? "Gemini starting"
+        : "Gemini connected"
+    : speechStatus.supported
     ? speechStatus.lastError
       ? `error: ${speechStatus.lastError}`
       : speechStatus.listening
@@ -3572,21 +3708,27 @@ function updateVoiceUi() {
       ? "starting"
       : "supported"
     : "unsupported";
-  ui.speechSupportState.classList.toggle("voice-state--active", Boolean(speechStatus.listening || speechStatus.starting));
-  ui.speechSupportState.classList.toggle("voice-state--warn", !speechStatus.supported || Boolean(speechStatus.lastError));
-  ui.speechSecureWarning.textContent = speechStatus.lastError
+  ui.speechSupportState.classList.toggle("voice-state--active", Boolean(geminiPrimaryActive || speechStatus.listening || speechStatus.starting));
+  ui.speechSupportState.classList.toggle("voice-state--warn", geminiPrimaryActive ? Boolean(geminiStatus.lastError) : !speechStatus.supported || Boolean(speechStatus.lastError));
+  ui.speechSecureWarning.textContent = geminiPrimaryActive
+    ? `Gemini Live primary voice path. Input transcript: ${geminiStatus.lastInputTranscript || "--"}`
+    : speechStatus.lastError
     ? `Speech error: ${speechStatus.lastError}. Check microphone permission for this site on the phone.`
     : speechStatus.secureContext
       ? `Microphone access may require user permission. Results: ${speechStatus.finalResultCount ?? 0} final / ${speechStatus.interimResultCount ?? 0} interim.`
       : "Speech recognition usually requires HTTPS or localhost.";
-  ui.voiceSupportState.textContent = voiceStatus.supported
+  ui.voiceSupportState.textContent = geminiPrimaryActive
+    ? geminiStatus.audioPlaying
+      ? "Gemini audio"
+      : "Gemini primary"
+    : voiceStatus.supported
     ? voiceStatus.muted
       ? "muted"
       : "supported"
     : "unsupported";
-  ui.voiceSupportState.classList.toggle("voice-state--active", voiceStatus.speaking);
-  ui.voiceSupportState.classList.toggle("voice-state--warn", !voiceStatus.supported || voiceStatus.muted);
-  ui.speakingState.textContent = String(Boolean(voiceStatus.speaking || lifeEngine?.getState?.().isSpeaking));
+  ui.voiceSupportState.classList.toggle("voice-state--active", Boolean(geminiStatus.audioPlaying || voiceStatus.speaking));
+  ui.voiceSupportState.classList.toggle("voice-state--warn", geminiPrimaryActive ? Boolean(geminiStatus.lastError) : !voiceStatus.supported || voiceStatus.muted);
+  ui.speakingState.textContent = String(Boolean(geminiStatus.audioPlaying || voiceStatus.speaking || lifeEngine?.getState?.().isSpeaking));
   ui.muteSpeechToggle.checked = Boolean(voiceStatus.muted);
   updateAlwaysListeningUi();
   updateProductionChrome();
@@ -3656,6 +3798,10 @@ function setupVoiceList() {
   }
 }
 
+function isGeminiLivePrimary() {
+  return Boolean(activeConfig.geminiLiveEnabled && geminiLiveRuntime);
+}
+
 function getExecutionPolicy() {
   return {
     source: "local",
@@ -3685,6 +3831,7 @@ function getStatusSnapshot() {
     autonomousScheduler: autonomousScheduler?.getStatus?.() ?? null,
     simulatorMode,
     localBrainRunning: Boolean(localBrainEngine?.isRunning?.()),
+    geminiLive: geminiLiveRuntime?.getStatus?.() ?? null,
     looiModeEnabled,
     macroStatus: {
       current: macroSequencer?.getCurrentMacro?.() ?? null,
@@ -3732,6 +3879,7 @@ function getStatusSnapshot() {
     voice: {
       speechListening: Boolean(speechInput?.getStatus?.().listening),
       alwaysListening: Boolean(speechInput?.getStatus?.().alwaysListening),
+      geminiLive: geminiLiveRuntime?.getStatus?.() ?? null,
       speechSupported: Boolean(speechInput?.isSupported?.()),
       voiceOutputSupported: Boolean(voiceOutput?.isSupported?.()),
       voiceMuted: Boolean(voiceOutput?.getStatus?.().muted),
@@ -3764,6 +3912,7 @@ function getRuntimeContext() {
     performanceStatus: performanceMonitor?.getStatus?.() ?? null,
     reliabilityStatus: reliabilityManager?.getStatus?.() ?? null,
     audioActivity: audioLevelMonitor?.getStatus?.() ?? null,
+    geminiLive: geminiLiveRuntime?.getStatus?.() ?? null,
     calibration: bodyCalibration?.getSettings?.() ?? null,
     personality: describePersonalityForRuntime(personalityTuning?.getProfile?.()),
     lifeSignals: {

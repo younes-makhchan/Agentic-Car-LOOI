@@ -4,6 +4,7 @@ import express from "express";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { ESP32Gateway } from "./lib/esp32Gateway.js";
+import { createGeminiLiveTokenFromEnv, getGeminiLiveEnv } from "./lib/gemini/geminiLiveToken.js";
 import { createLocalBrainServerFromEnv } from "./lib/localBrain/localBrainServer.js";
 import { LearnedPhraseStore } from "./lib/memory/learnedPhraseStore.js";
 import { MemoryStore, looksLikeSecret } from "./lib/memory/memoryStore.js";
@@ -52,6 +53,7 @@ const localBrainProvider = normalizeLocalBrainProvider(process.env.LOCAL_BRAIN_P
 const localBrainModel = process.env.LOCAL_BRAIN_MODEL || defaultLocalBrainModel(localBrainProvider);
 const localBrainServer = createLocalBrainServerFromEnv(process.env, serverLog);
 const localBrainRequireLocalNetwork = process.env.LOCAL_BRAIN_REQUIRE_LOCAL_NETWORK === "true";
+const geminiLiveConfig = getGeminiLiveEnv(process.env);
 const runtimeRegistry = new RuntimeRegistry({
   tokenTtlMs: Number(process.env.ROBOT_RUNTIME_TOKEN_TTL_MS || 86_400_000),
   staleMs: runtimeHeartbeatStaleMs
@@ -74,6 +76,11 @@ const PUBLIC_CONFIG = {
   localBrainServerEnabled: process.env.LOCAL_BRAIN_ENABLED !== "false",
   localBrainProvider,
   localBrainModel,
+  geminiLiveEnabled: geminiLiveConfig.enabled,
+  geminiLiveConfigured: geminiLiveConfig.configured,
+  geminiLiveModel: geminiLiveConfig.model,
+  geminiLiveVoice: geminiLiveConfig.voice,
+  geminiLiveThinkingLevel: geminiLiveConfig.thinkingLevel,
   localBrainEventTimeoutMs: Number(process.env.LOCAL_BRAIN_EVENT_TIMEOUT_MS || 12000),
   localBrainAutonomousTimeoutMs: Number(process.env.LOCAL_BRAIN_AUTONOMOUS_TIMEOUT_MS || 20000),
   alwaysListeningDefault: false,
@@ -120,6 +127,35 @@ app.get("/api/health", (_req, res) => {
 
 app.get("/api/config", (_req, res) => {
   res.json(PUBLIC_CONFIG);
+});
+
+app.post("/api/gemini-live/token", requireGeminiLiveAccess, async (_req, res) => {
+  const startedAt = Date.now();
+
+  if (!geminiLiveConfig.enabled) {
+    res.status(404).json({
+      ok: false,
+      error: "Gemini Live is disabled."
+    });
+    return;
+  }
+
+  geminiLog(
+    `TOKEN request model=${geminiLiveConfig.model} voice=${geminiLiveConfig.voice} thinking=${geminiLiveConfig.thinkingLevel}`
+  );
+
+  try {
+    const token = await createGeminiLiveTokenFromEnv(process.env);
+    geminiLog(`TOKEN ok latency=${Date.now() - startedAt}ms expires=${token.expiresAt}`);
+    res.json(token);
+  } catch (error) {
+    const statusCode = Number(error?.statusCode) || 502;
+    geminiLog(`TOKEN failed status=${statusCode} error="${shortServerLogText(error.message)}"`, "warn");
+    res.status(statusCode).json({
+      ok: false,
+      error: error.message
+    });
+  }
 });
 
 app.get("/api/local-brain/status", requireLocalBrainAccess, async (_req, res) => {
@@ -901,8 +937,23 @@ function summarizeApiResponseBody(req, body) {
       localFirstMode: body.localFirstMode,
       localBrainProvider: body.localBrainProvider,
       localBrainModel: body.localBrainModel,
+      geminiLiveEnabled: body.geminiLiveEnabled,
+      geminiLiveConfigured: body.geminiLiveConfigured,
+      geminiLiveModel: body.geminiLiveModel,
       esp32ConnectionMode: body.esp32ConnectionMode,
       legacyCloudBridgeInactive: body.legacyCloudBridgeInactive
+    };
+  }
+
+  if (req.path === "/api/gemini-live/token") {
+    return {
+      ok: body.ok,
+      model: body.model,
+      voice: body.voice,
+      thinkingLevel: body.thinkingLevel,
+      token: body.token ? "[REDACTED]" : undefined,
+      expiresAt: body.expiresAt,
+      error: body.error ? shortServerLogText(body.error, 240) : undefined
     };
   }
 
@@ -1066,6 +1117,24 @@ function requireLocalBrainAccess(req, res, next) {
   res.status(403).json({
     ok: false,
     error: "Local brain endpoint requires localhost or private LAN access."
+  });
+}
+
+function requireGeminiLiveAccess(req, res, next) {
+  if (
+    isLocalRequest(req) ||
+    isPrivateLanRequest(req) ||
+    verifyActualRuntimeToken(req) ||
+    process.env.GEMINI_LIVE_ALLOW_PUBLIC_TOKEN === "true"
+  ) {
+    next();
+    return;
+  }
+
+  res.status(403).json({
+    ok: false,
+    error:
+      "Gemini Live token endpoint requires localhost, private LAN, runtime auth, or GEMINI_LIVE_ALLOW_PUBLIC_TOKEN=true for temporary public testing."
   });
 }
 
@@ -1449,6 +1518,10 @@ function esp32Log(message, level = "info") {
   serverLog(message, level, "ESP32");
 }
 
+function geminiLog(message, level = "info") {
+  serverLog(message, level, "GEMINI_LIVE");
+}
+
 function serverLog(message, level = "info", scope = "LOCAL_BRAIN") {
   const prefix = level === "warn" ? "WARN" : level === "error" ? "ERROR" : "INFO";
   const line = `[${scope}:${prefix}] ${message}`;
@@ -1477,6 +1550,9 @@ export { app, robotActionQueue, robotEventQueue, verifyRobotBridgeAuth };
 async function startServer() {
   console.log(
     `[BOOT] Local brain provider=${localBrainProvider} model=${localBrainModel || "(not set)"} trace=${process.env.LOCAL_BRAIN_TRACE === "true"}`
+  );
+  console.log(
+    `[BOOT] Gemini Live enabled=${geminiLiveConfig.enabled} configured=${geminiLiveConfig.configured} model=${geminiLiveConfig.model} voice=${geminiLiveConfig.voice}`
   );
   console.log(
     `[BOOT] Server API trace=${serverTraceEnabled} pollTrace=${serverTracePollEndpoints} esp32Gateway=${esp32DefaultWsUrl}`

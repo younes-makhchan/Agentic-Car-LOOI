@@ -72,6 +72,49 @@ cd server-ui
 npm run smoke:local-first
 ```
 
+## Gemini Live Speech-To-Speech
+
+The main live voice path can use Gemini Live speech-to-speech. The server mints a short-lived Live token with `GEMINI_API_KEY`; the browser streams microphone PCM directly to Gemini, plays Gemini's returned audio, and handles Gemini tool calls locally.
+
+Gemini never receives raw motor access. Its tools are limited to `perform`, `stop`, `take_picture`, and `set_expression`. Movement names still come from the local movement catalog, scenarios still come from the local scenario catalog, and execution still goes through `ToolExecutor -> EmbodiedActionRouter -> MotionMacroSequencer -> CommandQueue -> ESP32 or Simulator`.
+
+`.env`:
+
+```bash
+GEMINI_LIVE_ENABLED=true
+GEMINI_API_KEY=your_gemini_api_key
+GEMINI_LIVE_MODEL=gemini-3.1-flash-live-preview
+GEMINI_LIVE_VOICE=Kore
+GEMINI_LIVE_THINKING_LEVEL=minimal
+GEMINI_LIVE_ALLOW_PUBLIC_TOKEN=false
+```
+
+`/api/gemini-live/token` is local/LAN/runtime-auth protected by default. If you test through a public tunnel before runtime auth is configured, set `GEMINI_LIVE_ALLOW_PUBLIC_TOKEN=true` only for that temporary test session.
+
+Run:
+
+```bash
+cd server-ui
+npm run dev
+```
+
+Manual test:
+
+1. Open the UI on laptop or phone.
+2. Click `Start Local Brain`.
+3. Say `move backward more`.
+4. Confirm Gemini Live shows mic streaming and the last tool call is `perform`.
+5. Say `take a picture of me`.
+6. Confirm the `take_picture` scenario runs and a photo preview appears.
+7. Say `stop` and confirm Gemini audio, macros, queue, and motors stop.
+
+Smoke test:
+
+```bash
+cd server-ui
+npm run smoke:gemini-live
+```
+
 ## Local-First Step 2: Laptop Local Brain Server
 
 The laptop `server-ui` process can now run local thinking. The browser asks `POST /api/local-brain/think`, the server returns strict JSON action suggestions, and the browser still executes through `ToolExecutor`, `LifeEngine`, `SafetyGate`, `CommandQueue`, and ESP32.

@@ -16,6 +16,7 @@
     "smoke:runtime": "node scripts/smoke-runtime-feedback.mjs",
     "smoke:events": "node scripts/smoke-event-inbox.mjs",
     "smoke:voice": "node scripts/smoke-voice.mjs",
+    "smoke:gemini-live": "node scripts/smoke-gemini-live.mjs",
     "smoke:camera": "node scripts/smoke-camera.mjs",
     "smoke:calibration": "node scripts/smoke-calibration.mjs",
     "smoke:personality": "node scripts/smoke-memory-personality.mjs",
@@ -25,6 +26,7 @@
     "smoke:kimi": "node scripts/smoke-kimi-agent.mjs"
   },
   "dependencies": {
+    "@google/genai": "^2.4.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.21.2",

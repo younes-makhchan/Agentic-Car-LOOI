@@ -735,15 +735,15 @@
         </section>
 
         <section id="settingsLocalBrain" class="panel-card local-brain-card">
-          <h2>Local Brain</h2>
+          <h2>Gemini Live / Local Brain</h2>
           <p class="panel-note">
-            Local Brain can think continuously, but physical motion is blocked until
-            Local Motion is armed. It never talks to ESP32 directly.
+            Gemini Live is the primary speech-to-speech path. It streams mic audio,
+            plays Gemini audio, and can only call high-level LOOI tools.
           </p>
           <p class="panel-note">
-            The local brain server runs on your laptop. It can use mock, rule, Ollama,
-            LM Studio, or another local OpenAI-compatible model. The server only returns
-            action suggestions; the browser executes safely.
+            The older Local Brain text endpoint remains available for typed/manual
+            fallback. All movement still executes through ToolExecutor and the safe
+            macro/command queue path.
           </p>
           <div class="status-grid">
             <div class="status-row">
@@ -773,6 +773,36 @@
             <div class="status-row">
               <span>Last thought</span>
               <strong id="localBrainLastThought">--</strong>
+            </div>
+            <div class="status-row">
+              <span>Gemini Live</span>
+              <strong id="geminiLiveState" class="local-server-state--unavailable">disabled</strong>
+            </div>
+            <div class="status-row">
+              <span>Gemini mic</span>
+              <strong id="geminiLiveMicState">off</strong>
+            </div>
+            <div class="status-row">
+              <span>Gemini audio</span>
+              <strong id="geminiLiveAudioState">idle</strong>
+            </div>
+            <div class="status-row">
+              <span>Gemini latency</span>
+              <strong id="geminiLiveLatency">--</strong>
+            </div>
+          </div>
+          <div class="status-grid status-grid--wide">
+            <div class="status-row">
+              <span>Last heard</span>
+              <strong id="geminiLiveInputTranscript">--</strong>
+            </div>
+            <div class="status-row">
+              <span>Last said</span>
+              <strong id="geminiLiveOutputTranscript">--</strong>
+            </div>
+            <div class="status-row">
+              <span>Last tool</span>
+              <strong id="geminiLiveLastToolCall">--</strong>
             </div>
           </div>
           <p class="safety-note">

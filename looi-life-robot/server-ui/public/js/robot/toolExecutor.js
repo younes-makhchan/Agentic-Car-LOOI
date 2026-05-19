@@ -2,6 +2,8 @@ import { movementRequestsMotion } from "../embodiment/movementCatalog.js";
 import { getScenarioDefinition, normalizeScenarioName } from "../embodiment/scenarioCatalog.js";
 
 const PHYSICAL_ACTIONS = new Set([
+  "perform",
+  "movement",
   "drive",
   "approach_user",
   "retreat",
@@ -1295,7 +1297,7 @@ export class ToolExecutor {
   }
 
   isLocalBrainAction(action = {}) {
-    return action?.source === "local_brain" || action?.source === "local";
+    return action?.source === "local_brain" || action?.source === "local" || action?.source === "gemini_live";
   }
 
   policyLabel(action = {}) {

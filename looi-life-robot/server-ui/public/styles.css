@@ -1092,6 +1092,12 @@ body {
   gap: 0.65rem;
 }
 
+.status-grid--wide .status-row {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
 .status-row {
   display: flex;
   justify-content: space-between;
@@ -1102,6 +1108,10 @@ body {
 
 .status-row span {
   color: var(--muted);
+}
+
+.status-row strong {
+  overflow-wrap: anywhere;
 }
 
 .input-row,
