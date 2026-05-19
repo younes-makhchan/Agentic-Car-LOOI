@@ -38,6 +38,8 @@ const LOCAL_VISION_SIZE_STORAGE_KEY = "looi.localVisionWidgetSizePx.v2";
 const LOCAL_VISION_SIZE_MIN = 70;
 const LOCAL_VISION_SIZE_MAX = 220;
 const LOCAL_VISION_SIZE_STEP = 10;
+const SPEECH_FINAL_ONLY_STORAGE_KEY = "looi.useFinalSpeechOnly.v1";
+const INTERIM_STABILITY_MS = 300;
 
 const ui = {
   canvas: document.getElementById("faceCanvas"),
@@ -120,6 +122,7 @@ const ui = {
   lastRobotEventPosted: document.getElementById("lastRobotEventPosted"),
   robotEventPostStatus: document.getElementById("robotEventPostStatus"),
   alwaysListeningToggle: document.getElementById("alwaysListeningToggle"),
+  useFinalSpeechOnlyToggle: document.getElementById("useFinalSpeechOnlyToggle"),
   earsState: document.getElementById("earsState"),
   speechGateState: document.getElementById("speechGateState"),
   attentionModeState: document.getElementById("attentionModeState"),
@@ -321,6 +324,11 @@ let learnedPhraseCache = [];
 let lifeEventsEnabled = false;
 let settingsOpen = false;
 let audioActivityClearTimer = null;
+let interimSpeechTimer = null;
+let latestInterimSpeech = null;
+let lastInterimDispatchedText = "";
+let lastInterimDispatchedAt = 0;
+let useFinalSpeechOnly = loadUseFinalSpeechOnly();
 let looiModeEnabled = false;
 let idleMicroBehaviorEnabled = true;
 let attentionBodyTrackingEnabled = false;
@@ -333,6 +341,9 @@ face = createFaceController(ui.canvas);
 face.setExpression("neutral");
 face.setEyeDirection("center");
 applyLocalVisionWidgetSize(localVisionWidgetSizePx, { persist: false });
+if (ui.useFinalSpeechOnlyToggle) {
+  ui.useFinalSpeechOnlyToggle.checked = useFinalSpeechOnly;
+}
 renderTelemetry(null);
 updateSliderLabels();
 updateSimulatorUi();
@@ -742,6 +753,17 @@ ui.audioLevelMonitorToggle.addEventListener("change", () => {
     log(`Audio activity monitor failed: ${error.message}`, "warn");
     updateAlwaysListeningUi();
   });
+});
+
+ui.useFinalSpeechOnlyToggle?.addEventListener("change", () => {
+  useFinalSpeechOnly = Boolean(ui.useFinalSpeechOnlyToggle.checked);
+  globalThis.localStorage?.setItem?.(SPEECH_FINAL_ONLY_STORAGE_KEY, String(useFinalSpeechOnly));
+  clearPendingInterimSpeech();
+  log(
+    useFinalSpeechOnly
+      ? "Speech mode: final transcript only."
+      : "Speech mode: stable interim transcript after 300ms."
+  );
 });
 
 ui.muteSpeechToggle.addEventListener("change", () => {
@@ -1708,7 +1730,11 @@ async function handleGatedTranscript(transcript = {}) {
     return null;
   }
 
-  const source = transcript.source === "typed" ? "typed" : "speech";
+  const source = transcript.source === "typed"
+    ? "typed"
+    : transcript.source === "speech_interim"
+      ? "speech_interim"
+      : "speech";
   const eventType = source === "typed" ? "user_text" : "user_speech";
   const gateResult = speechGate?.processTranscript?.({
     ...transcript,
@@ -1775,7 +1801,7 @@ async function handleGatedTranscript(transcript = {}) {
     payload: {
       confidence: transcript.confidence,
       language: transcript.language,
-      final: true,
+      final: transcript.final !== false,
       classification: gateResult.classification,
       accepted: gateResult.accepted,
       shouldTriggerBrain: gateResult.shouldTriggerBrain,
@@ -1823,10 +1849,12 @@ async function handleGatedTranscript(transcript = {}) {
 }
 
 function handleInterimSpeech(payload) {
-  ui.interimTranscript.textContent = payload.text;
+  const text = String(payload.text ?? "").trim();
+  ui.interimTranscript.textContent = text || "--";
   if (ui.earsInterimTranscript) {
-    ui.earsInterimTranscript.textContent = payload.text || "--";
+    ui.earsInterimTranscript.textContent = text || "--";
   }
+  scheduleStableInterimSpeech({ ...payload, text });
   updateVoiceUi();
 }
 
@@ -1837,6 +1865,15 @@ async function handleFinalSpeech(payload) {
     return;
   }
 
+  const normalizedFinal = normalizeTranscriptForDedupe(text);
+  const finalMatchesDispatchedInterim =
+    Boolean(lastInterimDispatchedText) &&
+    normalizedFinal === normalizeTranscriptForDedupe(lastInterimDispatchedText);
+  const finalFollowsRecentInterim =
+    Boolean(lastInterimDispatchedAt) &&
+    Date.now() - lastInterimDispatchedAt < 2500;
+
+  clearPendingInterimSpeech();
   lastTranscript = {
     ...payload,
     text
@@ -1846,12 +1883,100 @@ async function handleFinalSpeech(payload) {
   if (ui.earsInterimTranscript) {
     ui.earsInterimTranscript.textContent = "--";
   }
+
+  if (!useFinalSpeechOnly && (finalMatchesDispatchedInterim || finalFollowsRecentInterim)) {
+    log(`STEP 0 INPUT final skipped: already sent interim "${text}"`);
+    return;
+  }
+
   log(`STEP 0 INPUT speech: "${text}"`);
   await handleGatedTranscript({
     ...payload,
     text,
-    source: "speech"
+    source: "speech",
+    final: true
   });
+}
+
+function scheduleStableInterimSpeech(payload = {}) {
+  clearTimeout(interimSpeechTimer);
+  latestInterimSpeech = payload;
+
+  if (useFinalSpeechOnly) {
+    return;
+  }
+
+  const text = String(payload.text ?? "").trim();
+  if (!shouldDispatchInterimText(text)) {
+    return;
+  }
+
+  interimSpeechTimer = globalThis.setTimeout(() => {
+    dispatchStableInterimSpeech().catch((error) => {
+      log(`Interim speech handling failed: ${error.message}`, "warn");
+    });
+  }, INTERIM_STABILITY_MS);
+}
+
+async function dispatchStableInterimSpeech() {
+  const payload = latestInterimSpeech;
+  latestInterimSpeech = null;
+  interimSpeechTimer = null;
+
+  const text = String(payload?.text ?? "").trim();
+  if (!shouldDispatchInterimText(text)) {
+    return null;
+  }
+
+  if (normalizeTranscriptForDedupe(text) === normalizeTranscriptForDedupe(lastInterimDispatchedText)) {
+    return null;
+  }
+
+  lastInterimDispatchedText = text;
+  lastInterimDispatchedAt = Date.now();
+  lastTranscript = {
+    ...payload,
+    text,
+    final: false,
+    source: "speech_interim"
+  };
+  log(`STEP 0 INPUT interim: "${text}"`);
+  return handleGatedTranscript({
+    ...payload,
+    text,
+    source: "speech_interim",
+    final: false,
+    timestamp: payload.timestamp ?? new Date().toISOString()
+  });
+}
+
+function clearPendingInterimSpeech() {
+  clearTimeout(interimSpeechTimer);
+  interimSpeechTimer = null;
+  latestInterimSpeech = null;
+}
+
+function shouldDispatchInterimText(text) {
+  const normalized = normalizeTranscriptForDedupe(text);
+
+  if (!normalized) {
+    return false;
+  }
+
+  if (isLocalStopPhrase(normalized)) {
+    return true;
+  }
+
+  return normalized.split(/\s+/).length >= 2 && normalized.length >= 5;
+}
+
+function normalizeTranscriptForDedupe(text) {
+  return String(text ?? "")
+    .toLowerCase()
+    .replace(/[’`]/g, "'")
+    .replace(/[^\w\s']/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 async function openCameraFromUi(facingMode) {
@@ -3696,6 +3821,14 @@ function parseJsonObject(value, fallback = {}) {
     return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : fallback;
   } catch {
     return fallback;
+  }
+}
+
+function loadUseFinalSpeechOnly() {
+  try {
+    return globalThis.localStorage?.getItem?.(SPEECH_FINAL_ONLY_STORAGE_KEY) === "true";
+  } catch {
+    return false;
   }
 }
 
