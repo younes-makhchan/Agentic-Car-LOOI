@@ -126,8 +126,13 @@ const setup = buildGeminiLiveSetup({
 });
 assert.equal(setup.setup.model, "models/gemini-3.1-flash-live-preview");
 assert.equal(setup.setup.generationConfig.responseModalities[0], "AUDIO");
+assert.equal(setup.setup.generationConfig.temperature, 0.15);
 assert.equal(setup.setup.generationConfig.thinkingConfig.thinkingLevel, "minimal");
 assert.ok(setup.setup.tools[0].functionDeclarations.some((tool) => tool.name === "perform"));
+assert.deepEqual(
+  setup.setup.tools[0].functionDeclarations.find((tool) => tool.name === "perform").parameters.required,
+  ["movement", "timing", "iterateMovement"]
+);
 assert.ok(setup.setup.systemInstruction.parts[0].text.includes("move_forward_tiny"));
 assert.ok(setup.setup.systemInstruction.parts[0].text.includes("take_picture"));
 

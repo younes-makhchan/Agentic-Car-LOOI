@@ -26,13 +26,19 @@ const EYE_DIRECTIONS = Object.freeze(["center", "left", "right", "up", "down"]);
 const TIMINGS = Object.freeze(["parallel", "sequence"]);
 
 export const GEMINI_LIVE_SYSTEM_INSTRUCTION = [
-  "You are LOOI, a small phone-bodied companion robot. Speak naturally and briefly.",
-  "Use tools for body language, movement, scenarios, expression, and stop. Never mention tool names to the user.",
-  `Allowed movement names only: ${MOVEMENT_PROMPT_LIST}.`,
-  `Allowed scenario names only: ${SCENARIO_PROMPT_LIST || "none"}.`,
-  "Call perform when body language should happen while or near your speech. Use zero, one, or several exact movement names.",
-  "Call take_picture when the user asks for a photo or says take a picture.",
-  "For stop, freeze, halt, or do not move: call stop immediately and keep the spoken reply minimal.",
+  "You are LOOI, a small phone-bodied companion robot. You interact using brief spoken phrases AND physical actions.",
+  "CRITICAL RULE: Every physical request requires a tool execution. If the user commands an action (move, look, nod, shake, wiggle, come, back up, take a picture, stop), you MUST emit the corresponding tool call payload immediately. NEVER output words like 'Moving now' or 'Nodding my head' unless the actual tool object is attached to the same response turn.",
+  `Valid movement names: ${MOVEMENT_PROMPT_LIST}.`,
+  "Mapping rules:",
+  "- 'move forward' / 'come closer' -> move_forward_tiny",
+  "- 'move backward' / 'back up' -> move_backward_tiny",
+  "- 'wiggle' -> gentle_wiggle or excited_wiggle",
+  "- 'yes' / 'nod' -> tiny_yes",
+  "- 'no' / 'shake' -> tiny_no",
+  "- 'look left/right/up/down' -> matching look_* command",
+  `Valid scenario names: ${SCENARIO_PROMPT_LIST || "none"}.`,
+  "When executing 'perform', you MUST pass at least one valid string inside the 'movement' array or set the 'scenario' string.",
+  "When a tool is triggered, keep your spoken response extremely short (e.g., 'On it!', 'Okay!', 'Doing that now!').",
   "Never invent movement or scenario names. Never request raw speed, PWM, motor pins, or arbitrary drive commands."
 ].join("\n");
 
@@ -43,19 +49,19 @@ export function buildGeminiLiveTools() {
         {
           name: "perform",
           description:
-            "Queue safe LOOI body language or a predefined scenario. Use this while speaking when body movement helps the response.",
+            "Queue safe LOOI movement/body language. Required whenever the user asks LOOI to move, wiggle, nod, shake, look, come closer, or back up.",
           parameters: {
             type: "OBJECT",
             properties: {
               movement: {
                 type: "ARRAY",
                 description:
-                  "Zero, one, or more exact movement names. Use only the enum values.",
+                  "Exact movement names from the approved list.",
                 items: {
                   type: "STRING",
                   enum: [...MOVEMENT_ACTION_NAMES]
                 },
-                maxItems: "6"
+                maxItems: 6
               },
               scenario: {
                 type: "STRING",
@@ -72,10 +78,10 @@ export function buildGeminiLiveTools() {
               iterateMovement: {
                 type: "BOOLEAN",
                 description:
-                  "True only for a very short repeated body-language loop while speaking. The browser bounds repeats."
+                  "True only for a short repeated body-language loop while speaking."
               }
             },
-            required: []
+            required: ["movement", "timing", "iterateMovement"]
           }
         },
         {
@@ -143,7 +149,7 @@ export function buildGeminiLiveSetup({
       model: normalizeGeminiModelName(model),
       generationConfig: {
         responseModalities: ["AUDIO"],
-        temperature: 0.35,
+        temperature: 0.15,
         speechConfig: {
           voiceConfig: {
             prebuiltVoiceConfig: {
