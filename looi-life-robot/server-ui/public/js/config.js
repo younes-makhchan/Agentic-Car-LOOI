@@ -31,7 +31,7 @@ export const PUBLIC_CONFIG = {
   localVisionEnabled: true,
   objectDetectionEnabledDefault: false,
   objectDetectionIntervalMs: 1000,
-  objectDetectorScoreThreshold: 0.3,
+  objectDetectorScoreThreshold: 0.5,
   objectDetectorMaxResults: 12,
   objectDetectorModelPreset: "efficientdet_lite2_int8",
   objectDetectorModelAssetPath: "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite2/int8/latest/efficientdet_lite2.tflite",

@@ -453,6 +453,12 @@ ui.settingsBackdrop.addEventListener("click", () => {
   setSettingsOpen(false);
 });
 
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && settingsOpen) {
+    setSettingsOpen(false);
+  }
+});
+
 ui.sendButton.addEventListener("click", () => {
   handleSend().catch((error) => {
     log(`Typed input handling failed: ${error.message}`, "error");

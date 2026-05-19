@@ -104,7 +104,7 @@ const PUBLIC_CONFIG = {
   localVisionEnabled: process.env.LOCAL_VISION_ENABLED !== "false",
   objectDetectionEnabledDefault: process.env.OBJECT_DETECTION_ENABLED_DEFAULT === "true",
   objectDetectionIntervalMs: Number(process.env.OBJECT_DETECTION_INTERVAL_MS || 1000),
-  objectDetectorScoreThreshold: Number(process.env.OBJECT_DETECTOR_SCORE_THRESHOLD || 0.3),
+  objectDetectorScoreThreshold: Number(process.env.OBJECT_DETECTOR_SCORE_THRESHOLD || 0.5),
   objectDetectorMaxResults: Number(process.env.OBJECT_DETECTOR_MAX_RESULTS || 12),
   objectDetectorModelPreset:
     process.env.OBJECT_DETECTOR_MODEL_PRESET ||

@@ -1795,7 +1795,7 @@ body {
   position: fixed;
   inset: 0 0 0 auto;
   z-index: 90;
-  width: min(430px, 94vw);
+  width: min(560px, 94vw);
   height: 100vh;
   height: 100dvh;
   max-height: 100vh;
@@ -1818,6 +1818,11 @@ body {
   transition: transform 180ms ease;
 }
 
+.control-panel,
+.control-panel * {
+  min-width: 0;
+}
+
 .settings-open .control-panel {
   transform: translateX(0);
 }
@@ -1836,24 +1841,61 @@ body {
   border-bottom: 1px solid rgba(122, 193, 255, 0.12);
 }
 
+.settings-drawer-header > div {
+  min-width: 0;
+}
+
 .settings-drawer-header h2,
 .settings-drawer-header p {
   margin: 0;
+  overflow-wrap: anywhere;
 }
 
 .settings-drawer-header button {
+  flex: 0 0 auto;
   min-height: 2.65rem;
+  position: sticky;
+  right: 0;
+  z-index: 2;
 }
 
 .settings-backdrop {
+  position: fixed;
   inset: 0;
-  z-index: 80;
+  z-index: -80;
   display: none;
   min-height: 0;
   padding: 0;
   border: 0;
   border-radius: 0;
   background: rgba(0, 0, 0, 0.36);
+}
+
+.control-panel .panel-card,
+.control-panel .status-grid,
+.control-panel .input-stack,
+.control-panel .slider-grid,
+.control-panel .button-grid,
+.control-panel .camera-preview-grid,
+.control-panel .metadata-preview,
+.control-panel .log-panel {
+  max-width: 100%;
+}
+
+.control-panel .panel-card {
+  overflow: hidden;
+}
+
+.control-panel .subtitle,
+.control-panel .panel-note,
+.control-panel .privacy-note,
+.control-panel .status-row strong,
+.control-panel .status-row span {
+  overflow-wrap: anywhere;
+}
+
+.control-panel .status-row strong {
+  text-align: right;
 }
 
 .settings-backdrop:hover,
