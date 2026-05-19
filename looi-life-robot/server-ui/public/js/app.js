@@ -326,6 +326,7 @@ let settingsOpen = false;
 let audioActivityClearTimer = null;
 let interimSpeechTimer = null;
 let latestInterimSpeech = null;
+let bestInterimSpeech = null;
 let lastInterimDispatchedText = "";
 let lastInterimDispatchedAt = 0;
 let useFinalSpeechOnly = loadUseFinalSpeechOnly();
@@ -1901,12 +1902,13 @@ async function handleFinalSpeech(payload) {
 function scheduleStableInterimSpeech(payload = {}) {
   clearTimeout(interimSpeechTimer);
   latestInterimSpeech = payload;
+  bestInterimSpeech = chooseBetterInterimCandidate(bestInterimSpeech, payload);
 
   if (useFinalSpeechOnly) {
     return;
   }
 
-  const text = String(payload.text ?? "").trim();
+  const text = String(bestInterimSpeech?.text ?? payload.text ?? "").trim();
   if (!shouldDispatchInterimText(text)) {
     return;
   }
@@ -1919,8 +1921,9 @@ function scheduleStableInterimSpeech(payload = {}) {
 }
 
 async function dispatchStableInterimSpeech() {
-  const payload = latestInterimSpeech;
+  const payload = bestInterimSpeech ?? latestInterimSpeech;
   latestInterimSpeech = null;
+  bestInterimSpeech = null;
   interimSpeechTimer = null;
 
   const text = String(payload?.text ?? "").trim();
@@ -1954,6 +1957,52 @@ function clearPendingInterimSpeech() {
   clearTimeout(interimSpeechTimer);
   interimSpeechTimer = null;
   latestInterimSpeech = null;
+  bestInterimSpeech = null;
+}
+
+function chooseBetterInterimCandidate(current, next) {
+  const currentText = String(current?.text ?? "").trim();
+  const nextText = String(next?.text ?? "").trim();
+
+  if (!nextText) {
+    return current ?? next;
+  }
+
+  if (!currentText) {
+    return next;
+  }
+
+  const currentNormalized = normalizeTranscriptForDedupe(currentText);
+  const nextNormalized = normalizeTranscriptForDedupe(nextText);
+
+  if (!nextNormalized) {
+    return current;
+  }
+
+  if (!currentNormalized) {
+    return next;
+  }
+
+  if (currentNormalized.includes(nextNormalized) && currentNormalized !== nextNormalized) {
+    return current;
+  }
+
+  if (nextNormalized.includes(currentNormalized) && currentNormalized !== nextNormalized) {
+    return next;
+  }
+
+  const currentWords = currentNormalized.split(/\s+/).filter(Boolean).length;
+  const nextWords = nextNormalized.split(/\s+/).filter(Boolean).length;
+
+  if (nextWords > currentWords) {
+    return next;
+  }
+
+  if (nextWords === currentWords && nextNormalized.length > currentNormalized.length) {
+    return next;
+  }
+
+  return current;
 }
 
 function shouldDispatchInterimText(text) {
