@@ -266,7 +266,12 @@ export class GeminiLiveRuntime {
           });
           resolve();
         },
-        onMessage: (message) => this.handleTransportMessage(message),
+        onMessage: (message) => {
+          this.handleTransportMessage(message).catch((error) => {
+            this.patchStatus({ lastError: error.message });
+            this.log(`Gemini Live message parse failed: ${error.message}`, "warn");
+          });
+        },
         onError: (error) => {
           const message = error?.message || error?.error?.message || "Gemini Live WebSocket error.";
           this.patchStatus({ lastError: message });
@@ -377,8 +382,8 @@ export class GeminiLiveRuntime {
     this.patchStatus({ micStreaming: false });
   }
 
-  handleTransportMessage(rawMessage) {
-    const message = parseTransportMessage(rawMessage);
+  async handleTransportMessage(rawMessage) {
+    const message = await parseTransportMessage(rawMessage);
 
     if (!message) {
       this.log("GEMINI RX unparsable websocket message", "warn");
@@ -916,6 +921,7 @@ async function defaultFetchToken() {
 
 function createWebSocketTransport({ url, onOpen, onMessage, onError, onClose }) {
   const socket = new WebSocket(url);
+  socket.binaryType = "arraybuffer";
   socket.addEventListener("open", onOpen);
   socket.addEventListener("message", onMessage);
   socket.addEventListener("error", onError);
@@ -934,15 +940,31 @@ function createBrowserAudioContext() {
   return globalThis.AudioContext || globalThis.webkitAudioContext;
 }
 
-function parseTransportMessage(rawMessage) {
+function parseJsonText(text) {
+  try {
+    return JSON.parse(text);
+  } catch (_error) {
+    return null;
+  }
+}
+
+async function parseTransportMessage(rawMessage) {
   const data = rawMessage?.data ?? rawMessage;
 
   if (typeof data === "string") {
-    try {
-      return JSON.parse(data);
-    } catch (_error) {
-      return null;
-    }
+    return parseJsonText(data);
+  }
+
+  if (data instanceof ArrayBuffer) {
+    return parseJsonText(new TextDecoder().decode(new Uint8Array(data)));
+  }
+
+  if (ArrayBuffer.isView(data)) {
+    return parseJsonText(new TextDecoder().decode(data));
+  }
+
+  if (typeof Blob !== "undefined" && data instanceof Blob) {
+    return parseJsonText(await data.text());
   }
 
   if (data && typeof data === "object") {
