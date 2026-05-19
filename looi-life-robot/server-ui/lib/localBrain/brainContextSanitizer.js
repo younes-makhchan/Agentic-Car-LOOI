@@ -141,7 +141,11 @@ function compactPolicy(policy) {
 function compactVisionState(vision) {
   const state = isPlainObject(vision) ? vision : {};
   return removeDataUrls({
-    summary: shortText(state.summary, 300),
+    visibleLabels: shortText(
+      state.visibleLabels ??
+      labelsFromVisionObjects(state.objects),
+      300
+    ),
     objects: Array.isArray(state.objects)
       ? state.objects.slice(0, 12).map((object) => ({
           label: shortText(object?.label, 80),
@@ -178,6 +182,21 @@ function compactVisionState(vision) {
     currentCameraFacingMode: shortText(state.currentCameraFacingMode, 40),
     lastDetectionAgeMs: finiteOrNull(state.lastDetectionAgeMs)
   });
+}
+
+function labelsFromVisionObjects(objects) {
+  if (!Array.isArray(objects)) {
+    return "";
+  }
+
+  return [
+    ...new Set(
+      objects
+        .filter((object) => object?.visible !== false)
+        .map((object) => shortText(object?.label, 80))
+        .filter(Boolean)
+    )
+  ].join(", ");
 }
 
 function compactRecentObjectReference(reference) {

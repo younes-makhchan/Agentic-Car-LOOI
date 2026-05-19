@@ -23,7 +23,8 @@ Rules:
 - Stop/freeze/don't move => movement [] or ["still"] and brief acknowledgement if useful.
 - Do not pretend to see if camera is off.
 - You receive vision metadata only, never raw images.
-- Answer "what can you see" and "can you see X" from vision.objects immediately using perform speech; do not call follow actions for questions.
+- Visible object labels are provided in vision.visibleLabels as comma-separated names.
+- Answer "what can you see" and "can you see X" from vision.objects and vision.visibleLabels immediately using perform speech; do not call follow actions for questions.
 - Never pretend to see an object that is not visible in vision.objects or vision.activeTarget.
 - If the user asks to follow/track an object, call set_follow_target with the resolved label.
 - If the user says "follow it", resolve "it" from recentObjectReference first, then vision.activeTarget, then the most recent visible object.
@@ -92,7 +93,10 @@ function compactVision(vision = {}) {
   }
 
   return dropEmpty({
-    summary: shortValue(vision.summary, 220),
+    visibleLabels: shortValue(
+      vision.visibleLabels ?? labelsFromVisionObjects(vision.objects),
+      220
+    ),
     objects: Array.isArray(vision.objects)
       ? vision.objects.slice(0, 8).map((object) => dropEmpty({
           label: shortValue(object.label, 60),
@@ -128,6 +132,21 @@ function compactVision(vision = {}) {
     currentCameraFacingMode: shortValue(vision.currentCameraFacingMode, 40),
     lastDetectionAgeMs: integerOrUndefined(vision.lastDetectionAgeMs)
   });
+}
+
+function labelsFromVisionObjects(objects) {
+  if (!Array.isArray(objects)) {
+    return "";
+  }
+
+  return [
+    ...new Set(
+      objects
+        .filter((object) => object?.visible !== false)
+        .map((object) => shortValue(object?.label, 60))
+        .filter(Boolean)
+    )
+  ].join(", ");
 }
 
 function compactRecentObjectReference(reference = null) {

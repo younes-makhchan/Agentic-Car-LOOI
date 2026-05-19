@@ -3,16 +3,16 @@ import { summarizeObjects } from "./visionState.js";
 
 export function buildVisionContext({ visionState, cameraInput, objectTracker } = {}) {
   const metadata = visionState?.getObjectMetadataForBrain?.() ?? {
-    summary: "No objects detected.",
     objects: [],
     activeTarget: null
   };
   const cameraStatus = cameraInput?.getCameraStatus?.() ?? {};
   const trackerStatus = objectTracker?.getStatus?.() ?? {};
+  const objects = Array.isArray(metadata.objects) ? metadata.objects.map(compactObject) : [];
 
   return {
-    summary: metadata.summary ?? summarizeVisibleObjects(metadata.objects),
-    objects: Array.isArray(metadata.objects) ? metadata.objects.map(compactObject) : [],
+    objects,
+    visibleLabels: buildVisibleLabels(objects),
     activeTarget: metadata.activeTarget ? compactActiveTarget(metadata.activeTarget) : null,
     scenario: metadata.scenario ?? null,
     detectorRunning: Boolean(metadata.detectorRunning),
@@ -33,6 +33,17 @@ export function summarizeVisibleObjects(objects = []) {
       visible: object.visible !== false
     }))
   );
+}
+
+export function buildVisibleLabels(objects = []) {
+  return [
+    ...new Set(
+      objects
+        .filter((object) => object?.visible !== false)
+        .map((object) => canonicalObjectLabel(object.label))
+        .filter(Boolean)
+    )
+  ].join(", ");
 }
 
 export function findMentionedObjectLabels(text, knownLabels = []) {

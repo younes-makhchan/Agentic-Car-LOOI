@@ -260,6 +260,8 @@ function updateVision({ tracker, visionState }, result) {
     objectTracker: runtime.tracker
   });
   assert.equal(context.objects[0].label, "cup");
+  assert.equal(context.visibleLabels, "cup");
+  assert.equal(Object.hasOwn(context, "summary"), false);
 }
 
 assert.equal(typeof setVisionIndicator, "function");

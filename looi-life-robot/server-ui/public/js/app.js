@@ -3224,7 +3224,7 @@ function updateProductionChrome() {
       : `${cameraStatus.facingMode ?? "camera"} live`
     : "camera off";
   ui.localVisionDetail.textContent = objectDetectorEngine?.isRunning?.()
-    ? vision.summary ?? "Object detection running locally."
+    ? summarizeVisionObjectsForUi(vision.objects)
     : brainPolicy.localCameraAllowed
       ? "Local Brain may request camera observations."
       : "Local Brain camera actions are blocked until allowed.";
@@ -4285,7 +4285,7 @@ function updateObjectVisionUi() {
   }
   updateCameraVisionMetadataUi();
   if (ui.visionSummary) {
-    ui.visionSummary.textContent = vision.summary ?? "No objects detected.";
+    ui.visionSummary.textContent = summarizeVisionObjectsForUi(vision.objects);
   }
   if (ui.visibleObjectList) {
     renderVisibleObjectList(vision.objects ?? []);
@@ -4340,6 +4340,22 @@ function renderVisibleObjectList(objects = []) {
     item.textContent = `${object.label} ${Math.round(Number(object.confidence || 0) * 100)}% · ${object.position} · ${object.distance}`;
     ui.visibleObjectList.append(item);
   });
+}
+
+function summarizeVisionObjectsForUi(objects = []) {
+  const visibleObjects = Array.isArray(objects)
+    ? objects.filter((object) => object?.visible !== false)
+    : [];
+
+  if (!visibleObjects.length) {
+    return "No objects detected.";
+  }
+
+  const labels = visibleObjects
+    .slice(0, 6)
+    .map((object) => `${object.label} ${object.position ?? "unknown"} ${object.distance ?? "unknown"}`);
+
+  return `Visible: ${labels.join(", ")}`;
 }
 
 function renderObjectOverlays() {
@@ -4529,7 +4545,7 @@ function describeMediaPipeQuality({ detectorStatus = {}, objectCount = 0, lastDe
 
 function compactVisionMetadataPreview(vision = {}) {
   return {
-    summary: vision.summary ?? "No objects detected.",
+    visibleLabels: vision.visibleLabels ?? "",
     objects: Array.isArray(vision.objects)
       ? vision.objects.slice(0, 8).map((object) => ({
           label: object.label,
