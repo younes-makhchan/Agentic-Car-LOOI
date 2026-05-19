@@ -45,6 +45,15 @@ export class GeminiLiveRuntime {
     this.audioStatusTimer = 0;
     this.pendingToolCalls = new Map();
     this.runToken = 0;
+    this.audioDebug = {
+      sentInputFrames: 0,
+      sentInputBytes: 0,
+      receivedMessages: 0,
+      receivedAudioChunks: 0,
+      receivedAudioBytes: 0,
+      queuedOutputChunks: 0,
+      lastInputLogAt: 0
+    };
     this.status = {
       enabled: false,
       configured: false,
@@ -325,6 +334,12 @@ export class GeminiLiveRuntime {
         return;
       }
 
+      this.recordInputAudioSent({
+        bytes: pcm.byteLength,
+        inputRate: audioContext.sampleRate,
+        outputRate: GEMINI_LIVE_INPUT_RATE,
+        samples: pcm.length
+      });
       this.sendJson({
         realtimeInput: {
           audio: {
@@ -366,9 +381,12 @@ export class GeminiLiveRuntime {
     const message = parseTransportMessage(rawMessage);
 
     if (!message) {
+      this.log("GEMINI RX unparsable websocket message", "warn");
       return;
     }
 
+    this.audioDebug.receivedMessages += 1;
+    this.log(`GEMINI RX message #${this.audioDebug.receivedMessages}: ${summarizeServerMessage(message)}`);
     this.patchStatus({
       lastServerMessageDebug: summarizeServerMessage(message)
     });
@@ -385,6 +403,16 @@ export class GeminiLiveRuntime {
     }
 
     const audioChunks = extractAudioChunks(message);
+    if (audioChunks.length) {
+      const bytes = audioChunks.reduce((total, chunk) => total + estimateBase64Bytes(chunk.data), 0);
+      this.audioDebug.receivedAudioChunks += audioChunks.length;
+      this.audioDebug.receivedAudioBytes += bytes;
+      this.log(
+        `GEMINI RX audio chunks=${audioChunks.length} bytes~=${bytes} totalChunks=${this.audioDebug.receivedAudioChunks} totalBytes~=${this.audioDebug.receivedAudioBytes}`
+      );
+    } else {
+      this.log("GEMINI RX no audio chunks in this message");
+    }
     audioChunks.forEach((chunk) => this.enqueueOutputAudio(chunk.data, chunk.mimeType));
 
     const functionCalls = Array.isArray(message.toolCall?.functionCalls)
@@ -579,11 +607,13 @@ export class GeminiLiveRuntime {
 
   enqueueOutputAudio(base64Data, mimeType = "") {
     if (!base64Data) {
+      this.log("GEMINI AUDIO skip empty output chunk", "warn");
       return;
     }
 
     if (!this.ensureOutputAudioContext()) {
       this.patchStatus({ lastError: "Web Audio output is unavailable." });
+      this.log("GEMINI AUDIO output unavailable: Web Audio context missing", "warn");
       return;
     }
     this.resumeOutputAudio("output_chunk");
@@ -595,6 +625,7 @@ export class GeminiLiveRuntime {
       this.patchStatus({
         lastAudioDebug: `empty output chunk mime=${mimeType || "unknown"}`
       });
+      this.log(`GEMINI AUDIO decoded empty output chunk mime=${mimeType || "unknown"}`, "warn");
       return;
     }
 
@@ -612,9 +643,11 @@ export class GeminiLiveRuntime {
     this.activeOutputSources.add(source);
     source.onended = () => {
       this.activeOutputSources.delete(source);
+      this.log(`GEMINI AUDIO chunk ended active=${this.activeOutputSources.size}`);
       this.refreshAudioPlayingStatus();
     };
     source.start(startAt);
+    this.audioDebug.queuedOutputChunks += 1;
     this.face?.setSpeaking?.(true);
     this.lifeEngine?.setSpeaking?.(true);
     this.patchStatus({
@@ -624,13 +657,29 @@ export class GeminiLiveRuntime {
       lastAudioDebug: `queued ${samples.length} samples @ ${rate}Hz (${Math.round(buffer.duration * 1000)}ms), context=${this.outputAudioContext?.state ?? "unknown"}`
     });
     this.log(
-      `GEMINI STEP 8 audio output queued samples=${samples.length} rate=${rate} duration=${Math.round(buffer.duration * 1000)}ms context=${this.outputAudioContext?.state ?? "unknown"}`
+      `GEMINI STEP 8 audio output queued chunk=${this.audioDebug.queuedOutputChunks} samples=${samples.length} rate=${rate} duration=${Math.round(buffer.duration * 1000)}ms context=${this.outputAudioContext?.state ?? "unknown"} startAt=${startAt.toFixed?.(3) ?? startAt}`
     );
 
     globalThis.clearTimeout(this.audioStatusTimer);
     this.audioStatusTimer = globalThis.setTimeout(() => {
       this.refreshAudioPlayingStatus();
     }, Math.max(100, Math.ceil(buffer.duration * 1000) + 60));
+  }
+
+  recordInputAudioSent({ bytes, inputRate, outputRate, samples } = {}) {
+    this.audioDebug.sentInputFrames += 1;
+    this.audioDebug.sentInputBytes += Number(bytes) || 0;
+    const now = this.now();
+
+    if (
+      this.audioDebug.sentInputFrames <= 5 ||
+      now - this.audioDebug.lastInputLogAt > 1000
+    ) {
+      this.audioDebug.lastInputLogAt = now;
+      this.log(
+        `GEMINI TX audio frame=${this.audioDebug.sentInputFrames} bytes=${bytes} samples=${samples} inputRate=${Math.round(Number(inputRate) || 0)} outputRate=${outputRate} totalBytes=${this.audioDebug.sentInputBytes}`
+      );
+    }
   }
 
   interruptAudio(reason = "gemini_live_audio_interrupt") {
@@ -981,6 +1030,16 @@ function parseAudioRate(mimeType = "") {
   const match = /rate=(\d+)/i.exec(String(mimeType));
   const rate = match ? Number(match[1]) : NaN;
   return Number.isFinite(rate) && rate > 0 ? rate : null;
+}
+
+function estimateBase64Bytes(base64 = "") {
+  const value = String(base64 || "");
+  if (!value) {
+    return 0;
+  }
+
+  const padding = value.endsWith("==") ? 2 : value.endsWith("=") ? 1 : 0;
+  return Math.max(0, Math.floor((value.length * 3) / 4) - padding);
 }
 
 function compactToolResult(result = null) {
