@@ -112,6 +112,18 @@ export class MockProvider {
       });
     }
 
+    const visionAnswer = answerVisionQuestion(text, context);
+    if (visionAnswer) {
+      return performResponse({
+        policy,
+        text: visionAnswer,
+        tone: "curious",
+        movement: ["still"],
+        reason: "vision question",
+        confidence: 0.82
+      });
+    }
+
     if (Number(context?.lifeState?.boredom) > 0.82 && policy.autonomousMode) {
       return performResponse({
         policy,
@@ -205,4 +217,61 @@ function latestText(context = {}) {
       context.recentEvents?.[0]?.text ??
       ""
   );
+}
+
+function answerVisionQuestion(text, context = {}) {
+  if (!/\b(what can you see|can you see|do you see|see me)\b/.test(text)) {
+    return null;
+  }
+
+  const vision = context.vision ?? {};
+  if (vision.cameraRunning === false) {
+    return "I can't see right now.";
+  }
+
+  const visibleObjects = Array.isArray(vision.objects)
+    ? vision.objects.filter((object) => object?.visible !== false && object?.label)
+    : [];
+  const hasPerson = visibleObjects.some((object) => object.label === "person");
+
+  if (/\b(me|my face|you see me)\b/.test(text)) {
+    return hasPerson ? "Yes, I can see you." : "I can't see you right now.";
+  }
+
+  if (!visibleObjects.length) {
+    return "I don't see any clear objects right now.";
+  }
+
+  return `I can see ${formatVisibleObjectsForSpeech(visibleObjects)}.`;
+}
+
+function formatVisibleObjectsForSpeech(objects = []) {
+  const labels = [
+    ...new Set(
+      objects
+        .map((object) => object.label === "person" ? "you" : withArticle(object.label))
+        .filter(Boolean)
+    )
+  ];
+
+  if (labels.length <= 1) {
+    return labels[0] ?? "something";
+  }
+
+  if (labels.length === 2) {
+    return `${labels[0]} and ${labels[1]}`;
+  }
+
+  return `${labels.slice(0, -1).join(", ")}, and ${labels[labels.length - 1]}`;
+}
+
+function withArticle(label) {
+  const value = String(label ?? "").trim();
+  if (!value) {
+    return "";
+  }
+  if (/^(you|me|person)$/i.test(value)) {
+    return value;
+  }
+  return `${/^[aeiou]/i.test(value) ? "an" : "a"} ${value}`;
 }

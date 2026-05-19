@@ -7,6 +7,10 @@ import {
   validateBrainAction
 } from "../lib/localBrain/brainResponseParser.js";
 import { sanitizeBrainContext } from "../lib/localBrain/brainContextSanitizer.js";
+import {
+  buildCompactBrainContext,
+  LOCAL_BRAIN_SERVER_SYSTEM_PROMPT
+} from "../lib/localBrain/brainPromptBuilder.js";
 import { sanitizeBrainRequestValue } from "../public/js/localBrain/localServerBrainAdapter.js";
 
 process.env.LOCAL_BRAIN_ENABLED = "true";
@@ -68,6 +72,31 @@ const pictureResponse = await localBrain.think({
 assert.equal(pictureResponse.ok, true);
 assert.equal(pictureResponse.action.type, "perform");
 assert.equal(pictureResponse.action.args.scenario, "take_picture");
+
+const visionQuestionResponse = await localBrain.think({
+  reason: "manual",
+  triggerEvent: {
+    type: "user_text",
+    payload: { text: "what can you see" }
+  },
+  context: {
+    policy: {
+      localBrainEnabled: true,
+      localSpeechAllowed: true
+    },
+    vision: {
+      visibleLabels: "person, bottle",
+      objects: [
+        { label: "person", visible: true, confidence: 0.88, position: "center", distance: "near" },
+        { label: "bottle", visible: true, confidence: 0.77, position: "right", distance: "medium" }
+      ],
+      cameraRunning: true
+    }
+  }
+});
+assert.equal(visionQuestionResponse.ok, true);
+assert.equal(visionQuestionResponse.action.type, "perform");
+assert.equal(visionQuestionResponse.action.args.speech.text, "I can see you and a bottle.");
 
 const fallbackServer = createLocalBrainServerFromEnv({
   LOCAL_BRAIN_ENABLED: "true",
@@ -190,6 +219,29 @@ assert.equal(JSON.stringify(sanitized).includes("api key"), false);
 assert.equal(sanitized.recentEvents.length, 20);
 assert.equal("memory" in sanitized, false);
 assert.equal("learnedPhraseCount" in sanitized, false);
+
+const compactVisionContext = buildCompactBrainContext({
+  triggerEvent: {
+    type: "user_text",
+    payload: { text: "what can you see" }
+  },
+  vision: {
+    visibleLabels: "person, bottle",
+    summary: "I see a person and a bottle.",
+    objects: [
+      { label: "person", visible: true, confidence: 0.88, position: "center", distance: "near" },
+      { label: "bottle", visible: true, confidence: 0.77, position: "right", distance: "medium" }
+    ],
+    cameraRunning: true
+  }
+});
+assert.equal(compactVisionContext.vision.visibleLabels, "person, bottle");
+assert.equal("summary" in compactVisionContext.vision, false);
+assert.match(LOCAL_BRAIN_SERVER_SYSTEM_PROMPT, /call it "you"/);
+assert.match(LOCAL_BRAIN_SERVER_SYSTEM_PROMPT, /I can see you and a bottle/);
+assert.match(LOCAL_BRAIN_SERVER_SYSTEM_PROMPT, /<scenario_rules>/);
+assert.match(LOCAL_BRAIN_SERVER_SYSTEM_PROMPT, /Do not invent scenario names/);
+assert.match(LOCAL_BRAIN_SERVER_SYSTEM_PROMPT, /answer from vision metadata; do not start a scenario/);
 
 const browserSanitized = sanitizeBrainRequestValue({
   recentThoughts: [
