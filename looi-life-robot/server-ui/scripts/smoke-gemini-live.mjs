@@ -8,7 +8,6 @@ import {
   buildGeminiLiveSetup,
   geminiFunctionCallToAction
 } from "../public/js/gemini/geminiLiveTools.js";
-import { compileMovementFrames } from "../public/js/embodiment/movementCatalog.js";
 
 if (typeof globalThis.btoa !== "function") {
   globalThis.btoa = (value) => Buffer.from(value, "binary").toString("base64");
@@ -84,7 +83,7 @@ const toolExecutor = {
           status: "completed",
           type: action.type,
           executed: true,
-          physical: action.type === "perform",
+          physical: action.type === "perform" || action.type === "run_scenario",
           message: "mock accepted"
         });
       });
@@ -94,7 +93,7 @@ const toolExecutor = {
       status: "completed",
       type: action.type,
       executed: true,
-      physical: action.type === "perform",
+      physical: action.type === "perform" || action.type === "run_scenario",
       message: "mock accepted"
     });
   },
@@ -133,14 +132,14 @@ assert.equal(
   setup.setup.realtimeInputConfig.turnCoverage,
   "TURN_INCLUDES_AUDIO_ACTIVITY_AND_ALL_VIDEO"
 );
-assert.ok(setup.setup.tools[0].functionDeclarations.some((tool) => tool.name === "perform"));
-assert.ok(setup.setup.tools[0].functionDeclarations.some((tool) => tool.name === "set_follow_target"));
-assert.ok(setup.setup.tools[0].functionDeclarations.some((tool) => tool.name === "follow_target_stop"));
+assert.deepEqual(setup.setup.tools[0].functionDeclarations.map((tool) => tool.name), ["run_scenario"]);
 assert.deepEqual(
-  setup.setup.tools[0].functionDeclarations.find((tool) => tool.name === "perform").parameters.required,
-  ["movement", "timing", "iterateMovement"]
+  setup.setup.tools[0].functionDeclarations.find((tool) => tool.name === "run_scenario").parameters.required,
+  ["name"]
 );
-assert.ok(setup.setup.systemInstruction.parts[0].text.includes("move_forward_tiny"));
+assert.equal(setup.setup.systemInstruction.parts[0].text.includes("move_forward_tiny"), false);
+assert.ok(setup.setup.systemInstruction.parts[0].text.includes("run_scenario"));
+assert.ok(setup.setup.systemInstruction.parts[0].text.includes("follow_target"));
 assert.ok(setup.setup.systemInstruction.parts[0].text.includes("take_picture"));
 assert.ok(setup.setup.systemInstruction.parts[0].text.includes("<vision_rules>"));
 assert.ok(setup.setup.systemInstruction.parts[0].text.includes("person"));
@@ -256,22 +255,20 @@ fakeTransport.emit({
   toolCall: {
     functionCalls: [
       {
-        id: "perform_1",
-        name: "perform",
+        id: "scenario_1",
+        name: "run_scenario",
         args: {
-          movement: ["gentle_wiggle", "move_backward_tiny"],
-          timing: "parallel",
-          iterateMovement: false
+          name: "happy_wiggle"
         }
       }
     ]
   }
 });
 await wait(5);
-assert.equal(actions.at(-1).type, "perform");
-assert.deepEqual(actions.at(-1).args.movement, ["gentle_wiggle", "move_backward_tiny"]);
+assert.equal(actions.at(-1).type, "run_scenario");
+assert.equal(actions.at(-1).args.name, "happy_wiggle");
 assert.equal(sentMessages.at(-1).toolResponse.functionResponses[0].response.output.accepted, true);
-assert.ok(runtimeLogs.some((entry) => /Gemini tool requests: perform\(/.test(entry.message)));
+assert.ok(runtimeLogs.some((entry) => /Gemini tool requests: run_scenario\(/.test(entry.message)));
 assert.equal(runtimeLogs.some((entry) => /GEMINI RX/.test(entry.message)), false);
 
 fakeTransport.emit({
@@ -279,30 +276,30 @@ fakeTransport.emit({
     functionCalls: [
       {
         id: "picture_1",
-        name: "take_picture",
-        args: {}
+        name: "run_scenario",
+        args: { name: "take_picture" }
       }
     ]
   }
 });
 await wait(5);
-assert.equal(actions.at(-1).type, "perform");
-assert.equal(actions.at(-1).args.scenario, "take_picture");
-assert.deepEqual(actions.at(-1).args.movement, []);
+assert.equal(actions.at(-1).type, "run_scenario");
+assert.equal(actions.at(-1).args.name, "take_picture");
 
 fakeTransport.emit({
   toolCall: {
     functionCalls: [
       {
         id: "follow_1",
-        name: "set_follow_target",
-        args: { label: "bottle", mode: "gentle" }
+        name: "run_scenario",
+        args: { name: "follow_target", label: "bottle", mode: "gentle" }
       }
     ]
   }
 });
 await wait(5);
-assert.equal(actions.at(-1).type, "set_follow_target");
+assert.equal(actions.at(-1).type, "run_scenario");
+assert.equal(actions.at(-1).args.name, "follow_target");
 assert.equal(actions.at(-1).args.label, "bottle");
 
 holdNextAction = true;
@@ -311,11 +308,9 @@ fakeTransport.emit({
     functionCalls: [
       {
         id: "cancel_me",
-        name: "perform",
+        name: "run_scenario",
         args: {
-          movement: ["move_forward_tiny"],
-          timing: "parallel",
-          iterateMovement: false
+          name: "come_closer"
         }
       }
     ]
@@ -333,31 +328,25 @@ heldActionResolve?.();
 await wait(5);
 
 const mappedUnknown = geminiFunctionCallToAction({
-  id: "unknown_move",
-  name: "perform",
+  id: "unknown_scenario",
+  name: "run_scenario",
   args: {
-    movement: ["not_a_movement", "move_forward_tiny"]
+    name: "not_a_scenario"
   }
 });
-assert.equal(mappedUnknown.ok, true);
-const compiled = compileMovementFrames(mappedUnknown.action.args.movement);
-assert.deepEqual(compiled.names, ["move_forward_tiny"]);
-assert.deepEqual(compiled.ignored, ["not_a_movement"]);
+assert.equal(mappedUnknown.ok, false);
+assert.equal(geminiFunctionCallToAction({
+  id: "follow_missing_label",
+  name: "run_scenario",
+  args: { name: "follow_target" }
+}).ok, false);
 
-fakeTransport.emit({
-  toolCall: {
-    functionCalls: [
-      {
-        id: "stop_1",
-        name: "stop",
-        args: { reason: "user_stop" }
-      }
-    ]
-  }
+const mappedStopTool = geminiFunctionCallToAction({
+  id: "stop_1",
+  name: "stop",
+  args: { reason: "user_stop" }
 });
-await wait(5);
-assert.ok(stops.includes("user_stop"));
-assert.equal(sentMessages.at(-1).toolResponse.functionResponses[0].response.output.accepted, true);
+assert.equal(mappedStopTool.ok, false);
 
 await runtime.stop("smoke_done");
 assert.equal(runtime.getStatus().running, false);

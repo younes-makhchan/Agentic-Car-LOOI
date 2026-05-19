@@ -1,6 +1,12 @@
-import { normalizeScenarioName } from "../embodiment/scenarioCatalog.js";
+import {
+  normalizeRunScenarioName,
+  normalizeScenarioName
+} from "../embodiment/scenarioCatalog.js";
 
-export const LOCAL_BRAIN_ALLOWED_ACTIONS = new Set(["perform", "set_follow_target", "follow_target_stop"]);
+export const LOCAL_BRAIN_ALLOWED_ACTIONS = new Set([
+  "run_scenario",
+  "perform"
+]);
 
 const RAW_MOTOR_KEYS = new Set([
   "pwm",
@@ -117,11 +123,20 @@ export function validateBrainAction(action) {
     };
   }
 
-  if (type === "set_follow_target" && typeof args.label !== "string") {
-    return {
-      ok: false,
-      error: "set_follow_target requires label."
-    };
+  if (type === "run_scenario") {
+    const scenario = normalizeRunScenarioName(args.name ?? args.scenario);
+    if (!scenario) {
+      return {
+        ok: false,
+        error: "run_scenario requires a valid scenario name."
+      };
+    }
+    if (scenario === "follow_target" && typeof args.label !== "string") {
+      return {
+        ok: false,
+        error: "run_scenario follow_target requires label."
+      };
+    }
   }
 
   return {
@@ -138,21 +153,15 @@ function sanitizeAllowedAction(action, type, args) {
     reason: typeof action.reason === "string" ? action.reason.slice(0, 240) : undefined
   };
 
-  if (type === "set_follow_target") {
+  if (type === "run_scenario") {
+    const scenario = normalizeRunScenarioName(args.name ?? args.scenario);
     return {
       ...base,
       args: {
+        name: scenario,
         label: typeof args.label === "string" ? args.label.slice(0, 80) : "",
-        mode: ["gentle", "curious", "cautious"].includes(args.mode) ? args.mode : "gentle"
-      }
-    };
-  }
-
-  if (type === "follow_target_stop") {
-    return {
-      ...base,
-      args: {
-        reason: typeof args.reason === "string" ? args.reason.slice(0, 120) : "user_stop_following"
+        mode: ["gentle", "curious", "cautious"].includes(args.mode) ? args.mode : "gentle",
+        reason: typeof args.reason === "string" ? args.reason.slice(0, 120) : ""
       }
     };
   }

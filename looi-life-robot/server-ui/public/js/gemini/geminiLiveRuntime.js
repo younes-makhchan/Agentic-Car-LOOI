@@ -575,25 +575,6 @@ export class GeminiLiveRuntime {
       };
     }
 
-    if (mapped.stop) {
-      this.interrupt("gemini_live_stop_tool");
-      const result = await this.toolExecutor?.emergencyStop?.(mapped.action.args.reason);
-      this.patchStatus({
-        lastToolResult: `stop accepted: ${mapped.action.args.reason}`
-      });
-      return {
-        id,
-        name,
-        response: {
-          output: {
-            accepted: true,
-            action: "stop",
-            result: compactToolResult(result)
-          }
-        }
-      };
-    }
-
     if (!this.toolExecutor?.executeBridgeAction) {
       return {
         id,
@@ -1184,20 +1165,6 @@ function estimateBase64Bytes(base64 = "") {
 
   const padding = value.endsWith("==") ? 2 : value.endsWith("=") ? 1 : 0;
   return Math.max(0, Math.floor((value.length * 3) / 4) - padding);
-}
-
-function compactToolResult(result = null) {
-  if (!result || typeof result !== "object") {
-    return result ?? null;
-  }
-
-  return {
-    status: result.status ?? null,
-    type: result.type ?? null,
-    executed: Boolean(result.executed),
-    physical: Boolean(result.physical),
-    message: result.message ?? ""
-  };
 }
 
 function safeStringify(value) {

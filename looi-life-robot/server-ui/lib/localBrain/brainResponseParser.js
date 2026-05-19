@@ -1,6 +1,9 @@
-import { normalizeScenarioName } from "../../public/js/embodiment/scenarioCatalog.js";
+import {
+  normalizeRunScenarioName,
+  normalizeScenarioName
+} from "../../public/js/embodiment/scenarioCatalog.js";
 
-export const LOCAL_BRAIN_ALLOWED_ACTIONS = new Set(["perform"]);
+export const LOCAL_BRAIN_ALLOWED_ACTIONS = new Set(["perform", "run_scenario"]);
 
 const UNSAFE_ARG_KEYS = new Set([
   "pwm",
@@ -146,12 +149,45 @@ export function validateBrainAction(action) {
     };
   }
 
+  if (type === "run_scenario") {
+    const scenario = normalizeRunScenarioName(args.name ?? args.scenario);
+    if (!scenario) {
+      return {
+        ok: false,
+        error: "run_scenario requires a valid scenario name."
+      };
+    }
+    if (scenario === "follow_target" && typeof args.label !== "string") {
+      return {
+        ok: false,
+        error: "run_scenario follow_target requires label."
+      };
+    }
+
+    return {
+      ok: true,
+      action: {
+        type: "run_scenario",
+        args: sanitizeRunScenarioArgs(args, scenario)
+      }
+    };
+  }
+
   return {
     ok: true,
     action: {
       type: "perform",
       args: sanitizePerformArgs(args)
     }
+  };
+}
+
+function sanitizeRunScenarioArgs(args = {}, scenario) {
+  return {
+    name: scenario,
+    label: typeof args.label === "string" ? args.label.slice(0, 80) : "",
+    mode: ["gentle", "curious", "cautious"].includes(args.mode) ? args.mode : "gentle",
+    reason: typeof args.reason === "string" ? args.reason.slice(0, 120) : ""
   };
 }
 

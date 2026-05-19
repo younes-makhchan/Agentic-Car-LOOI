@@ -259,30 +259,28 @@ function updateVision({ tracker, visionState }, result) {
     getExecutionPolicy: () => ({ localMotionArmed: true, localSpeechAllowed: true, robotConnected: true })
   });
   const setResult = await executor.executeBridgeAction({
-    type: "set_follow_target",
+    type: "run_scenario",
     source: "local_brain",
-    args: { label: "apple" }
+    args: { name: "follow_target", label: "apple" }
   });
   assert.equal(setResult.status, "completed");
   const rejectedStop = await executor.executeBridgeAction({
-    type: "follow_target_stop",
+    type: "run_scenario",
     source: "gemini_live",
-    args: { reason: "conversation_turn" }
+    args: { name: "stop_following", reason: "conversation_turn" }
   });
   assert.equal(rejectedStop.status, "rejected");
   const stopResult = await executor.executeBridgeAction({
-    type: "follow_target_stop",
+    type: "run_scenario",
     source: "local_brain",
-    args: { reason: "test_stop" }
+    args: { name: "stop_following", reason: "test_stop" }
   });
   assert.equal(stopResult.status, "completed");
 }
 
 {
-  assert.equal(LOCAL_BRAIN_ALLOWED_ACTIONS.has("perform"), true);
-  assert.equal(LOCAL_BRAIN_ALLOWED_ACTIONS.has("set_follow_target"), true);
-  assert.equal(LOCAL_BRAIN_ALLOWED_ACTIONS.has("follow_target_stop"), true);
-  assert.equal(validateBrainAction({ type: "set_follow_target", args: { label: "apple" } }).ok, true);
+  assert.deepEqual([...LOCAL_BRAIN_ALLOWED_ACTIONS].sort(), ["perform", "run_scenario"]);
+  assert.equal(validateBrainAction({ type: "run_scenario", args: { name: "follow_target", label: "apple" } }).ok, true);
   assert.equal(validateBrainAction({ type: "raw_motor", args: { pwm: 255 } }).ok, false);
   assert.equal(validateBrainAction({ type: "perform", args: { pwm: 255 } }).ok, false);
 }

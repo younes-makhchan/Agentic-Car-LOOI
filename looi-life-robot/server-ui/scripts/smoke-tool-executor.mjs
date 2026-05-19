@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { MOVEMENTS } from "../public/js/embodiment/movementCatalog.js";
 import { ToolExecutor } from "../public/js/robot/toolExecutor.js";
 
 const logs = [];
@@ -283,7 +284,7 @@ assert.equal(photoScenario.status, "completed");
 assert.equal(photoScenario.detail.scenario, "take_picture");
 assert.deepEqual(photoScenario.detail.scenarioMovement, ["move_backward_tiny"]);
 assert.deepEqual(photoScenario.detail.ignoredMovement, ["move_forward_tiny"]);
-assert.equal(routedMovements.at(-1).action.args.movement.includes("move_backward_tiny"), true);
+assert.equal(routedMovements.at(-1).action.args.movement.includes(MOVEMENTS.move_backward_tiny), true);
 assert.equal(faceEvents.some((event) => event.type === "take_picture"), true);
 assert.equal(faceEvents.some((event) => event.type === "show_photo"), true);
 policy.localCameraAllowed = false;

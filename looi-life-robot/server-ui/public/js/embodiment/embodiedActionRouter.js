@@ -254,8 +254,7 @@ function buildPerformMacro(args = {}, context = {}, log = () => {}) {
   const expression = normalizeExpression(
     args.expression?.emotion ?? args.emotion ?? toneToExpression(tone)
   );
-  const movementNames = uniqueNames(readMovementNames(args.movement));
-  const movement = compileMovementFrames(movementNames, {
+  const movement = compileMovementFrames(args.movement, {
     iterate: args.iterateMovement === true
   });
   const movementFrames = movement.frames.slice(0, 16);
@@ -344,8 +343,7 @@ function buildPerformMacro(args = {}, context = {}, log = () => {}) {
 }
 
 function buildMovementMacro(args = {}, context = {}, log = () => {}) {
-  const movementNames = readMovementNames(args.movement);
-  const movement = compileMovementFrames(movementNames, {
+  const movement = compileMovementFrames(args.movement, {
     iterate: args.iterateMovement === true || args.iterate === true
   });
   const frames = movement.frames.length
@@ -382,31 +380,6 @@ function normalizeSpeech(value = {}) {
     text: typeof value.text === "string" ? value.text.trim().slice(0, 240) : "",
     tone: typeof value.tone === "string" ? value.tone.trim().slice(0, 40) : "soft"
   };
-}
-
-function readMovementNames(input) {
-  if (input && typeof input === "object" && !Array.isArray(input)) {
-    return [];
-  }
-
-  const values = Array.isArray(input) ? input : input ? [input] : [];
-  return values
-    .flatMap((value) => String(value ?? "").split(","))
-    .map((value) => value.trim())
-    .filter(Boolean)
-    .slice(0, 8);
-}
-
-function uniqueNames(values = []) {
-  const seen = new Set();
-  return values.filter((value) => {
-    const key = String(value).trim().toLowerCase();
-    if (!key || seen.has(key)) {
-      return false;
-    }
-    seen.add(key);
-    return true;
-  });
 }
 
 function normalizeExpression(expression) {

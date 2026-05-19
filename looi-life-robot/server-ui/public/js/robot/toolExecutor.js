@@ -1,7 +1,15 @@
-import { movementRequestsMotion } from "../embodiment/movementCatalog.js";
-import { getScenarioDefinition, normalizeScenarioName } from "../embodiment/scenarioCatalog.js";
+import {
+  movementNamesFor,
+  movementRequestsMotion
+} from "../embodiment/movementCatalog.js";
+import {
+  getScenarioDefinition,
+  normalizeRunScenarioName,
+  normalizeScenarioName
+} from "../embodiment/scenarioCatalog.js";
 
 const PHYSICAL_ACTIONS = new Set([
+  "run_scenario",
   "perform",
   "movement",
   "drive",
@@ -12,6 +20,7 @@ const PHYSICAL_ACTIONS = new Set([
 ]);
 
 const ACTION_TYPES = new Set([
+  "run_scenario",
   "perform",
   "speak",
   "movement",
@@ -28,9 +37,7 @@ const ACTION_TYPES = new Set([
   "open_back_camera",
   "switch_camera",
   "close_camera",
-  "capture_snapshot",
-  "set_follow_target",
-  "follow_target_stop"
+  "capture_snapshot"
 ]);
 
 const CAMERA_ACTIONS = new Set([
@@ -173,6 +180,8 @@ export class ToolExecutor {
 
   async executeTool(type, args = {}, action = {}) {
     switch (type) {
+      case "run_scenario":
+        return this.executeRunScenario(args, action);
       case "perform":
         return this.executePerform(args, action);
       case "speak":
@@ -207,10 +216,6 @@ export class ToolExecutor {
         return this.executeCloseCamera(action);
       case "capture_snapshot":
         return this.executeCaptureSnapshot(args, action);
-      case "set_follow_target":
-        return this.executeSetFollowTarget(args, action);
-      case "follow_target_stop":
-        return this.executeFollowTargetStop(args, action);
       default:
         return this.buildResult("rejected", {
           action,
@@ -219,6 +224,59 @@ export class ToolExecutor {
           message: `Unknown action type: ${type}`
         });
     }
+  }
+
+  async executeRunScenario(args = {}, action = {}) {
+    const normalizedArgs = normalizeRunScenarioArgs(args);
+
+    if (!normalizedArgs.name) {
+      return this.buildResult("rejected", {
+        action,
+        executed: false,
+        physical: false,
+        message: "run_scenario requires a valid scenario name."
+      });
+    }
+
+    this.log(
+      `STEP 4 RUN_SCENARIO name=${normalizedArgs.name} label=${normalizedArgs.label || "none"} mode=${normalizedArgs.mode}`
+    );
+
+    if (normalizedArgs.name === "follow_target") {
+      return this.executeFollowTargetScenario({
+        label: normalizedArgs.label,
+        mode: normalizedArgs.mode
+      }, action);
+    }
+
+    if (normalizedArgs.name === "stop_following") {
+      return this.executeStopFollowingScenario({
+        reason: normalizedArgs.reason || "run_scenario_stop_following"
+      }, action);
+    }
+
+    const scenario = getScenarioDefinition(normalizedArgs.name);
+
+    if (!scenario) {
+      return this.buildResult("rejected", {
+        action,
+        executed: false,
+        physical: false,
+        message: `Scenario is not implemented: ${normalizedArgs.name}`
+      });
+    }
+
+    const motionPermission = this.performMotionPermission(action, Boolean(scenario.requiresMotion));
+    return this.executeScenario(scenario, {
+      speech: { text: "", tone: "soft" },
+      movement: [],
+      scenario: scenario.name,
+      timing: scenario.timing ?? "sequence",
+      iterateMovement: Boolean(scenario.iterateMovement)
+    }, action, {
+      motionPermission,
+      allowSpeech: true
+    });
   }
 
   async executePerform(args = {}, action = {}) {
@@ -317,11 +375,16 @@ export class ToolExecutor {
       const scenarioArgs = {
         speech: normalizedArgs.speech,
         movement: [...scenario.movement],
-        timing: "sequence",
-        iterateMovement: false
+        timing: scenario.timing ?? "sequence",
+        iterateMovement: Boolean(scenario.iterateMovement)
+      };
+      const routeAction = {
+        ...action,
+        type: "perform",
+        args: scenarioArgs
       };
 
-      const routeResult = await this.executeEmbodiedRoute({ ...action, args: scenarioArgs }, {
+      const routeResult = await this.executeEmbodiedRoute(routeAction, {
         physical: Boolean(scenario.requiresMotion),
         allowMotion: motionPermission?.allowed === true,
         allowSpeech,
@@ -335,6 +398,21 @@ export class ToolExecutor {
           executed: false,
           physical: Boolean(scenario.requiresMotion),
           message: `Scenario interrupted: ${scenario.name}`
+        });
+      }
+
+      if (!scenario.requiresCamera) {
+        return this.buildResult("completed", {
+          action,
+          executed: true,
+          physical: Boolean(scenario.requiresMotion),
+          message: `Scenario completed: ${scenario.name}`,
+          detail: {
+            scenario: scenario.name,
+            route: routeResult ?? null,
+            ignoredMovement: normalizedArgs.movement,
+            scenarioMovement: movementNamesFor(scenario.movement)
+          }
         });
       }
 
@@ -383,13 +461,13 @@ export class ToolExecutor {
         physical: Boolean(scenario.requiresMotion),
         message: `Scenario completed: ${scenario.name}`,
         detail: {
-          scenario: scenario.name,
-          route: routeResult ?? null,
-          ignoredMovement: normalizedArgs.movement,
-          scenarioMovement: scenario.movement,
-          cameraStatus: sanitizeCameraStatus(snapshotResult.status),
-          snapshot: sanitizeSnapshotMetadata(snapshotResult.snapshot)
-        }
+            scenario: scenario.name,
+            route: routeResult ?? null,
+            ignoredMovement: normalizedArgs.movement,
+            scenarioMovement: movementNamesFor(scenario.movement),
+            cameraStatus: sanitizeCameraStatus(snapshotResult.status),
+            snapshot: sanitizeSnapshotMetadata(snapshotResult.snapshot)
+          }
       });
     } finally {
       if (token === this.scenarioToken) {
@@ -955,7 +1033,7 @@ export class ToolExecutor {
     });
   }
 
-  async executeSetFollowTarget(args = {}, action = {}) {
+  async executeFollowTargetScenario(args = {}, action = {}) {
     const label = normalizeShortText(args.label, 80);
     const mode = ["gentle", "curious", "cautious"].includes(args.mode) ? args.mode : "gentle";
 
@@ -992,8 +1070,8 @@ export class ToolExecutor {
     });
   }
 
-  async executeFollowTargetStop(args = {}, action = {}) {
-    const reason = normalizeShortText(args.reason, 120) || "follow_target_stop";
+  async executeStopFollowingScenario(args = {}, action = {}) {
+    const reason = normalizeShortText(args.reason, 120) || "run_scenario_stop_following";
     const followActive = Boolean(this.followTargetController?.isRunning?.());
 
     if (
@@ -1654,6 +1732,23 @@ function normalizeShortText(value, maxLength) {
   return value.trim().slice(0, maxLength);
 }
 
+function normalizeRunScenarioArgs(args = {}) {
+  const nested = args.args && typeof args.args === "object" && !Array.isArray(args.args)
+    ? args.args
+    : {};
+  const name = normalizeRunScenarioName(
+    args.name ?? args.scenario ?? nested.name ?? nested.scenario
+  );
+  const mode = args.mode ?? nested.mode;
+
+  return {
+    name,
+    label: normalizeShortText(args.label ?? args.targetLabel ?? nested.label ?? nested.targetLabel, 80),
+    mode: ["gentle", "curious", "cautious"].includes(mode) ? mode : "gentle",
+    reason: normalizeShortText(args.reason ?? nested.reason, 120)
+  };
+}
+
 function normalizeDirection(direction) {
   return ["left", "right", "both", "center"].includes(direction) ? direction : "center";
 }
@@ -1714,13 +1809,15 @@ function performRequestsMotion(args = {}) {
 }
 
 function readMovementNames(input) {
-  if (input && typeof input === "object" && !Array.isArray(input)) {
-    return [];
-  }
-
   const values = Array.isArray(input) ? input : input ? [input] : [];
   return values
-    .flatMap((value) => String(value ?? "").split(","))
+    .flatMap((value) => {
+      if (value && typeof value === "object" && !Array.isArray(value)) {
+        return [];
+      }
+
+      return String(value ?? "").split(",");
+    })
     .map((value) => value.trim())
     .filter(Boolean);
 }
