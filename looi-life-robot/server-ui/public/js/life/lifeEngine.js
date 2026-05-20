@@ -307,13 +307,14 @@ export class LifeEngine {
         this.log(`Life event: manual test ${nextEvent.label ?? ""}`.trim());
         break;
       case "stop":
+      case "motion_stop":
         this.state.lastInteractionAt = now;
         this.state.interactionCount += 1;
-        this.respectStopCooldown(nextEvent.cooldownMs ?? 6500);
-        this.face?.setExpression?.(
-          nextEvent.reason === "manual_stop" ? "attentive" : "scared",
-          1
-        );
+        this.state.isMoving = false;
+        this.state.robotMotorState = "stopped";
+        this.state.currentBehavior = "soft_idle";
+        setMood(this.state, "attentive");
+        this.face?.setExpression?.("attentive", 1);
         break;
       case "obstacle":
         this.setObstacle(Boolean(nextEvent.value));
@@ -371,7 +372,7 @@ export class LifeEngine {
       setMood(this.state, "scared");
       this.face?.setExpression?.("scared", 1.1);
       this.lastObstacleStopAt = Date.now();
-      this.commandQueue?.emergencyStop?.("life_obstacle")?.catch?.((error) => {
+      stopCommandQueueMotion(this.commandQueue, "life_obstacle")?.catch?.((error) => {
         this.log(`Obstacle stop failed: ${error.message}`, "error");
       });
     }
@@ -500,7 +501,7 @@ export class LifeEngine {
 
       if (now - this.lastObstacleStopAt > 1000) {
         this.lastObstacleStopAt = now;
-        this.commandQueue?.emergencyStop?.("life_obstacle")?.catch?.((error) => {
+        stopCommandQueueMotion(this.commandQueue, "life_obstacle")?.catch?.((error) => {
           this.log(`Obstacle stop failed: ${error.message}`, "error");
         });
       }
@@ -635,6 +636,14 @@ function normalizeObservationValue(value) {
 
 function normalizeUserPosition(position) {
   return ["left", "center", "right"].includes(position) ? position : "unknown";
+}
+
+function stopCommandQueueMotion(commandQueue, reason) {
+  if (commandQueue?.stopMotion) {
+    return commandQueue.stopMotion(reason);
+  }
+
+  return commandQueue?.cancelMotion?.(reason);
 }
 
 function compactObservation(observation = {}) {

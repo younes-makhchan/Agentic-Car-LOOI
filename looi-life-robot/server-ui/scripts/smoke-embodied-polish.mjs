@@ -63,8 +63,8 @@ const lifeEngine = {
     return lifeState;
   },
   receiveEvent(event) {
-    if (event.type === "stop") {
-      lifeState.stopRespectUntil = Date.now() + 1000;
+    if (event.type === "motion_stop") {
+      lifeState.robotMotorState = "stopped";
     }
     return event;
   },
@@ -77,7 +77,7 @@ const commandQueue = {
     motions.push(command);
     return { ok: true, command };
   },
-  async emergencyStop(reason) {
+  async stopMotion(reason) {
     stops.push(reason);
     return { ok: true, reason };
   },
@@ -153,15 +153,15 @@ const stopSequencer = new ScenarioFrameSequencer({
   logger: () => {}
 });
 const stopResult = await stopSequencer.playFrameSequence({
-  name: "safety_stop",
+  name: "immediate_stop",
   priority: 100,
   interruptible: false,
   requiresMotion: false,
-  frames: [{ type: "event", eventType: "emergency_stop", payload: { reason: "smoke_stop" }, durationMs: 10 }]
+  frames: [{ type: "event", eventType: "motion_stop", payload: { reason: "smoke_stop" }, durationMs: 10 }]
 }, { allowMotion: false });
 assert.equal(stopResult.ok, true);
 assert.equal(stops.includes("smoke_stop"), true);
-lifeState.stopRespectUntil = 0;
+assert.equal(lifeState.robotMotorState, "stopped");
 
 const scheduler = new PriorityScheduler();
 const order = [];

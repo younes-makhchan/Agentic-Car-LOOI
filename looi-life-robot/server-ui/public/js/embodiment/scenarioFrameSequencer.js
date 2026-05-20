@@ -148,12 +148,12 @@ export class ScenarioFrameSequencer {
 
   stop(reason = "sequence_stop") {
     this.interrupt(reason, 100);
-    return this.commandQueue?.emergencyStop?.(reason);
+    return stopCommandQueueMotion(this.commandQueue, reason);
   }
 
   cancel(reason = "sequence_cancelled") {
     this.interrupt(reason, 80);
-    return this.commandQueue?.cancelMotion?.(reason) ?? this.commandQueue?.emergencyStop?.(reason);
+    return stopCommandQueueMotion(this.commandQueue, reason);
   }
 
   interrupt(reason, _priority = 100) {
@@ -182,10 +182,6 @@ export class ScenarioFrameSequencer {
   canPlaySequence(sequence, context = {}) {
     const now = Date.now();
     const lastAt = Number(this.lastSequenceTimes.get(sequence.name) || 0);
-
-    if (Number(this.lifeEngine?.getState?.().stopRespectUntil || 0) > now && sequence.name !== "safety_stop") {
-      return { allowed: false, reason: "stop_cooldown_active" };
-    }
 
     if (sequence.cooldownMs && now - lastAt < sequence.cooldownMs) {
       return { allowed: false, reason: "sequence_cooldown_active" };
@@ -371,13 +367,13 @@ export class ScenarioFrameSequencer {
       return { ok: true, type: "event", eventType: "blink" };
     }
 
-    if (frame.eventType === "emergency_stop") {
-      const reason = frame.payload?.reason ?? "sequence_emergency_stop";
+    if (frame.eventType === "motion_stop") {
+      const reason = frame.payload?.reason ?? "sequence_motion_stop";
       this.voiceOutput?.cancel?.(reason);
-      await this.commandQueue?.emergencyStop?.(reason);
-      this.lifeEngine?.receiveEvent?.({ type: "stop", reason });
+      await stopCommandQueueMotion(this.commandQueue, reason);
+      this.lifeEngine?.receiveEvent?.({ type: "motion_stop", reason });
       await wait(frame.durationMs);
-      return { ok: true, type: "event", eventType: "emergency_stop" };
+      return { ok: true, type: "event", eventType: "motion_stop" };
     }
 
     this.eventBus?.publish?.(frame.eventType, frame.payload ?? {}, {
@@ -471,6 +467,14 @@ export function validateFrameSequence(sequence) {
 function wait(ms) {
   const delay = Math.max(0, Math.min(5000, Number(ms) || 0));
   return delay > 0 ? new Promise((resolve) => globalThis.setTimeout(resolve, delay)) : Promise.resolve();
+}
+
+function stopCommandQueueMotion(commandQueue, reason) {
+  if (commandQueue?.stopMotion) {
+    return commandQueue.stopMotion(reason);
+  }
+
+  return commandQueue?.cancelMotion?.(reason);
 }
 
 function normalizeFrame(frame = {}) {

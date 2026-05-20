@@ -135,7 +135,7 @@ export class EmbodiedActionRouter {
 
 function priorityForAction(action, context) {
   if (action.type === "stop") {
-    return PRIORITY_LEVELS.emergency_stop;
+    return PRIORITY_LEVELS.immediate_stop;
   }
 
   return context.priority ?? PRIORITY_LEVELS.local_brain_action;
@@ -240,18 +240,18 @@ function buildRunSequence(args = {}, context = {}, log = () => {}) {
 
 function buildStopSequence(args = {}) {
   return {
-    name: "safety_stop",
+    name: "immediate_stop",
     description: "Immediate stop with safe expression.",
-    priority: PRIORITY_LEVELS.emergency_stop,
+    priority: PRIORITY_LEVELS.immediate_stop,
     interruptible: false,
     requiresMotion: false,
     cooldownMs: 0,
-    tags: ["stop", "safety"],
+    tags: ["stop"],
     frames: [
-      { type: "face", expression: "scared", intensity: 1.08, eyeDirection: "center", durationMs: 40 },
+      { type: "face", expression: "attentive", intensity: 1, eyeDirection: "center", durationMs: 40 },
       {
         type: "event",
-        eventType: "emergency_stop",
+        eventType: "motion_stop",
         payload: { reason: args.reason ?? "scenario_stop" },
         durationMs: 30
       },

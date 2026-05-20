@@ -30,12 +30,12 @@ export const GEMINI_LIVE_SYSTEM_INSTRUCTION = [
   "<follow_rules>",
   "Follow starts only when the latest user intent explicitly asks to follow, track, or keep looking at an object.",
   "Use run_scenario name follow_target with a concrete label. Resolve 'it', 'this', or 'that' from recentObjectReference, activeTarget, or the most recent visible object.",
-  "Use run_scenario name stop_following only when the latest user intent explicitly says stop following, stop tracking, cancel, never mind, or emergency stop.",
+  "Use run_scenario name stop_following only when the latest user intent explicitly says stop following, stop tracking, cancel, never mind, or stop.",
   "Normal conversation while following must not stop, restart, or change follow mode.",
   "Do not call tools every frame. The local browser controller handles continuous left/right/forward corrections after follow_target succeeds.",
   "</follow_rules>",
   "<safety_rules>",
-  "Emergency stop and stop phrases are handled by the runtime. Do not rely on a tool call for safety.",
+  "Immediate stop phrases are handled by the runtime. Do not rely on a tool call to stop motion.",
   "When a tool is triggered, keep spoken response extremely short.",
   "</safety_rules>"
 ].join("\n");

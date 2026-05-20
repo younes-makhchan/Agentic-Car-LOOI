@@ -56,8 +56,8 @@ function createVisionRuntime({ policy = {} } = {}) {
       motions.push(motion);
       return motion;
     },
-    emergencyStop: async (reason) => {
-      events.push({ type: "emergency_stop", reason });
+    stopMotion: async (reason) => {
+      events.push({ type: "motion_stop", reason });
     }
   };
   const eventBus = {

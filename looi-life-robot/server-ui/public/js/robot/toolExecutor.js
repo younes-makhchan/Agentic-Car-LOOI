@@ -101,13 +101,13 @@ export class ToolExecutor {
     });
   }
 
-  async emergencyStop(reason = "tool_executor_emergency_stop") {
+  async immediateStop(reason = "tool_executor_immediate_stop") {
     this.scenarioToken += 1;
     this.activeScenario = null;
     this.visionScenarioManager?.stopFollowing?.(reason) ?? this.followTargetController?.stop?.(reason);
     this.face?.dismissPhoto?.();
     const dropped = this.executionQueue.splice(0);
-    const stopResult = await this.executeStop({ reason }, { id: "emergency_stop", type: "stop" });
+    const stopResult = await this.executeStop({ reason }, { id: "immediate_stop", type: "stop" });
 
     dropped.forEach(({ action, resolve }) => {
       resolve(
@@ -115,7 +115,7 @@ export class ToolExecutor {
           action,
           executed: false,
           physical: this.isPhysicalAction(action?.type),
-          message: `Dropped by emergency stop: ${reason}`
+          message: `Dropped by immediate stop: ${reason}`
         })
       );
     });
@@ -439,9 +439,9 @@ export class ToolExecutor {
 
     try {
       this.voiceOutput?.cancel?.(reason);
-      await this.commandQueue?.emergencyStop?.(reason);
-      this.lifeEngine?.receiveEvent?.({ type: "stop", reason });
-      this.face?.setExpression?.(reason.includes("emergency") ? "scared" : "attentive", 1);
+      await stopCommandQueueMotion(this.commandQueue, reason);
+      this.lifeEngine?.receiveEvent?.({ type: "motion_stop", reason });
+      this.face?.setExpression?.("attentive", 1);
 
       return this.buildResult("completed", {
         action,
@@ -505,8 +505,7 @@ export class ToolExecutor {
     if (
       action.source === "gemini_live" &&
       followActive &&
-      !isExplicitFollowStopIntent(readLatestUserIntent(this.getRuntimeContext?.())) &&
-      !/emergency/i.test(reason)
+      !isExplicitFollowStopIntent(readLatestUserIntent(this.getRuntimeContext?.()))
     ) {
       return this.buildResult("rejected", {
         action,
@@ -621,11 +620,6 @@ export class ToolExecutor {
 
     if (!this.isMotionArmed(action)) {
       return { allowed: false, reason: `${this.policyLabel(action)}_motion_not_armed` };
-    }
-
-    const stopRespectUntil = Number(this.lifeEngine?.getState?.().stopRespectUntil || 0);
-    if (stopRespectUntil > Date.now()) {
-      return { allowed: false, reason: "stop_cooldown_active" };
     }
 
     if (!this.robotClient?.isConnected?.()) {
@@ -807,7 +801,7 @@ function isExplicitFollowStopIntent(text) {
 
 function priorityForRoutedAction(action = {}, { physical = false } = {}) {
   if (action.type === "stop") {
-    return PRIORITY_LEVELS.emergency_stop;
+    return PRIORITY_LEVELS.immediate_stop;
   }
 
   if (physical) {
@@ -921,6 +915,14 @@ function normalizeShortText(value, maxLength) {
   }
 
   return value.trim().slice(0, maxLength);
+}
+
+function stopCommandQueueMotion(commandQueue, reason) {
+  if (commandQueue?.stopMotion) {
+    return commandQueue.stopMotion(reason);
+  }
+
+  return commandQueue?.cancelMotion?.(reason);
 }
 
 function normalizeRunScenarioArgs(args = {}) {

@@ -416,7 +416,7 @@ ui.localBrainQuickButton.addEventListener("click", () => {
 });
 
 ui.productionStopButton.addEventListener("click", async () => {
-  await emergencyStop("production_top_stop", "Emergency stop sent from production controls.", "error");
+  await immediateStop("production_top_stop", "Immediate stop sent from production controls.", "warn");
 });
 
 ui.settingsToggleButton.addEventListener("click", () => {
@@ -590,7 +590,7 @@ ui.lifeEventsToggle.addEventListener("change", () => {
 });
 
 ui.calibrationTestStopButton.addEventListener("click", async () => {
-  await emergencyStop("calibration_test_stop", "Calibration stop sent.", "error");
+  await immediateStop("calibration_test_stop", "Calibration stop sent.", "warn");
 });
 
 ui.calibrationTestForwardButton.addEventListener("click", () => {
@@ -888,7 +888,7 @@ ui.disconnectEsp32Button.addEventListener("click", async () => {
   }
 
   if (commandQueue) {
-    await commandQueue.emergencyStop(simulatorMode ? "simulator_disconnect" : "ui_disconnect");
+    await commandQueue.stopMotion?.(simulatorMode ? "simulator_disconnect" : "ui_disconnect");
   }
 
   robotClient.disconnect();
@@ -917,11 +917,11 @@ ui.pingButton.addEventListener("click", () => {
 });
 
 ui.stopButton.addEventListener("click", async () => {
-  await emergencyStop("ui_emergency_stop", "Emergency stop sent. Verify motors stopped.");
+  await immediateStop("ui_stop", "Immediate stop sent. Verify motors stopped.", "warn");
 });
 
 ui.manualStopButton.addEventListener("click", async () => {
-  await emergencyStop("manual_stop", "Manual stop sent.", "info");
+  await immediateStop("manual_stop", "Manual stop sent.", "info");
 });
 
 ui.moveForwardButton.addEventListener("click", () => {
@@ -1047,7 +1047,7 @@ ui.scenarioLookAroundButton.addEventListener("click", () => {
 
 ui.scenarioStopButton.addEventListener("click", async () => {
   log("Scenario: Stop / Freeze");
-  await emergencyStop("scenario_stop", "Scenario stop sent.", "error");
+  await immediateStop("scenario_stop", "Scenario stop sent.", "warn");
 });
 
 ui.scenarioBoredButton.addEventListener("click", () => {
@@ -1102,7 +1102,7 @@ ui.keepRobotAwakeToggle?.addEventListener("change", () => {
 });
 
 ui.scenarioRuntimeStopButton?.addEventListener("click", async () => {
-  await emergencyStop("scenario_panel_stop", "Scenario stop sent.", "error");
+  await immediateStop("scenario_panel_stop", "Scenario stop sent.", "warn");
 });
 
 ui.runSimulatorLooiDemoButton?.addEventListener("click", () => {
@@ -1803,7 +1803,7 @@ async function enableSimulatorMode() {
   }
 
   if (realRobotClient?.isConnected()) {
-    await commandQueue?.emergencyStop?.("switch_to_simulator");
+    await commandQueue?.stopMotion?.("switch_to_simulator");
     realRobotClient.disconnect();
   }
 
@@ -1830,7 +1830,7 @@ async function disableSimulatorMode() {
   }
 
   if (simulatedRobotClient?.isConnected()) {
-    await commandQueue?.emergencyStop?.("switch_to_real_esp32");
+    await commandQueue?.stopMotion?.("switch_to_real_esp32");
     simulatedRobotClient.disconnect();
   }
 
@@ -1881,7 +1881,7 @@ function ensureConnected(message) {
   return true;
 }
 
-async function emergencyStop(reason, message, level = "error") {
+async function immediateStop(reason, message, level = "warn") {
   if (!commandQueue && !toolExecutor) {
     log("Robot command queue is still initializing.", "warn");
     return;
@@ -1893,14 +1893,14 @@ async function emergencyStop(reason, message, level = "error") {
   priorityScheduler?.interruptBelow?.(100, reason);
   priorityScheduler?.clear?.();
 
-  if (toolExecutor) {
-    await toolExecutor.emergencyStop(reason);
+  if (toolExecutor?.immediateStop) {
+    await toolExecutor.immediateStop(reason);
   } else {
-    await commandQueue.emergencyStop(reason);
-    lifeEngine?.receiveEvent({ type: "stop", reason });
+    await (commandQueue?.stopMotion?.(reason) ?? commandQueue?.cancelMotion?.(reason));
+    lifeEngine?.receiveEvent({ type: "motion_stop", reason });
   }
 
-  face.setExpression(reason === "manual_stop" ? "attentive" : "scared");
+  face.setExpression("attentive");
   log(message, level);
 }
 
@@ -2012,16 +2012,12 @@ async function handleGatedTranscript(transcript = {}) {
   });
 
   if (gateResult.shouldImmediateStop) {
-    attentionSystem?.enterStopCooldown?.(
-      "local_voice_stop",
-      brainPolicy.stopRespectCooldownMs ?? 8000
-    );
-    await emergencyStop(
+    await immediateStop(
       source === "typed" ? "local_typed_stop" : "local_voice_stop",
       source === "typed"
         ? "Local typed stop phrase detected."
         : "Local voice stop phrase detected.",
-      "error"
+      "warn"
     );
   } else if (!gateResult.accepted) {
     log(`Ignored ${source}: ${text} (${gateResult.classification})`);
@@ -3443,22 +3439,22 @@ async function wheelsLiftedSafetyRoutine() {
     throw new Error("Connect the real ESP32 first. This routine is for wheels-lifted hardware testing.");
   }
 
-  if (!globalThis.confirm?.("Wheels lifted, robot supervised, Emergency Stop visible?")) {
+  if (!globalThis.confirm?.("Wheels lifted, robot supervised, stop control visible?")) {
     return;
   }
 
-  await emergencyStop("wheels_lifted_precheck", "Precheck stop sent.", "warn");
+  await immediateStop("wheels_lifted_precheck", "Precheck stop sent.", "warn");
   const previousMotionArmed = brainPolicy.localMotionArmed;
   patchBrainPolicy({ localMotionArmed: true });
   await waitMs(250);
   await commandQueue.enqueueMotion({ linear: 0.08, angular: 0, durationMs: 140, rampMs: 80, label: "wheels_lifted_tiny_forward" });
-  await commandQueue.emergencyStop("wheels_lifted_forward_stop");
+  await commandQueue.stopMotion("wheels_lifted_forward_stop");
   await waitMs(250);
   await commandQueue.enqueueMotion({ linear: -0.08, angular: 0, durationMs: 140, rampMs: 80, label: "wheels_lifted_tiny_back" });
-  await commandQueue.emergencyStop("wheels_lifted_back_stop");
+  await commandQueue.stopMotion("wheels_lifted_back_stop");
   await waitMs(250);
   await commandQueue.enqueueMotion({ linear: 0, angular: 0.08, durationMs: 140, rampMs: 80, label: "wheels_lifted_tiny_rotate" });
-  await commandQueue.emergencyStop("wheels_lifted_done");
+  await commandQueue.stopMotion("wheels_lifted_done");
   patchBrainPolicy({ localMotionArmed: previousMotionArmed });
   log("Wheels-lifted safety routine complete.", "warn");
 }

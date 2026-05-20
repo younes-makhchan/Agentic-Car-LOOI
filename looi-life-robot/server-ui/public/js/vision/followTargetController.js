@@ -369,10 +369,6 @@ export class FollowTargetController {
       return { allowed: false, reason: "obstacle_active" };
     }
 
-    if (Number(lifeState.stopRespectUntil || 0) > Date.now()) {
-      return { allowed: false, reason: "stop_cooldown_active" };
-    }
-
     if (this.commandQueue?.isBusy?.() || Number(this.commandQueue?.getQueueLength?.() ?? 0) > 1) {
       return { allowed: false, reason: "command_queue_busy" };
     }
@@ -387,7 +383,8 @@ export class FollowTargetController {
     }
 
     this.lastStopAt = now;
-    this.commandQueue?.emergencyStop?.(reason)?.catch?.((error) => {
+    const stop = this.commandQueue?.stopMotion ?? this.commandQueue?.cancelMotion;
+    stop?.call?.(this.commandQueue, reason)?.catch?.((error) => {
       this.log(`Follow stop failed: ${error.message}`, "warn");
     });
   }

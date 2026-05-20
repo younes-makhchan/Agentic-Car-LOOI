@@ -49,7 +49,7 @@ const robotClient = {
 };
 
 const commandQueue = {
-  async emergencyStop(reason) {
+  async stopMotion(reason) {
     stops.push(reason);
     return { ok: true, reason };
   }

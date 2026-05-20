@@ -115,7 +115,8 @@ lifeEngine.setPersonalityProfile(profile);
 lifeEngine.receiveEvent({ type: "user_text", text: "hello" });
 lifeEngine.receiveEvent({ type: "stop", reason: "smoke_stop" });
 assert.equal(lifeEngine.getState().interactionCount >= 2, true);
-assert.equal(lifeEngine.getState().stopRespectUntil > Date.now(), true);
+assert.equal(lifeEngine.getState().stopRespectUntil > Date.now(), false);
+assert.equal(lifeEngine.getState().robotMotorState, "stopped");
 
 lifeEngine.state.stopRespectUntil = 0;
 lifeEngine.state.boredom = 0.9;

@@ -107,7 +107,7 @@ const toolExecutor = {
       message: "mock accepted"
     });
   },
-  emergencyStop(reason) {
+  immediateStop(reason) {
     stops.push(reason);
     return Promise.resolve({
       status: "completed",

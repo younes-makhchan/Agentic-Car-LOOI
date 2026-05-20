@@ -204,10 +204,6 @@ export class LocalBrainEngine {
     }
 
     if (event.type === "local_stop_phrase") {
-      this.attentionSystem?.enterStopCooldown?.(
-        event.payload?.reason ?? "local_stop_phrase",
-        this.policy().stopRespectCooldownMs
-      );
       return this.executeStopNow(event);
     }
 
@@ -240,10 +236,6 @@ export class LocalBrainEngine {
         source: transcript.source ?? "speech",
         timestamp: transcript.timestamp ?? new Date().toISOString()
       };
-      this.attentionSystem?.enterStopCooldown?.(
-        result.reason ?? "local_stop_phrase",
-        this.policy().stopRespectCooldownMs
-      );
       return this.executeStopNow(event);
     }
 
@@ -596,15 +588,6 @@ export class LocalBrainEngine {
         return rejected(action, "Local Motion is disarmed.", true);
       }
 
-      const stopRespectUntil = Number(
-        context.lifeState?.stopRespectUntil ?? this.lifeEngine?.getState?.().stopRespectUntil ?? 0
-      );
-
-      if (stopRespectUntil > Date.now()) {
-        return rejected(action, "Robot is respecting a recent stop/freeze request.", true, {
-          stopRespectUntil
-        });
-      }
     }
 
     if (CAMERA_ACTIONS.has(action.type) && !policy.localCameraAllowed) {

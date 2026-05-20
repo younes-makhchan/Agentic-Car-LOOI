@@ -1,7 +1,7 @@
 const DEFAULT_DEDUPE_MS = 650;
 
 export const PRIORITY_LEVELS = Object.freeze({
-  emergency_stop: 100,
+  immediate_stop: 100,
   local_stop_phrase: 90,
   user_speech_attention: 80,
   direct_user_command: 70,
@@ -32,8 +32,8 @@ export class PriorityScheduler {
       });
     }
 
-    if (normalized.priority >= PRIORITY_LEVELS.emergency_stop) {
-      this.interruptBelow(normalized.priority, "emergency_task");
+    if (normalized.priority >= PRIORITY_LEVELS.immediate_stop) {
+      this.interruptBelow(normalized.priority, "immediate_stop_task");
       this.clear();
     }
 

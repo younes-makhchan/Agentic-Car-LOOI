@@ -96,7 +96,7 @@ lifeEngine.receiveObservation({
 });
 assert.equal(lifeEngine.getState().userVisible, true);
 
-await queue.emergencyStop("smoke_done");
+await queue.stopMotion("smoke_done");
 simulator.disconnect();
 
 console.log(

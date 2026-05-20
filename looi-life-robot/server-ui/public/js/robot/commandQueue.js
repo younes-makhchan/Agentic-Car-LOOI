@@ -15,7 +15,6 @@ export class CommandQueue {
     this.maxDurationMs = maxDurationMs;
     this.queue = [];
     this.busy = false;
-    this.emergency = false;
     this.currentTask = null;
     this.executionToken = 0;
     this.commandCallbacks = new Set();
@@ -92,15 +91,14 @@ export class CommandQueue {
     return pending.length;
   }
 
-  async emergencyStop(reason = "emergency_stop") {
-    this.emergency = true;
+  async stopMotion(reason = "motion_stop") {
     this.executionToken += 1;
 
     const pendingCount = this.clear(reason);
 
     if (this.currentTask) {
       this.recordCommand(this.currentTask, "stopped");
-      this.currentTask.rejectOnce(new Error(`Emergency stop: ${reason}`));
+      this.currentTask.rejectOnce(new Error(`Motion stopped: ${reason}`));
       this.currentTask = null;
     }
 
@@ -111,42 +109,17 @@ export class CommandQueue {
         this.robotClient.stop(reason);
       }
     } catch (error) {
-      this.log(`Emergency stop failed to reach ESP32: ${error.message}`, "error");
+      this.log(`Motion stop failed to reach ESP32: ${error.message}`, "warn");
     }
 
     this.log(
-      `Emergency stop triggered (${reason}). Cleared ${pendingCount} queued command(s).`,
-      "error"
+      `Motion stopped (${reason}). Cleared ${pendingCount} queued command(s).`,
+      "warn"
     );
-
-    this.emergency = false;
   }
 
   async cancelMotion(reason = "motion_cancelled") {
-    this.executionToken += 1;
-
-    const pendingCount = this.clear(reason);
-
-    if (this.currentTask) {
-      this.recordCommand(this.currentTask, "stopped");
-      this.currentTask.rejectOnce(new Error(`Motion cancelled: ${reason}`));
-      this.currentTask = null;
-    }
-
-    this.busy = false;
-
-    try {
-      if (this.robotClient?.isConnected()) {
-        this.robotClient.stop(reason);
-      }
-    } catch (error) {
-      this.log(`Motion cancellation failed to reach ESP32: ${error.message}`, "warn");
-    }
-
-    this.log(
-      `Motion cancelled (${reason}). Cleared ${pendingCount} queued command(s).`,
-      "warn"
-    );
+    return this.stopMotion(reason);
   }
 
   isBusy() {
@@ -171,8 +144,6 @@ export class CommandQueue {
   }
 
   enqueueItem(command) {
-    this.emergency = false;
-
     return new Promise((resolve, reject) => {
       let settled = false;
 
@@ -212,7 +183,7 @@ export class CommandQueue {
   }
 
   async processQueue() {
-    if (this.busy || this.emergency) {
+    if (this.busy) {
       return;
     }
 
