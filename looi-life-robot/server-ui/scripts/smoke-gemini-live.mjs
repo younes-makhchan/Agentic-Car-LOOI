@@ -76,6 +76,16 @@ function createFakeTransport({ onOpen, onMessage, onClose }) {
 const toolExecutor = {
   executeBridgeAction(action) {
     actions.push(action);
+    if (action.type === "run_scenario" && action.args?.name === "back_up") {
+      return Promise.resolve({
+        status: "rejected",
+        type: action.type,
+        executed: false,
+        physical: true,
+        message: "Scenario back_up did not move: local_motion_not_armed"
+      });
+    }
+
     if (holdNextAction) {
       holdNextAction = false;
       return new Promise((resolve) => {
@@ -270,6 +280,26 @@ assert.equal(actions.at(-1).args.name, "body_talking");
 assert.equal(sentMessages.at(-1).toolResponse.functionResponses[0].response.output.accepted, true);
 assert.ok(runtimeLogs.some((entry) => /Gemini tool requests: run_scenario\(/.test(entry.message)));
 assert.equal(runtimeLogs.some((entry) => /GEMINI RX/.test(entry.message)), false);
+
+fakeTransport.emit({
+  toolCall: {
+    functionCalls: [
+      {
+        id: "scenario_rejected",
+        name: "run_scenario",
+        args: {
+          name: "back_up"
+        }
+      }
+    ]
+  }
+});
+await wait(5);
+assert.equal(actions.at(-1).type, "run_scenario");
+assert.equal(actions.at(-1).args.name, "back_up");
+assert.equal(sentMessages.at(-1).toolResponse.functionResponses[0].response.output.accepted, false);
+assert.equal(sentMessages.at(-1).toolResponse.functionResponses[0].response.output.status, "rejected");
+assert.equal(sentMessages.at(-1).toolResponse.functionResponses[0].response.output.executed, false);
 
 fakeTransport.emit({
   toolCall: {

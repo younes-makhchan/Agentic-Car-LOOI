@@ -311,7 +311,48 @@ const faceOnlyMovement = await executor.executeBridgeAction({
 });
 assert.equal(faceOnlyMovement.status, "completed");
 assert.equal(routedMovements.at(-1).context.allowMotion, false);
+
+executor.setEmbodiedActionRouter({
+  async execute(action, context) {
+    routedMovements.push({ action, context });
+    return {
+      ok: true,
+      status: "completed",
+      macro: "perform_embodied",
+      result: {
+        executed: true,
+        partial: true,
+        skippedFrames: ["motion_not_allowed"]
+      }
+    };
+  }
+});
+const disarmedScenario = await executor.executeBridgeAction({
+  id: "scenario_disarmed_1",
+  source: "gemini_live",
+  type: "run_scenario",
+  args: {
+    name: "body_talking"
+  }
+});
+assert.equal(disarmedScenario.status, "rejected");
+assert.equal(disarmedScenario.executed, false);
+assert.match(disarmedScenario.message, /did not move/i);
+
 executor.setEmbodiedActionRouter(null);
+policy.localMotionArmed = true;
+const unroutedScenario = await executor.executeBridgeAction({
+  id: "scenario_unrouted_1",
+  source: "gemini_live",
+  type: "run_scenario",
+  args: {
+    name: "ack_yes"
+  }
+});
+assert.equal(unroutedScenario.status, "rejected");
+assert.equal(unroutedScenario.executed, false);
+assert.match(unroutedScenario.message, /motion_not_executed/i);
+policy.localMotionArmed = false;
 
 const curiousDisarmed = await executor.executeBridgeAction({
   id: "curious_1",

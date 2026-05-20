@@ -591,37 +591,56 @@ export class GeminiLiveRuntime {
       action,
       startedAt: this.now()
     });
-    this.toolExecutor.executeBridgeAction(action)
-      .then((result) => {
-        this.pendingToolCalls.delete(id);
-        this.patchStatus({
-          lastToolResult: `${name}: ${result?.status ?? "completed"}`
-        });
-      })
-      .catch((error) => {
-        this.pendingToolCalls.delete(id);
-        this.patchStatus({
-          lastToolResult: `${name}: failed`,
-          lastError: error.message
-        });
-        this.log(`Gemini Live async tool execution failed: ${error.message}`, "warn");
+
+    try {
+      const result = await this.toolExecutor.executeBridgeAction(action);
+      const status = result?.status ?? "completed";
+      const executed = result?.executed === true;
+      const accepted = ["completed", "queued"].includes(status) && executed;
+
+      this.pendingToolCalls.delete(id);
+      this.patchStatus({
+        lastToolResult: `${name}: ${status}`
       });
 
-    this.patchStatus({
-      lastToolResult: `${name}: accepted`
-    });
-
-    return {
-      id,
-      name,
-      response: {
-        output: {
-          accepted: true,
-          queued: true,
-          action: summarizeGeminiAction(action)
-        }
+      if (!accepted) {
+        this.log(
+          `Gemini Live tool ${name} did not execute: status=${status} message="${result?.message ?? "no result"}"`,
+          "warn"
+        );
       }
-    };
+
+      return {
+        id,
+        name,
+        response: {
+          output: {
+            accepted,
+            queued: false,
+            status,
+            executed,
+            physical: Boolean(result?.physical),
+            message: result?.message ?? status,
+            action: summarizeGeminiAction(action),
+            detail: compactToolResult(result)
+          }
+        }
+      };
+    } catch (error) {
+      this.pendingToolCalls.delete(id);
+      this.patchStatus({
+        lastToolResult: `${name}: failed`,
+        lastError: error.message
+      });
+      this.log(`Gemini Live tool execution failed: ${error.message}`, "warn");
+      return {
+        id,
+        name,
+        response: {
+          error: error.message
+        }
+      };
+    }
   }
 
   async handleToolCallCancellation(ids = []) {
@@ -1149,6 +1168,31 @@ function summarizeToolRequests(functionCalls = [], cancelledIds = []) {
   }
 
   return parts.length ? parts.join(" | ") : "none";
+}
+
+function compactToolResult(result = null) {
+  if (!result || typeof result !== "object") {
+    return null;
+  }
+
+  const route = result.detail?.route ?? null;
+  const routeResult = route?.result ?? null;
+
+  return {
+    actionId: result.actionId ?? null,
+    type: result.type ?? null,
+    status: result.status ?? null,
+    executed: Boolean(result.executed),
+    physical: Boolean(result.physical),
+    routeStatus: route?.status ?? null,
+    macro: route?.macro ?? result.detail?.macro ?? null,
+    partial: Boolean(routeResult?.partial ?? result.detail?.partial),
+    skippedFrames: Array.isArray(routeResult?.skippedFrames)
+      ? routeResult.skippedFrames.slice(0, 8)
+      : undefined,
+    scenario: result.detail?.scenario ?? null,
+    scenarioMovement: result.detail?.scenarioMovement ?? undefined
+  };
 }
 
 function parseAudioRate(mimeType = "") {

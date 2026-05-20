@@ -391,6 +391,7 @@ export class ToolExecutor {
         allowCamera: Boolean(scenario.requiresCamera),
         args: scenarioArgs
       });
+      const routeMotion = inspectRouteMotion(routeResult);
 
       if (token !== this.scenarioToken) {
         return this.buildResult("rejected", {
@@ -401,10 +402,36 @@ export class ToolExecutor {
         });
       }
 
+      if (
+        scenario.requiresMotion &&
+        !scenario.requiresCamera &&
+        (!routeResult || routeMotion.motionSkipped || routeResult.executed === false)
+      ) {
+        const permissionReason = motionPermission?.allowed === false ? motionPermission.reason : "";
+        const reason = routeMotion.reason || permissionReason || "motion_not_executed";
+        const status = reason === "robot_not_connected" || /not connected|disconnected/i.test(reason)
+          ? "failed"
+          : "rejected";
+
+        return this.buildResult(status, {
+          action,
+          executed: false,
+          physical: true,
+          message: `Scenario ${scenario.name} did not move: ${reason}`,
+          detail: {
+            scenario: scenario.name,
+            route: routeResult ?? null,
+            motionPermission,
+            ignoredMovement: normalizedArgs.movement,
+            scenarioMovement: movementNamesFor(scenario.movement)
+          }
+        });
+      }
+
       if (!scenario.requiresCamera) {
         return this.buildResult("completed", {
           action,
-          executed: true,
+          executed: routeResult?.executed !== false,
           physical: Boolean(scenario.requiresMotion),
           message: `Scenario completed: ${scenario.name}`,
           detail: {
@@ -1584,6 +1611,24 @@ function isExplicitFollowStopIntent(text) {
   return /\b(stop following|stop tracking|cancel follow|cancel tracking|forget the target|never mind|nevermind|stop)\b/i.test(
     String(text ?? "")
   );
+}
+
+function inspectRouteMotion(routeResult = null) {
+  const skippedFrames = routeResult?.detail?.route?.result?.skippedFrames
+    ?? routeResult?.detail?.skippedFrames
+    ?? routeResult?.result?.skippedFrames
+    ?? [];
+  const reasons = Array.isArray(skippedFrames)
+    ? skippedFrames.map((reason) => String(reason ?? "")).filter(Boolean)
+    : [];
+  const motionReason = reasons.find((reason) =>
+    /motion|robot_not_connected|not connected|command_queue|disconnected|stop_cooldown|ESP32/i.test(reason)
+  );
+
+  return {
+    motionSkipped: Boolean(motionReason),
+    reason: motionReason || ""
+  };
 }
 
 function wait(ms) {

@@ -210,6 +210,16 @@ export class FollowTargetController {
     return Boolean(this.running);
   }
 
+  setRobotInterfaces({ commandQueue, lifeEngine } = {}) {
+    if (commandQueue) {
+      this.commandQueue = commandQueue;
+    }
+
+    if (lifeEngine) {
+      this.lifeEngine = lifeEngine;
+    }
+  }
+
   computeMotionForTarget(track = {}) {
     const policy = this.policy();
     const base = MODE_SPEEDS[this.mode] ?? MODE_SPEEDS.gentle;

@@ -1911,6 +1911,10 @@ function setActiveRobotClient(nextClient) {
     robotClient,
     commandQueue
   });
+  followTargetController?.setRobotInterfaces?.({
+    commandQueue,
+    lifeEngine
+  });
   macroSequencer?.setCommandQueue?.(commandQueue);
   macroSequencer?.setLifeEngine?.(lifeEngine);
   renderCommandHistory(commandQueue?.getRecentCommands?.() ?? []);
