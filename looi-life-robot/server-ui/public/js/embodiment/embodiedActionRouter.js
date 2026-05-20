@@ -97,6 +97,15 @@ export class EmbodiedActionRouter {
     return this.history.slice(0, Math.max(1, Number(limit) || 20)).map((entry) => ({ ...entry }));
   }
 
+  async cancelActiveSequence(reason = "sequence_cancelled") {
+    if (!this.frameSequencer) {
+      return { ok: false, reason: "frame_sequencer_unavailable" };
+    }
+
+    await this.frameSequencer.cancel?.(reason);
+    return { ok: true, reason };
+  }
+
   record(action, result) {
     const entry = {
       actionType: action?.type,

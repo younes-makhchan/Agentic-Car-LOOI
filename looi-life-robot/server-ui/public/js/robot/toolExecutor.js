@@ -123,6 +123,37 @@ export class ToolExecutor {
     return stopResult;
   }
 
+  async cancelActiveScenario(reason = "scenario_cancelled") {
+    this.scenarioToken += 1;
+    this.activeScenario = null;
+    this.face?.dismissPhoto?.();
+    const dropped = this.executionQueue.splice(0);
+
+    const routedCancel = await this.embodiedActionRouter?.cancelActiveSequence?.(reason);
+    if (!routedCancel?.ok) {
+      await this.commandQueue?.cancelMotion?.(reason);
+    }
+
+    dropped.forEach(({ action, resolve }) => {
+      resolve(
+        this.buildResult("rejected", {
+          action,
+          executed: false,
+          physical: this.isPhysicalAction(action?.type),
+          message: `Dropped by scenario cancel: ${reason}`
+        })
+      );
+    });
+
+    return this.buildResult("completed", {
+      action: { id: `scenario_cancel_${Date.now()}`, type: "cancel_scenario", args: { reason } },
+      executed: true,
+      physical: true,
+      message: `Scenario cancelled: ${reason}`,
+      detail: { reason }
+    });
+  }
+
   getActionHistory() {
     return [...this.actionHistory];
   }
@@ -184,6 +215,20 @@ export class ToolExecutor {
     }
 
     const motionPermission = this.scenarioMotionPermission(action, Boolean(scenario.requiresMotion));
+    if (scenario.requiresMotion && !scenario.requiresCamera && motionPermission.allowed !== true) {
+      return this.buildResult(motionPermission.reason === "robot_not_connected" ? "failed" : "rejected", {
+        action,
+        executed: false,
+        physical: true,
+        message: `Scenario ${scenario.name} did not move: ${motionPermission.reason}`,
+        detail: {
+          scenario: scenario.name,
+          motionPermission,
+          scenarioMovement: movementNamesFor(scenario.movement)
+        }
+      });
+    }
+
     return this.executeScenario(scenario, action, {
       motionPermission,
       allowSpeech: true
@@ -517,11 +562,14 @@ export class ToolExecutor {
         return null;
       }
 
-      return this.buildResult("completed", {
+      const executed = routeResultExecuted(routed);
+      return this.buildResult(executed ? "completed" : "rejected", {
         action: routedAction,
-        executed: routeResultExecuted(routed),
+        executed,
         physical,
-        message: `Embodied sequence ${routed.sequence ?? routedAction.type} completed.`,
+        message: executed
+          ? `Embodied sequence ${routed.sequence ?? routedAction.type} completed.`
+          : `Embodied sequence ${routed.sequence ?? routedAction.type} did not execute.`,
         detail: {
           sequence: routed.sequence ?? null,
           route: routed

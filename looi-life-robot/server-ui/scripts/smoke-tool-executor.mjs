@@ -175,10 +175,8 @@ const disarmedScenario = await executor.executeBridgeAction({
 });
 assert.equal(disarmedScenario.status, "rejected");
 assert.equal(disarmedScenario.executed, false);
-assert.match(disarmedScenario.message, /did not move/i);
-assert.equal(routedSequences.at(-1).context.priority, 70);
-assert.equal(routedSequences.at(-1).action.type, "run_sequence");
-assert.equal(routedSequences.at(-1).action.reason, "run_scenario:body_talking");
+assert.match(disarmedScenario.message, /local_motion_not_armed/i);
+assert.equal(routedSequences.length, 0);
 
 policy.localMotionArmed = true;
 const bodyScenario = await executor.executeBridgeAction({

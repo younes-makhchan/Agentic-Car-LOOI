@@ -151,6 +151,11 @@ export class ScenarioFrameSequencer {
     return this.commandQueue?.emergencyStop?.(reason);
   }
 
+  cancel(reason = "sequence_cancelled") {
+    this.interrupt(reason, 80);
+    return this.commandQueue?.cancelMotion?.(reason) ?? this.commandQueue?.emergencyStop?.(reason);
+  }
+
   interrupt(reason, _priority = 100) {
     this.interruptedBy = reason;
     this.playToken += 1;

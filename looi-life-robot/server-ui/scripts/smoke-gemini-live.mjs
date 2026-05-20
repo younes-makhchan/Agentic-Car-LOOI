@@ -116,6 +116,16 @@ const toolExecutor = {
       physical: true,
       message: reason
     });
+  },
+  cancelActiveScenario(reason) {
+    stops.push(`cancel:${reason}`);
+    return Promise.resolve({
+      status: "completed",
+      type: "cancel_scenario",
+      executed: true,
+      physical: true,
+      message: reason
+    });
   }
 };
 
@@ -353,7 +363,8 @@ fakeTransport.emit({
   }
 });
 await wait(5);
-assert.ok(stops.includes("gemini_tool_call_cancelled"));
+assert.ok(stops.includes("cancel:gemini_tool_call_cancelled"));
+assert.equal(stops.includes("gemini_tool_call_cancelled"), false);
 heldActionResolve?.();
 await wait(5);
 

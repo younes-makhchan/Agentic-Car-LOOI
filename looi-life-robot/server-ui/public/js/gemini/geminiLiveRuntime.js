@@ -670,7 +670,7 @@ export class GeminiLiveRuntime {
     }
 
     this.interruptAudio("gemini_tool_call_cancelled");
-    await this.toolExecutor?.emergencyStop?.("gemini_tool_call_cancelled");
+    await this.toolExecutor?.cancelActiveScenario?.("gemini_tool_call_cancelled");
     this.log(`GEMINI STEP 7 tool cancellation: ${ids.join(", ")}`, "warn");
   }
 

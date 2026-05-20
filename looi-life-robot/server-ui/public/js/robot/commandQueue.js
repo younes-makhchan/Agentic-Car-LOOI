@@ -122,6 +122,33 @@ export class CommandQueue {
     this.emergency = false;
   }
 
+  async cancelMotion(reason = "motion_cancelled") {
+    this.executionToken += 1;
+
+    const pendingCount = this.clear(reason);
+
+    if (this.currentTask) {
+      this.recordCommand(this.currentTask, "stopped");
+      this.currentTask.rejectOnce(new Error(`Motion cancelled: ${reason}`));
+      this.currentTask = null;
+    }
+
+    this.busy = false;
+
+    try {
+      if (this.robotClient?.isConnected()) {
+        this.robotClient.stop(reason);
+      }
+    } catch (error) {
+      this.log(`Motion cancellation failed to reach ESP32: ${error.message}`, "warn");
+    }
+
+    this.log(
+      `Motion cancelled (${reason}). Cleared ${pendingCount} queued command(s).`,
+      "warn"
+    );
+  }
+
   isBusy() {
     return this.busy;
   }
