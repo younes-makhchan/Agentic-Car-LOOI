@@ -161,9 +161,23 @@ assert.equal(setup.setup.systemInstruction.parts[0].text.includes("move_forward_
 assert.ok(setup.setup.systemInstruction.parts[0].text.includes("run_scenario"));
 assert.ok(setup.setup.systemInstruction.parts[0].text.includes("follow_target"));
 assert.ok(setup.setup.systemInstruction.parts[0].text.includes("take_picture"));
+assert.ok(setup.setup.systemInstruction.parts[0].text.includes("eating"));
+assert.ok(setup.setup.systemInstruction.parts[0].text.includes("drinking"));
+assert.ok(setup.setup.systemInstruction.parts[0].text.includes("question"));
+assert.ok(setup.setup.systemInstruction.parts[0].text.includes("angry"));
+assert.ok(setup.setup.systemInstruction.parts[0].text.includes("loving"));
+assert.ok(setup.setup.systemInstruction.parts[0].text.includes("shocked"));
+assert.ok(setup.setup.systemInstruction.parts[0].text.includes("tell_me_about_yourself"));
+assert.ok(setup.setup.systemInstruction.parts[0].text.includes("finish_telling"));
+assert.ok(setup.setup.systemInstruction.parts[0].text.includes("kiss"));
+assert.ok(setup.setup.systemInstruction.parts[0].text.includes("autonomous vision"));
+assert.ok(setup.setup.systemInstruction.parts[0].text.includes("When nobody is speaking"));
+assert.ok(setup.setup.systemInstruction.parts[0].text.includes("do not ask for confirmation"));
+assert.ok(setup.setup.systemInstruction.parts[0].text.includes("Gemini output audio begins"));
+assert.ok(setup.setup.systemInstruction.parts[0].text.includes("do not duplicate"));
 assert.ok(setup.setup.systemInstruction.parts[0].text.includes("<vision_rules>"));
 assert.ok(setup.setup.systemInstruction.parts[0].text.includes("person"));
-assert.ok(setup.setup.systemInstruction.parts[0].text.includes("While follow is active"));
+assert.ok(setup.setup.systemInstruction.parts[0].text.includes("runtime exits follow first"));
 
 const runtime = new GeminiLiveRuntime({
   toolExecutor,
@@ -266,6 +280,7 @@ assert.equal(runtime.getStatus().setupComplete, true);
 assert.equal(runtime.getStatus().lastInputTranscript, "move backward more");
 assert.equal(runtime.getStatus().lastOutputTranscript, "I can move back a little.");
 assert.ok(runtimeLogs.some((entry) => entry.message === "Gemini tool requests: none"));
+assert.equal(actions.some((action) => action.source === "gemini_live_speech_start"), false);
 const visionContextMessage = sentMessages.find((message) => message.realtimeInput?.text?.startsWith("<vision_context>"));
 assert.ok(visionContextMessage, "Gemini Live should receive vision context text");
 assert.ok(visionContextMessage.realtimeInput.text.includes('"mode":"mediapipe_follow"'));
@@ -273,6 +288,221 @@ assert.ok(visionContextMessage.realtimeInput.text.includes('"visibleLabels":"per
 assert.ok(visionContextMessage.realtimeInput.text.includes('"position":"center"'));
 assert.equal(/"confidence"|"distance"|"lastSeenMs"|summary/i.test(visionContextMessage.realtimeInput.text), false);
 assert.equal(/data:image|base64|dataUrl|imageData/i.test(visionContextMessage.realtimeInput.text), false);
+
+fakeTransport.emit({
+  serverContent: {
+    inputTranscription: { text: "tell me about yourself" },
+    outputTranscription: { text: "I am LOOI, your small companion robot." },
+    modelTurn: {
+      parts: [
+        {
+          inlineData: {
+            mimeType: "audio/pcm;rate=24000",
+            data: audioData
+          }
+        }
+      ]
+    }
+  }
+});
+await wait(5);
+assert.ok(actions.some((action) =>
+  action.source === "gemini_live_speech_start" &&
+  action.type === "run_scenario" &&
+  action.args?.name === "tell_me_about_yourself"
+));
+assert.ok(runtimeLogs.some((entry) => entry.message === "Gemini speech-start scenario: tell_me_about_yourself"));
+const speechStartCount = actions.filter((action) => action.source === "gemini_live_speech_start").length;
+fakeTransport.emit({
+  serverContent: {
+    inputTranscription: { text: "tell me about yourself" },
+    outputTranscription: { text: "I am LOOI, your small companion robot." },
+    modelTurn: {
+      parts: [
+        {
+          inlineData: {
+            mimeType: "audio/pcm;rate=24000",
+            data: audioData
+          }
+        }
+      ]
+    }
+  }
+});
+await wait(5);
+assert.equal(actions.filter((action) => action.source === "gemini_live_speech_start").length, speechStartCount);
+
+fakeTransport.emit({
+  serverContent: {
+    outputTranscription: { text: "Ugh, that is frustrating." },
+    modelTurn: {
+      parts: [
+        {
+          inlineData: {
+            mimeType: "audio/pcm;rate=24000",
+            data: audioData
+          }
+        }
+      ]
+    }
+  }
+});
+await wait(5);
+assert.ok(actions.some((action) =>
+  action.source === "gemini_live_speech_start" &&
+  action.args?.name === "angry"
+));
+
+fakeTransport.emit({
+  serverContent: {
+    outputTranscription: { text: "Wow, I just realized what happened." },
+    modelTurn: {
+      parts: [
+        {
+          inlineData: {
+            mimeType: "audio/pcm;rate=24000",
+            data: audioData
+          }
+        }
+      ]
+    }
+  }
+});
+await wait(5);
+assert.ok(actions.some((action) =>
+  action.source === "gemini_live_speech_start" &&
+  action.args?.name === "shocked"
+));
+
+fakeTransport.emit({
+  serverContent: {
+    outputTranscription: { text: "Aww, that is so sweet of you." },
+    modelTurn: {
+      parts: [
+        {
+          inlineData: {
+            mimeType: "audio/pcm;rate=24000",
+            data: audioData
+          }
+        }
+      ]
+    }
+  }
+});
+await wait(5);
+assert.ok(actions.some((action) =>
+  action.source === "gemini_live_speech_start" &&
+  action.args?.name === "loving"
+));
+
+fakeTransport.emit({
+  serverContent: {
+    outputTranscription: { text: "I am confused by that." },
+    modelTurn: {
+      parts: [
+        {
+          inlineData: {
+            mimeType: "audio/pcm;rate=24000",
+            data: audioData
+          }
+        }
+      ]
+    }
+  }
+});
+await wait(5);
+assert.ok(actions.some((action) =>
+  action.source === "gemini_live_speech_start" &&
+  action.args?.name === "question"
+));
+
+const deferredActionsBeforeAudio = actions.length;
+fakeTransport.emit({
+  toolCall: {
+    functionCalls: [
+      {
+        id: "deferred_telling",
+        name: "run_scenario",
+        args: {
+          name: "tell_me_about_yourself"
+        }
+      }
+    ]
+  }
+});
+await wait(5);
+assert.equal(actions.length, deferredActionsBeforeAudio);
+assert.equal(sentMessages.at(-1).toolResponse.functionResponses[0].response.output.accepted, true);
+assert.equal(sentMessages.at(-1).toolResponse.functionResponses[0].response.output.queued, true);
+assert.equal(sentMessages.at(-1).toolResponse.functionResponses[0].response.output.executed, false);
+assert.ok(runtimeLogs.some((entry) =>
+  entry.message === "Gemini deferred speech-start scenario until audio: tell_me_about_yourself"
+));
+
+fakeTransport.emit({
+  serverContent: {
+    outputTranscription: { text: "I am LOOI, your small companion robot." },
+    modelTurn: {
+      parts: [
+        {
+          inlineData: {
+            mimeType: "audio/pcm;rate=24000",
+            data: audioData
+          }
+        }
+      ]
+    }
+  }
+});
+await wait(5);
+assert.equal(actions.length, deferredActionsBeforeAudio + 1);
+assert.equal(actions.at(-1).source, "gemini_live");
+assert.equal(actions.at(-1).args.name, "tell_me_about_yourself");
+assert.ok(runtimeLogs.some((entry) =>
+  entry.message === "Gemini deferred speech-start scenario: tell_me_about_yourself"
+));
+
+const deferredQuestionActionsBeforeAudio = actions.length;
+fakeTransport.emit({
+  toolCall: {
+    functionCalls: [
+      {
+        id: "deferred_question",
+        name: "run_scenario",
+        args: {
+          name: "question"
+        }
+      }
+    ]
+  }
+});
+await wait(5);
+assert.equal(actions.length, deferredQuestionActionsBeforeAudio);
+assert.equal(sentMessages.at(-1).toolResponse.functionResponses[0].response.output.accepted, true);
+assert.equal(sentMessages.at(-1).toolResponse.functionResponses[0].response.output.queued, true);
+
+fakeTransport.emit({
+  serverContent: {
+    outputTranscription: { text: "Could you clarify that for me?" },
+    modelTurn: {
+      parts: [
+        {
+          inlineData: {
+            mimeType: "audio/pcm;rate=24000",
+            data: audioData
+          }
+        }
+      ]
+    }
+  }
+});
+await wait(5);
+assert.equal(actions.length, deferredQuestionActionsBeforeAudio + 1);
+assert.equal(actions.at(-1).source, "gemini_live");
+assert.equal(actions.at(-1).args.name, "question");
+assert.ok(runtimeLogs.some((entry) =>
+  entry.message === "Gemini deferred speech-start scenario: question"
+));
 
 fakeTransport.emit({
   toolCall: {

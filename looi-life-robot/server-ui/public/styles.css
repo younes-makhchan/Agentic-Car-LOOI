@@ -78,6 +78,18 @@ body {
   --photo-time: 2400ms;
   --follow-open-time: 900ms;
   --follow-stop-time: 800ms;
+  --bite-time: 3200ms;
+  --finish-burger-time: 2200ms;
+  --drink-open-time: 1600ms;
+  --finish-drink-time: 1800ms;
+  --question-time: 2200ms;
+  --angry-time: 1800ms;
+  --love-time: 2400ms;
+  --shock-time: 1700ms;
+  --tell-open-time: 1400ms;
+  --tell-loop-time: 1600ms;
+  --tell-finish-time: 1200ms;
+  --kiss-time: 2600ms;
   --look-x: 0px;
   --look-scale-y: 1;
   --glow-dir: 1;
@@ -131,6 +143,33 @@ body {
   background: var(--eye-core);
   box-shadow: 0 0 2px rgba(210, 255, 255, 0.55);
   transition: background 220ms ease, box-shadow 220ms ease;
+}
+
+.looi-eye__lid {
+  position: absolute;
+  z-index: 4;
+  left: -28%;
+  top: -42%;
+  width: 156%;
+  height: 86%;
+  border-radius: 0 0 58% 58% / 0 0 78% 78%;
+  background: var(--eye-bg);
+  transform: translateY(-120%);
+  pointer-events: none;
+}
+
+.looi-eye__love-lid {
+  position: absolute;
+  z-index: 4;
+  left: -18%;
+  top: auto;
+  bottom: -34%;
+  width: 136%;
+  height: 78%;
+  border-radius: 58% 58% 0 0 / 78% 78% 0 0;
+  background: var(--eye-bg);
+  transform: translateY(125%);
+  pointer-events: none;
 }
 
 .looi-eye__scan-line {
@@ -284,6 +323,684 @@ body {
   opacity: 0;
   transform: rotate(8deg);
   pointer-events: none;
+}
+
+.looi-burger {
+  position: absolute;
+  z-index: 6;
+  left: 50%;
+  bottom: 11%;
+  width: clamp(95px, 11vw, 165px);
+  height: clamp(75px, 8vw, 120px);
+  opacity: 0;
+  transform: translate(-50%, 120%) scale(0.86);
+  pointer-events: none;
+}
+
+.looi-burger > * {
+  position: absolute;
+}
+
+.looi-burger__bun-top {
+  left: 8%;
+  top: 0;
+  width: 84%;
+  height: 42%;
+  border-radius: 999px 999px 18px 18px;
+  background: linear-gradient(#ffd36d, #e98725);
+  box-shadow: inset -8px -8px 0 rgba(190, 82, 12, 0.18), 0 0 10px rgba(255, 191, 58, 0.35);
+}
+
+.looi-burger__bun-top::before,
+.looi-burger__bun-top::after {
+  content: "";
+  position: absolute;
+  width: 6px;
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.65);
+}
+
+.looi-burger__bun-top::before {
+  left: 28%;
+  top: 28%;
+  transform: rotate(18deg);
+}
+
+.looi-burger__bun-top::after {
+  right: 24%;
+  top: 34%;
+  transform: rotate(-14deg);
+}
+
+.looi-burger__bite {
+  z-index: 4;
+  right: 3%;
+  top: -7%;
+  width: 36%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: var(--eye-bg);
+  opacity: 0;
+  transform: scale(0.2);
+  box-shadow: -12px 14px 0 -2px var(--eye-bg), -30px 6px 0 -6px var(--eye-bg);
+}
+
+.looi-burger__cheese {
+  left: 12%;
+  top: 42%;
+  width: 76%;
+  height: 18%;
+  background: #ffd830;
+  clip-path: polygon(0 0, 100% 0, 92% 100%, 70% 55%, 48% 100%, 26% 55%, 8% 100%);
+}
+
+.looi-burger__lettuce {
+  left: 10%;
+  top: 52%;
+  width: 80%;
+  height: 18%;
+  background: #35c74a;
+  border-radius: 999px;
+}
+
+.looi-burger__patty {
+  left: 13%;
+  top: 62%;
+  width: 74%;
+  height: 19%;
+  border-radius: 999px;
+  background: #6a2f1b;
+}
+
+.looi-burger__bun-bottom {
+  left: 12%;
+  bottom: 0;
+  width: 76%;
+  height: 25%;
+  border-radius: 12px 12px 999px 999px;
+  background: linear-gradient(#f4a63b, #d56d20);
+}
+
+.looi-eating-mouth {
+  position: absolute;
+  z-index: 5;
+  left: 50%;
+  bottom: calc(11% + clamp(75px, 8vw, 120px) - 2px);
+  width: clamp(52px, 5.2vw, 82px);
+  height: clamp(32px, 3.2vw, 50px);
+  opacity: 0;
+  transform: translate(-50%, 115px) scale(0.72);
+  pointer-events: none;
+}
+
+.looi-eating-mouth::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 54%;
+  width: 72%;
+  height: 72%;
+  border: clamp(5px, 0.6vw, 8px) solid var(--eye-core);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  filter: drop-shadow(0 0 8px rgba(95, 245, 255, 0.72));
+}
+
+.looi-eating-mouth::after {
+  content: "";
+  position: absolute;
+  left: 63%;
+  top: 39%;
+  width: 12%;
+  height: 48%;
+  border-radius: 999px;
+  background: var(--eye-core);
+  transform: rotate(12deg);
+  filter: drop-shadow(0 0 6px rgba(95, 245, 255, 0.65));
+}
+
+.looi-eating-crumb {
+  position: absolute;
+  z-index: 7;
+  left: 50%;
+  top: 61%;
+  width: 8px;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: #ffd36d;
+  opacity: 0;
+  box-shadow: 0 0 8px rgba(255, 211, 109, 0.55);
+  pointer-events: none;
+}
+
+.looi-drink-can {
+  position: absolute;
+  z-index: 8;
+  left: 50%;
+  bottom: 7%;
+  width: clamp(54px, 5.6vw, 88px);
+  height: clamp(98px, 10.4vw, 158px);
+  opacity: 0;
+  transform: translate(-50%, 130%) rotate(-13deg) scale(0.92);
+  border-radius: 13px 13px 20px 20px;
+  background:
+    linear-gradient(105deg, transparent 0 9%, rgba(255, 255, 255, 0.35) 10% 24%, transparent 25% 100%),
+    linear-gradient(90deg, #a53237 0 20%, #ffb5b5 21% 44%, #d74343 45% 72%, #8e272d 73%);
+  box-shadow: inset -8px 0 0 rgba(0, 0, 0, 0.16), 0 0 12px rgba(255, 80, 80, 0.3);
+  pointer-events: none;
+}
+
+.looi-drink-can::before {
+  content: "";
+  position: absolute;
+  left: 9%;
+  right: 9%;
+  top: -8%;
+  height: 13%;
+  border-radius: 50%;
+  background: linear-gradient(#d7eef0, #7a9298);
+  box-shadow: inset 0 -4px 0 rgba(0, 0, 0, 0.18);
+}
+
+.looi-drink-can::after {
+  content: "COLA";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  color: white;
+  font: 900 clamp(10px, 1.25vw, 16px) / 1 "IBM Plex Sans", "Segoe UI", sans-serif;
+  letter-spacing: 0.04em;
+  transform: translate(-50%, -50%) rotate(88deg);
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.25);
+}
+
+.looi-drink-straw {
+  position: absolute;
+  z-index: 7;
+  left: 50%;
+  bottom: calc(7% + clamp(74px, 8vw, 118px));
+  width: clamp(135px, 14.5vw, 230px);
+  height: clamp(118px, 12.5vw, 196px);
+  opacity: 0;
+  transform: translate(-50%, 100px) rotate(-13deg);
+  pointer-events: none;
+  overflow: visible;
+}
+
+.looi-drink-straw__path {
+  fill: none;
+  stroke: #e8e8e8;
+  stroke-width: 5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  filter: drop-shadow(0 1px 0 rgba(0, 0, 0, 0.22));
+}
+
+.looi-drink-straw__shadow {
+  fill: none;
+  stroke: rgba(0, 0, 0, 0.18);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transform: translate(3px, 2px);
+}
+
+.looi-drink-mouth {
+  position: absolute;
+  z-index: 9;
+  left: 54.2%;
+  top: 60.6%;
+  width: clamp(50px, 5vw, 84px);
+  height: clamp(38px, 3.8vw, 64px);
+  opacity: 0;
+  transform: translate(-50%, 22px) scale(0.7);
+  pointer-events: none;
+}
+
+.looi-drink-mouth::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 1;
+  width: 56%;
+  height: 56%;
+  border: clamp(7px, 0.75vw, 10px) solid #62eef3;
+  border-right: 0;
+  border-radius: 999px 0 0 999px;
+  transform: translate(-50%, -50%);
+  filter: drop-shadow(0 0 8px rgba(95, 245, 255, 0.72));
+}
+
+.looi-sip-dot {
+  position: absolute;
+  z-index: 10;
+  left: 54.2%;
+  top: 60.6%;
+  width: clamp(6px, 0.7vw, 11px);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: #62eef3;
+  opacity: 0;
+  box-shadow: 0 0 8px rgba(95, 245, 255, 0.8);
+  pointer-events: none;
+}
+
+.looi-question-mark {
+  position: absolute;
+  z-index: 5;
+  left: 61%;
+  top: 32%;
+  width: clamp(70px, 7.5vw, 120px);
+  height: clamp(96px, 10vw, 160px);
+  opacity: 0;
+  transform: translate(-50%, -50%) translateY(18px) rotate(-12deg) scale(0.55);
+  pointer-events: none;
+  filter: drop-shadow(0 0 10px rgba(139, 120, 255, 0.85));
+}
+
+.looi-question-mark svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.looi-question-mark__stroke {
+  fill: none;
+  stroke: #8b78ff;
+  stroke-width: 18;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.looi-question-mark__highlight {
+  fill: none;
+  stroke: #b7aaff;
+  stroke-width: 8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.55;
+}
+
+.looi-question-mark__dot {
+  fill: #8b78ff;
+  filter: drop-shadow(0 0 8px rgba(139, 120, 255, 0.9));
+}
+
+.looi-thought-dot {
+  position: absolute;
+  z-index: 5;
+  width: clamp(8px, 0.9vw, 14px);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: #b7aaff;
+  opacity: 0;
+  box-shadow: 0 0 8px rgba(139, 120, 255, 0.75);
+  pointer-events: none;
+}
+
+.looi-thought-dot--one {
+  left: 57.5%;
+  top: 39%;
+}
+
+.looi-thought-dot--two {
+  left: 59.2%;
+  top: 36.5%;
+}
+
+.looi-angry-spark {
+  position: absolute;
+  z-index: 5;
+  right: 25%;
+  top: 24%;
+  width: clamp(76px, 7.8vw, 126px);
+  height: clamp(76px, 7.8vw, 126px);
+  opacity: 0;
+  transform: translate(-50%, -50%) rotate(14deg) scale(0.45);
+  pointer-events: none;
+  filter: drop-shadow(0 0 10px rgba(139, 120, 255, 0.9));
+}
+
+.looi-angry-spark svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.looi-angry-spark__main {
+  fill: none;
+  stroke: #8b78ff;
+  stroke-width: 11;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.looi-angry-spark__highlight {
+  fill: none;
+  stroke: #c7bfff;
+  stroke-width: 5;
+  stroke-linecap: round;
+  opacity: 0.7;
+}
+
+.looi-loving-hearts {
+  position: absolute;
+  z-index: 5;
+  right: 23%;
+  top: 22%;
+  width: clamp(90px, 9vw, 150px);
+  height: clamp(95px, 9.5vw, 158px);
+  pointer-events: none;
+}
+
+.looi-loving-heart {
+  position: absolute;
+  width: clamp(16px, 1.7vw, 28px);
+  height: clamp(16px, 1.7vw, 28px);
+  opacity: 0;
+  transform: rotate(-45deg) scale(0.3);
+  background: #ff8bb5;
+  filter: drop-shadow(0 0 8px rgba(255, 139, 181, 0.85));
+}
+
+.looi-loving-heart::before,
+.looi-loving-heart::after {
+  content: "";
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: inherit;
+}
+
+.looi-loving-heart::before {
+  top: -50%;
+  left: 0;
+}
+
+.looi-loving-heart::after {
+  left: 50%;
+  top: 0;
+}
+
+.looi-loving-heart--one {
+  left: 20%;
+  top: 58%;
+}
+
+.looi-loving-heart--two {
+  left: 54%;
+  top: 34%;
+  width: clamp(13px, 1.35vw, 22px);
+  height: clamp(13px, 1.35vw, 22px);
+  background: #ffc1d6;
+}
+
+.looi-loving-heart--three {
+  left: 66%;
+  top: 68%;
+  width: clamp(10px, 1.05vw, 18px);
+  height: clamp(10px, 1.05vw, 18px);
+}
+
+.looi-loving-heart--four {
+  left: 40%;
+  top: 12%;
+  width: clamp(9px, 1vw, 16px);
+  height: clamp(9px, 1vw, 16px);
+  background: #ffc1d6;
+}
+
+.looi-shock-exclaim {
+  position: absolute;
+  z-index: 5;
+  right: 24%;
+  top: 27%;
+  width: clamp(44px, 4.6vw, 78px);
+  height: clamp(92px, 9.2vw, 150px);
+  opacity: 0;
+  transform: translate(-50%, -50%) rotate(12deg) scale(0.45);
+  pointer-events: none;
+  filter: drop-shadow(0 0 9px rgba(255, 214, 77, 0.8));
+}
+
+.looi-shock-exclaim__bar {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: clamp(10px, 1vw, 16px);
+  height: 68%;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #fff0a6, #ffd64d);
+  transform: translateX(-50%) rotate(9deg);
+}
+
+.looi-shock-exclaim__dot {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: clamp(14px, 1.4vw, 22px);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: #ffd64d;
+  transform: translateX(-50%);
+  box-shadow: 0 0 8px rgba(255, 214, 77, 0.8);
+}
+
+.looi-tell-mouth {
+  position: absolute;
+  z-index: 6;
+  left: 50%;
+  top: 60%;
+  width: clamp(40px, 4vw, 66px);
+  height: clamp(24px, 2.6vw, 42px);
+  opacity: 0;
+  transform: translate(-50%, 10px) scale(0.7);
+  pointer-events: none;
+}
+
+.looi-tell-mouth::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 68%;
+  height: 52%;
+  border: clamp(5px, 0.55vw, 7px) solid #71f7f5;
+  border-top: 0;
+  border-left-color: transparent;
+  border-right-color: transparent;
+  border-radius: 0 0 999px 999px;
+  transform: translate(-50%, -50%);
+  filter: drop-shadow(0 0 8px rgba(95, 245, 255, 0.65));
+}
+
+.looi-tell-mic {
+  position: absolute;
+  z-index: 7;
+  width: clamp(72px, 7vw, 115px);
+  height: clamp(150px, 14vw, 235px);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.looi-tell-mic::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: 48%;
+  height: 34%;
+  border-radius: 999px 999px 30px 30px;
+  background: linear-gradient(145deg, #9ed8dc, #6f9dac);
+  transform: translateX(-50%);
+  box-shadow: 0 0 8px rgba(180, 255, 255, 0.18);
+}
+
+.looi-tell-mic::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 32%;
+  width: 14%;
+  height: 64%;
+  border-radius: 999px;
+  background: #86cbd1;
+  transform: translateX(-50%);
+}
+
+.looi-tell-mic__flag {
+  position: absolute;
+  z-index: 2;
+  left: 50%;
+  top: 43%;
+  min-width: 86%;
+  padding: 7px 9px;
+  color: white;
+  text-align: center;
+  font: 900 clamp(10px, 1.2vw, 17px)/1 "IBM Plex Sans", "Segoe UI", sans-serif;
+  border-radius: 6px;
+  transform: translateX(-50%) rotate(-5deg);
+}
+
+.looi-tell-mic--left {
+  left: 31%;
+  bottom: 8%;
+  transform: translate(-120px, 180px) rotate(24deg);
+}
+
+.looi-tell-mic--left .looi-tell-mic__flag {
+  background: #ff9278;
+}
+
+.looi-tell-mic--right {
+  right: 31%;
+  bottom: 8%;
+  transform: translate(120px, 180px) rotate(-24deg);
+}
+
+.looi-tell-mic--right .looi-tell-mic__flag {
+  background: #41c7d8;
+}
+
+.looi-tell-spark {
+  position: absolute;
+  z-index: 8;
+  width: clamp(24px, 2.6vw, 44px);
+  aspect-ratio: 1;
+  opacity: 0;
+  pointer-events: none;
+  filter: drop-shadow(0 0 8px rgba(255, 255, 210, 0.85));
+}
+
+.looi-tell-spark::before,
+.looi-tell-spark::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 100%;
+  height: 18%;
+  border-radius: 999px;
+  background: #fff6b0;
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+
+.looi-tell-spark::after {
+  transform: translate(-50%, -50%) rotate(-45deg);
+}
+
+.looi-tell-spark--one {
+  left: 43%;
+  top: 39%;
+}
+
+.looi-tell-spark--two {
+  right: 39%;
+  top: 37%;
+  width: clamp(18px, 2vw, 34px);
+}
+
+.looi-tell-spark--three {
+  left: 51%;
+  top: 30%;
+  width: clamp(14px, 1.6vw, 28px);
+}
+
+.looi-kiss-mouth {
+  position: absolute;
+  z-index: 8;
+  left: 50%;
+  top: 61%;
+  width: clamp(48px, 4.8vw, 78px);
+  height: clamp(36px, 3.8vw, 62px);
+  opacity: 0;
+  transform: translate(-50%, 10px) scale(0.5);
+  pointer-events: none;
+}
+
+.looi-kiss-mouth::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 60%;
+  height: 58%;
+  border: clamp(6px, 0.65vw, 9px) solid #19d9ff;
+  border-right: 0;
+  border-radius: 999px 0 0 999px;
+  transform: translate(-50%, -50%);
+  filter: drop-shadow(0 0 8px rgba(25, 217, 255, 0.78));
+}
+
+.looi-kiss-mouth::after {
+  content: "";
+  position: absolute;
+  left: 38%;
+  top: 50%;
+  width: 16%;
+  height: 16%;
+  border-radius: 50%;
+  background: #19d9ff;
+  opacity: 0.9;
+  transform: translate(-50%, -50%);
+  filter: drop-shadow(0 0 6px rgba(25, 217, 255, 0.7));
+}
+
+.looi-kiss-heart {
+  position: absolute;
+  z-index: 9;
+  left: 50%;
+  top: 58%;
+  width: clamp(28px, 3vw, 50px);
+  height: clamp(28px, 3vw, 50px);
+  opacity: 0;
+  transform: translate(-50%, -50%) rotate(-45deg) scale(0.25);
+  background: #ff8bb5;
+  filter: drop-shadow(0 0 12px rgba(255, 139, 181, 0.9));
+  pointer-events: none;
+}
+
+.looi-kiss-heart::before,
+.looi-kiss-heart::after {
+  content: "";
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: inherit;
+}
+
+.looi-kiss-heart::before {
+  top: -50%;
+  left: 0;
+}
+
+.looi-kiss-heart::after {
+  left: 50%;
+  top: 0;
 }
 
 .looi-photo-preview {
@@ -478,6 +1195,413 @@ body {
 
 .looi-eye-system.is-follow-stopping .looi-follow-target {
   animation: looiFollowTargetStop var(--follow-stop-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-taking-bite .looi-eyes {
+  animation: looiEatEyes var(--bite-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-taking-bite .looi-eye {
+  animation: looiEatEye var(--bite-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-taking-bite .looi-burger {
+  animation: looiBurgerBiteMove var(--bite-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-taking-bite .looi-burger__bite {
+  animation: looiBiteAppear var(--bite-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-taking-bite .looi-eating-mouth {
+  animation: looiChew var(--bite-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-taking-bite .looi-eating-mouth::before {
+  animation: looiMouthLine var(--bite-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-taking-bite .looi-eating-mouth::after {
+  animation: looiMouthStem var(--bite-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-taking-bite .looi-eating-crumb--one {
+  animation: looiCrumbOne var(--bite-time) ease-out both;
+}
+
+.looi-eye-system.is-taking-bite .looi-eating-crumb--two {
+  animation: looiCrumbTwo var(--bite-time) ease-out both;
+}
+
+.looi-eye-system.is-bitten .looi-burger {
+  opacity: 1;
+  transform: translate(-50%, -4px) scale(0.96);
+}
+
+.looi-eye-system.is-bitten .looi-burger__bite {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.looi-eye-system.is-bitten .looi-eating-mouth {
+  opacity: 1;
+  transform: translate(-50%, 2px) scale(0.9);
+}
+
+.looi-eye-system.is-bitten .looi-eating-mouth::before {
+  left: 44%;
+  top: 42%;
+  width: 58%;
+  height: 34%;
+  border: clamp(5px, 0.6vw, 8px) solid var(--eye-core);
+  border-top: 0;
+  border-left-color: transparent;
+  border-right-color: transparent;
+  border-radius: 0 0 999px 999px;
+  transform: translate(-50%, -50%) rotate(8deg);
+}
+
+.looi-eye-system.is-bitten .looi-eating-mouth::after {
+  opacity: 1;
+  left: 66%;
+  top: 28%;
+  height: 54%;
+  transform: rotate(8deg) scaleY(1);
+}
+
+.looi-eye-system.is-finishing-burger .looi-eyes {
+  animation: looiEatEyes var(--finish-burger-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-finishing-burger .looi-eye {
+  animation: looiEatEye var(--finish-burger-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-finishing-burger .looi-burger {
+  animation: looiBurgerFinishMove var(--finish-burger-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-finishing-burger .looi-burger__bite {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.looi-eye-system.is-finishing-burger .looi-eating-mouth {
+  animation: looiFinishChew var(--finish-burger-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-finishing-burger .looi-eating-mouth::before {
+  animation: looiFinishMouthLine var(--finish-burger-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-finishing-burger .looi-eating-mouth::after {
+  animation: looiFinishMouthStem var(--finish-burger-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-drink-opening .looi-eyes {
+  animation: looiDrinkEyesIn var(--drink-open-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-drink-opening .looi-eye {
+  animation: looiDrinkEyeIn var(--drink-open-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-drink-opening .looi-eye__core,
+.looi-eye-system.is-drink-opening .looi-eye__glow {
+  animation: looiDrinkEyeShapeIn var(--drink-open-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-drink-opening .looi-drink-can {
+  animation: looiDrinkCanIn var(--drink-open-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-drink-opening .looi-drink-straw {
+  animation: looiDrinkStrawIn var(--drink-open-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-drink-opening .looi-drink-mouth {
+  animation: looiDrinkMouthIn var(--drink-open-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-drinking .looi-eyes {
+  transform: translateX(0) scaleY(0.96);
+}
+
+.looi-eye-system.is-drinking .looi-eye {
+  width: clamp(126px, 23vw, 265px);
+  height: clamp(70px, 9.4vw, 136px);
+  transform: translateY(-70px);
+}
+
+.looi-eye-system.is-drinking .looi-eye__core,
+.looi-eye-system.is-drinking .looi-eye__glow {
+  border-radius: 999px 999px 30px 30px / 100% 100% 24px 24px;
+}
+
+.looi-eye-system.is-drinking .looi-drink-can {
+  opacity: 1;
+  transform: translate(-50%, -18px) rotate(-13deg) scale(1);
+}
+
+.looi-eye-system.is-drinking .looi-drink-straw {
+  opacity: 1;
+  transform: translate(-50%, -18px) rotate(-13deg);
+}
+
+.looi-eye-system.is-drinking .looi-drink-mouth {
+  opacity: 1;
+  transform: translate(-50%, 0) scale(1);
+}
+
+.looi-eye-system.is-drinking .looi-sip-dot--one {
+  animation: looiSipDotOne 1600ms ease-out infinite;
+}
+
+.looi-eye-system.is-drinking .looi-sip-dot--two {
+  animation: looiSipDotTwo 1600ms ease-out infinite;
+}
+
+.looi-eye-system.is-drinking .looi-sip-dot--three {
+  animation: looiSipDotThree 1600ms ease-out infinite;
+}
+
+.looi-eye-system.is-drinking .looi-sip-dot--four {
+  animation: looiSipDotFour 1600ms ease-out infinite;
+}
+
+.looi-eye-system.is-finish-drinking .looi-eyes {
+  animation: looiDrinkEyesOut var(--finish-drink-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-finish-drinking .looi-eye {
+  animation: looiDrinkEyeOut var(--finish-drink-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-finish-drinking .looi-eye__core,
+.looi-eye-system.is-finish-drinking .looi-eye__glow {
+  animation: looiDrinkEyeShapeOut var(--finish-drink-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-finish-drinking .looi-drink-can {
+  animation: looiDrinkCanOut var(--finish-drink-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-finish-drinking .looi-drink-straw {
+  animation: looiDrinkStrawOut var(--finish-drink-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-finish-drinking .looi-drink-mouth {
+  animation: looiDrinkMouthOut var(--finish-drink-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-questioning .looi-eyes {
+  animation: looiCuriousEyes var(--question-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-questioning .looi-eye:first-child {
+  animation: looiLeftCuriousEye var(--question-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-questioning .looi-eye:last-child {
+  animation: looiRightCuriousEye var(--question-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-questioning .looi-question-mark {
+  animation: looiQuestionPop var(--question-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-questioning .looi-thought-dot--one {
+  animation: looiQuestionDotOne var(--question-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-questioning .looi-thought-dot--two {
+  animation: looiQuestionDotTwo var(--question-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-angry .looi-eyes {
+  animation: looiAngryShake var(--angry-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-angry .looi-eye:first-child {
+  animation: looiLeftAngryEye var(--angry-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-angry .looi-eye:last-child {
+  animation: looiRightAngryEye var(--angry-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-angry .looi-eye:first-child .looi-eye__lid {
+  animation: looiLeftAngryLid var(--angry-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-angry .looi-eye:last-child .looi-eye__lid {
+  animation: looiRightAngryLid var(--angry-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-angry .looi-angry-spark {
+  animation: looiAngrySparkPop var(--angry-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-loving .looi-eyes {
+  animation: looiLoveEyesMove var(--love-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-loving .looi-eye {
+  animation: looiLoveEyeBounce var(--love-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-loving .looi-eye__core {
+  background: #18d6d0;
+}
+
+.looi-eye-system.is-loving .looi-eye__glow {
+  background: #1834ff;
+}
+
+.looi-eye-system.is-loving .looi-eye__love-lid {
+  animation: looiLoveLid var(--love-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-loving .looi-loving-heart--one {
+  animation: looiHeartFloatOne var(--love-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-loving .looi-loving-heart--two {
+  animation: looiHeartFloatTwo var(--love-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-loving .looi-loving-heart--three {
+  animation: looiHeartFloatThree var(--love-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-loving .looi-loving-heart--four {
+  animation: looiHeartFloatFour var(--love-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-shocked .looi-eyes {
+  animation: looiShockEyesMove var(--shock-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-shocked .looi-eye {
+  animation: looiShockEyePulse var(--shock-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-shocked .looi-shock-exclaim {
+  animation: looiExclaimPop var(--shock-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-shocked .looi-shock-exclaim__bar {
+  animation: looiExclaimBarWiggle var(--shock-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-shocked .looi-shock-exclaim__dot {
+  animation: looiExclaimDotPop var(--shock-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-tell-opening .looi-eyes {
+  animation: looiTellEyesOpen var(--tell-open-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-tell-opening .looi-eye {
+  animation: looiTellEyeOpen var(--tell-open-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-tell-opening .looi-tell-mouth {
+  animation: looiTellMouthOpen var(--tell-open-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-tell-opening .looi-tell-mic--left {
+  animation: looiTellLeftMicOpen var(--tell-open-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-tell-opening .looi-tell-mic--right {
+  animation: looiTellRightMicOpen var(--tell-open-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-tell-opening .looi-tell-spark--one {
+  animation: looiTellSparkOne var(--tell-open-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-tell-opening .looi-tell-spark--two {
+  animation: looiTellSparkTwo var(--tell-open-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-tell-opening .looi-tell-spark--three {
+  animation: looiTellSparkThree var(--tell-open-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-telling .looi-eyes {
+  transform: translateX(0) scaleY(1);
+}
+
+.looi-eye-system.is-telling .looi-eye {
+  transform: translateY(-14px) scale(0.96);
+}
+
+.looi-eye-system.is-telling .looi-tell-mouth {
+  animation: looiTellMouthLoop var(--tell-loop-time) cubic-bezier(0.2, 0.9, 0.25, 1) infinite;
+}
+
+.looi-eye-system.is-telling .looi-tell-mic--left {
+  opacity: 1;
+  transform: translate(0, 0) rotate(24deg);
+}
+
+.looi-eye-system.is-telling .looi-tell-mic--right {
+  opacity: 1;
+  transform: translate(0, 0) rotate(-24deg);
+}
+
+.looi-eye-system.is-telling .looi-tell-spark--one {
+  animation: looiTellSparkOne var(--tell-loop-time) cubic-bezier(0.2, 0.9, 0.25, 1) infinite;
+}
+
+.looi-eye-system.is-telling .looi-tell-spark--two {
+  animation: looiTellSparkTwo var(--tell-loop-time) cubic-bezier(0.2, 0.9, 0.25, 1) infinite;
+}
+
+.looi-eye-system.is-telling .looi-tell-spark--three {
+  animation: looiTellSparkThree var(--tell-loop-time) cubic-bezier(0.2, 0.9, 0.25, 1) infinite;
+}
+
+.looi-eye-system.is-tell-finishing .looi-eyes {
+  animation: looiTellEyesFinish var(--tell-finish-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-tell-finishing .looi-eye {
+  animation: looiTellEyeFinish var(--tell-finish-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-tell-finishing .looi-tell-mouth {
+  animation: looiTellMouthFinish var(--tell-finish-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-tell-finishing .looi-tell-mic--left {
+  animation: looiTellLeftMicFinish var(--tell-finish-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-tell-finishing .looi-tell-mic--right {
+  animation: looiTellRightMicFinish var(--tell-finish-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-kissing .looi-eyes {
+  animation: looiKissEyesMove var(--kiss-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-kissing .looi-eye {
+  animation: looiKissEye var(--kiss-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-kissing .looi-eye__love-lid {
+  animation: looiKissLid var(--kiss-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-kissing .looi-kiss-mouth {
+  animation: looiKissMouth var(--kiss-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-kissing .looi-kiss-heart {
+  animation: looiBigKissHeart var(--kiss-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
 }
 
 .looi-eyes[data-expression="happy"] {
@@ -826,6 +1950,1295 @@ body {
   100% {
     opacity: 0;
     transform: translate(-50%, 130%) rotate(-38deg) scale(0.9);
+  }
+}
+
+@keyframes looiEatEyes {
+  0%,
+  100% {
+    transform: translateX(0) scaleY(1);
+  }
+
+  16%,
+  86% {
+    transform: translateX(0) scaleY(0.94);
+  }
+
+  30%,
+  76% {
+    transform: translateX(0) scaleY(1);
+  }
+}
+
+@keyframes looiEatEye {
+  0%,
+  100% {
+    width: clamp(126px, 25vw, 258px);
+    height: clamp(104px, 20vw, 214px);
+    transform: translateY(-10px) scale(1);
+  }
+
+  20%,
+  74% {
+    width: clamp(116px, 21vw, 232px);
+    height: clamp(106px, 19vw, 214px);
+    transform: translateY(-22px) scale(0.96);
+  }
+
+  42%,
+  56% {
+    width: clamp(124px, 23vw, 248px);
+    height: clamp(102px, 18vw, 204px);
+    transform: translateY(-16px) scale(1.02);
+  }
+}
+
+@keyframes looiBurgerBiteMove {
+  0%,
+  12% {
+    opacity: 0;
+    transform: translate(-50%, 120%) scale(0.86);
+  }
+
+  24% {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+
+  36% {
+    opacity: 1;
+    transform: translate(-50%, -6px) scale(1.02);
+  }
+
+  46% {
+    opacity: 1;
+    transform: translate(-50%, -12px) scale(1.04);
+  }
+
+  56%,
+  100% {
+    opacity: 1;
+    transform: translate(-50%, -4px) scale(0.96);
+  }
+}
+
+@keyframes looiBurgerFinishMove {
+  0% {
+    opacity: 1;
+    transform: translate(-50%, -4px) scale(0.96);
+  }
+
+  24% {
+    opacity: 1;
+    transform: translate(-50%, -10px) scale(0.78);
+  }
+
+  48% {
+    opacity: 1;
+    transform: translate(-50%, -8px) scale(0.55);
+  }
+
+  72% {
+    opacity: 1;
+    transform: translate(-50%, -14px) scale(0.28);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -30px) scale(0.04);
+  }
+}
+
+@keyframes looiBiteAppear {
+  0%,
+  43% {
+    opacity: 0;
+    transform: scale(0.2);
+  }
+
+  49%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes looiChew {
+  0%,
+  18% {
+    opacity: 0;
+    transform: translate(-50%, 115px) scale(0.72);
+  }
+
+  24%,
+  40% {
+    opacity: 1;
+    transform: translate(-50%, 6px) scale(1);
+  }
+
+  48%,
+  56% {
+    opacity: 1;
+    transform: translate(-50%, 14px) scale(1);
+  }
+
+  64%,
+  100% {
+    opacity: 1;
+    transform: translate(-50%, 2px) scale(0.9);
+  }
+}
+
+@keyframes looiFinishChew {
+  0%,
+  12% {
+    opacity: 1;
+    transform: translate(-50%, 2px) scale(0.9);
+  }
+
+  24%,
+  36% {
+    opacity: 1;
+    transform: translate(-50%, 12px) scale(1, 0.48);
+  }
+
+  46%,
+  58% {
+    opacity: 1;
+    transform: translate(-50%, 2px) scale(0.9, 0.58);
+  }
+
+  68%,
+  82% {
+    opacity: 1;
+    transform: translate(-50%, 12px) scale(0.92, 0.42);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -4px) scale(0.7);
+  }
+}
+
+@keyframes looiMouthLine {
+  0%,
+  42% {
+    left: 50%;
+    top: 54%;
+    width: 72%;
+    height: 72%;
+    border: clamp(5px, 0.6vw, 8px) solid var(--eye-core);
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+  }
+
+  48%,
+  56% {
+    left: 50%;
+    top: 58%;
+    width: 72%;
+    height: 16%;
+    border: clamp(5px, 0.6vw, 8px) solid var(--eye-core);
+    border-top: 0;
+    border-left-color: transparent;
+    border-right-color: transparent;
+    border-radius: 0 0 999px 999px;
+    transform: translate(-50%, -50%);
+  }
+
+  64%,
+  100% {
+    left: 44%;
+    top: 42%;
+    width: 58%;
+    height: 34%;
+    border: clamp(5px, 0.6vw, 8px) solid var(--eye-core);
+    border-top: 0;
+    border-left-color: transparent;
+    border-right-color: transparent;
+    border-radius: 0 0 999px 999px;
+    transform: translate(-50%, -50%) rotate(8deg);
+  }
+}
+
+@keyframes looiMouthStem {
+  0%,
+  44% {
+    opacity: 0;
+    left: 66%;
+    top: 38%;
+    height: 44%;
+    transform: rotate(12deg) scaleY(0.4);
+  }
+
+  58%,
+  100% {
+    opacity: 1;
+    left: 66%;
+    top: 28%;
+    height: 54%;
+    transform: rotate(8deg) scaleY(1);
+  }
+}
+
+@keyframes looiFinishMouthLine {
+  0%,
+  42% {
+    left: 44%;
+    top: 42%;
+    width: 58%;
+    height: 34%;
+    border: clamp(5px, 0.6vw, 8px) solid var(--eye-core);
+    border-top: 0;
+    border-left-color: transparent;
+    border-right-color: transparent;
+    border-radius: 0 0 999px 999px;
+    transform: translate(-50%, -50%) rotate(8deg);
+  }
+
+  48%,
+  76% {
+    left: 50%;
+    top: 58%;
+    width: 72%;
+    height: 16%;
+    border: clamp(5px, 0.6vw, 8px) solid var(--eye-core);
+    border-top: 0;
+    border-left-color: transparent;
+    border-right-color: transparent;
+    border-radius: 0 0 999px 999px;
+    transform: translate(-50%, -50%);
+  }
+
+  100% {
+    left: 44%;
+    top: 42%;
+    width: 58%;
+    height: 34%;
+    border: clamp(5px, 0.6vw, 8px) solid var(--eye-core);
+    border-top: 0;
+    border-left-color: transparent;
+    border-right-color: transparent;
+    border-radius: 0 0 999px 999px;
+    transform: translate(-50%, -50%) rotate(8deg);
+  }
+}
+
+@keyframes looiFinishMouthStem {
+  0%,
+  42% {
+    opacity: 1;
+    left: 66%;
+    top: 28%;
+    height: 54%;
+    transform: rotate(8deg) scaleY(1);
+  }
+
+  48%,
+  76%,
+  100% {
+    opacity: 0;
+    left: 66%;
+    top: 38%;
+    height: 44%;
+    transform: rotate(12deg) scaleY(0.4);
+  }
+}
+
+@keyframes looiCrumbOne {
+  0%,
+  46% {
+    opacity: 0;
+    transform: translate(-20px, -10px) scale(0.4);
+  }
+
+  54% {
+    opacity: 1;
+    transform: translate(-48px, -28px) scale(1);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate(-78px, 10px) scale(0.45);
+  }
+}
+
+@keyframes looiCrumbTwo {
+  0%,
+  48% {
+    opacity: 0;
+    transform: translate(18px, -8px) scale(0.4);
+  }
+
+  56% {
+    opacity: 1;
+    transform: translate(52px, -24px) scale(1);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate(82px, 14px) scale(0.45);
+  }
+}
+
+@keyframes looiDrinkEyesIn {
+  0% {
+    transform: translateX(var(--look-x)) scaleY(var(--look-scale-y));
+  }
+
+  100% {
+    transform: translateX(0) scaleY(0.96);
+  }
+}
+
+@keyframes looiDrinkEyeIn {
+  0% {
+    width: clamp(126px, 25vw, 258px);
+    height: clamp(104px, 20vw, 214px);
+    transform: translateY(-10px);
+  }
+
+  100% {
+    width: clamp(126px, 23vw, 265px);
+    height: clamp(70px, 9.4vw, 136px);
+    transform: translateY(-70px);
+  }
+}
+
+@keyframes looiDrinkEyeShapeIn {
+  0% {
+    border-radius: 50%;
+  }
+
+  100% {
+    border-radius: 999px 999px 30px 30px / 100% 100% 24px 24px;
+  }
+}
+
+@keyframes looiDrinkCanIn {
+  0%,
+  15% {
+    opacity: 0;
+    transform: translate(-50%, 130%) rotate(-13deg) scale(0.92);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translate(-50%, -18px) rotate(-13deg) scale(1);
+  }
+}
+
+@keyframes looiDrinkStrawIn {
+  0%,
+  25% {
+    opacity: 0;
+    transform: translate(-50%, 100px) rotate(-13deg);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translate(-50%, -18px) rotate(-13deg);
+  }
+}
+
+@keyframes looiDrinkMouthIn {
+  0%,
+  35% {
+    opacity: 0;
+    transform: translate(-50%, 22px) scale(0.7);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+}
+
+@keyframes looiDrinkEyesOut {
+  0% {
+    transform: translateX(0) scaleY(0.96);
+  }
+
+  100% {
+    transform: translateX(0) scaleY(1);
+  }
+}
+
+@keyframes looiDrinkEyeOut {
+  0% {
+    width: clamp(126px, 23vw, 265px);
+    height: clamp(70px, 9.4vw, 136px);
+    transform: translateY(-70px);
+  }
+
+  100% {
+    width: clamp(126px, 25vw, 258px);
+    height: clamp(104px, 20vw, 214px);
+    transform: translateY(-10px);
+  }
+}
+
+@keyframes looiDrinkEyeShapeOut {
+  0% {
+    border-radius: 999px 999px 30px 30px / 100% 100% 24px 24px;
+  }
+
+  100% {
+    border-radius: 50%;
+  }
+}
+
+@keyframes looiDrinkCanOut {
+  0% {
+    opacity: 1;
+    transform: translate(-50%, -18px) rotate(-13deg) scale(1);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate(-50%, 115%) rotate(-13deg) scale(0.94);
+  }
+}
+
+@keyframes looiDrinkStrawOut {
+  0% {
+    opacity: 1;
+    transform: translate(-50%, -18px) rotate(-13deg);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate(-50%, 86px) rotate(-13deg);
+  }
+}
+
+@keyframes looiDrinkMouthOut {
+  0% {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate(-50%, 22px) scale(0.7);
+  }
+}
+
+@keyframes looiSipDotOne {
+  0%,
+  40% {
+    opacity: 0;
+    transform: translate(-22px, 10px) scale(0.4);
+  }
+
+  50% {
+    opacity: 1;
+    transform: translate(-42px, -10px) scale(1);
+  }
+
+  72%,
+  100% {
+    opacity: 0;
+    transform: translate(-60px, 12px) scale(0.45);
+  }
+}
+
+@keyframes looiSipDotTwo {
+  0%,
+  52% {
+    opacity: 0;
+    transform: translate(18px, 8px) scale(0.4);
+  }
+
+  62% {
+    opacity: 1;
+    transform: translate(34px, -8px) scale(0.9);
+  }
+
+  80%,
+  100% {
+    opacity: 0;
+    transform: translate(50px, 14px) scale(0.45);
+  }
+}
+
+@keyframes looiSipDotThree {
+  0%,
+  36% {
+    opacity: 0;
+    transform: translate(-6px, 4px) scale(0.35);
+  }
+
+  46% {
+    opacity: 0.95;
+    transform: translate(-22px, -18px) scale(0.75);
+  }
+
+  66%,
+  100% {
+    opacity: 0;
+    transform: translate(-34px, -4px) scale(0.35);
+  }
+}
+
+@keyframes looiSipDotFour {
+  0%,
+  58% {
+    opacity: 0;
+    transform: translate(2px, 6px) scale(0.3);
+  }
+
+  68% {
+    opacity: 0.9;
+    transform: translate(20px, -18px) scale(0.65);
+  }
+
+  84%,
+  100% {
+    opacity: 0;
+    transform: translate(34px, -2px) scale(0.3);
+  }
+}
+
+@keyframes looiCuriousEyes {
+  0%,
+  100% {
+    transform: translateX(0) scaleY(1);
+  }
+
+  24% {
+    transform: translateX(16px) scaleY(0.96);
+  }
+
+  54% {
+    transform: translateX(38px) scaleY(1.02);
+  }
+
+  78% {
+    transform: translateX(28px) scaleY(0.98);
+  }
+}
+
+@keyframes looiLeftCuriousEye {
+  0%,
+  100% {
+    transform: translateY(-10px) scale(1);
+  }
+
+  28%,
+  74% {
+    transform: translateY(-6px) scale(0.94);
+  }
+}
+
+@keyframes looiRightCuriousEye {
+  0%,
+  100% {
+    transform: translateY(-10px) scale(1);
+  }
+
+  28% {
+    transform: translateY(-14px) scale(1.03);
+  }
+
+  54%,
+  74% {
+    transform: translateY(-20px) scale(1.08);
+  }
+}
+
+@keyframes looiQuestionPop {
+  0%,
+  16% {
+    opacity: 0;
+    transform: translate(-50%, -50%) translateY(22px) rotate(-22deg) scale(0.35);
+  }
+
+  34% {
+    opacity: 1;
+    transform: translate(-50%, -50%) translateY(-4px) rotate(10deg) scale(1.08);
+  }
+
+  50% {
+    opacity: 1;
+    transform: translate(-50%, -50%) translateY(0) rotate(-8deg) scale(1);
+  }
+
+  70% {
+    opacity: 1;
+    transform: translate(-50%, -50%) translateY(-8px) rotate(6deg) scale(1.03);
+  }
+
+  88%,
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) translateY(-18px) rotate(14deg) scale(0.75);
+  }
+}
+
+@keyframes looiQuestionDotOne {
+  0%,
+  20%,
+  90%,
+  100% {
+    opacity: 0;
+    transform: translateY(14px) scale(0.4);
+  }
+
+  36%,
+  74% {
+    opacity: 0.8;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes looiQuestionDotTwo {
+  0%,
+  26%,
+  90%,
+  100% {
+    opacity: 0;
+    transform: translateY(12px) scale(0.4);
+  }
+
+  44%,
+  76% {
+    opacity: 0.75;
+    transform: translateY(0) scale(0.8);
+  }
+}
+
+@keyframes looiAngryShake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+
+  18% {
+    transform: translateX(-8px);
+  }
+
+  26% {
+    transform: translateX(8px);
+  }
+
+  34% {
+    transform: translateX(-5px);
+  }
+
+  44%,
+  78% {
+    transform: translateX(0);
+  }
+}
+
+@keyframes looiLeftAngryEye {
+  0%,
+  100% {
+    width: clamp(126px, 25vw, 258px);
+    height: clamp(104px, 20vw, 214px);
+    transform: translateY(-10px) rotate(0deg);
+  }
+
+  28%,
+  82% {
+    width: clamp(132px, 19vw, 220px);
+    height: clamp(96px, 14.5vw, 180px);
+    transform: translateY(-4px) rotate(0deg);
+  }
+}
+
+@keyframes looiRightAngryEye {
+  0%,
+  100% {
+    width: clamp(126px, 25vw, 258px);
+    height: clamp(104px, 20vw, 214px);
+    transform: translateY(-10px) rotate(0deg);
+  }
+
+  28%,
+  82% {
+    width: clamp(132px, 19vw, 220px);
+    height: clamp(96px, 14.5vw, 180px);
+    transform: translateY(-4px) rotate(0deg);
+  }
+}
+
+@keyframes looiLeftAngryLid {
+  0%,
+  100% {
+    transform: translateY(-120%) rotate(0deg);
+  }
+
+  28%,
+  82% {
+    transform: translateY(-22%) translateX(2%) rotate(15deg);
+  }
+}
+
+@keyframes looiRightAngryLid {
+  0%,
+  100% {
+    transform: translateY(-120%) rotate(0deg);
+  }
+
+  28%,
+  82% {
+    transform: translateY(-22%) translateX(-2%) rotate(-15deg);
+  }
+}
+
+@keyframes looiAngrySparkPop {
+  0%,
+  18% {
+    opacity: 0;
+    transform: translate(-50%, -50%) rotate(0deg) scale(0.3);
+  }
+
+  32% {
+    opacity: 1;
+    transform: translate(-50%, -50%) rotate(16deg) scale(1.22);
+  }
+
+  46% {
+    opacity: 1;
+    transform: translate(-50%, -50%) rotate(-8deg) scale(1);
+  }
+
+  62%,
+  78% {
+    opacity: 1;
+    transform: translate(-50%, -50%) rotate(12deg) scale(1.08);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) translateY(-14px) rotate(22deg) scale(0.78);
+  }
+}
+
+@keyframes looiLoveEyesMove {
+  0%,
+  100% {
+    transform: translateX(0) scaleY(1);
+  }
+
+  18% {
+    transform: translateX(10px) scaleY(0.94);
+  }
+
+  36%,
+  78% {
+    transform: translateX(18px) scaleY(1);
+  }
+}
+
+@keyframes looiLoveEyeBounce {
+  0%,
+  100% {
+    width: clamp(126px, 25vw, 258px);
+    height: clamp(104px, 20vw, 214px);
+    transform: translateY(-10px) scale(1);
+  }
+
+  22%,
+  82% {
+    width: clamp(136px, 19vw, 220px);
+    height: clamp(92px, 13vw, 160px);
+    transform: translateY(-4px) scale(0.96);
+  }
+
+  42%,
+  58% {
+    transform: translateY(-10px) scale(1.03);
+  }
+}
+
+@keyframes looiLoveLid {
+  0%,
+  100% {
+    transform: translateY(125%);
+  }
+
+  22%,
+  82% {
+    transform: translateY(18%);
+  }
+}
+
+@keyframes looiHeartFloatOne {
+  0%,
+  18% {
+    opacity: 0;
+    transform: translateY(16px) rotate(-45deg) scale(0.3);
+  }
+
+  34% {
+    opacity: 1;
+    transform: translateY(0) rotate(-45deg) scale(1);
+  }
+
+  72% {
+    opacity: 1;
+    transform: translateY(-18px) rotate(-45deg) scale(0.95);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateY(-44px) rotate(-45deg) scale(0.55);
+  }
+}
+
+@keyframes looiHeartFloatTwo {
+  0%,
+  28% {
+    opacity: 0;
+    transform: translateY(14px) rotate(-45deg) scale(0.25);
+  }
+
+  44% {
+    opacity: 1;
+    transform: translateY(0) rotate(-45deg) scale(1);
+  }
+
+  80% {
+    opacity: 0.85;
+    transform: translateY(-24px) rotate(-45deg) scale(0.85);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateY(-48px) rotate(-45deg) scale(0.45);
+  }
+}
+
+@keyframes looiHeartFloatThree {
+  0%,
+  36% {
+    opacity: 0;
+    transform: translateY(10px) rotate(-45deg) scale(0.25);
+  }
+
+  52% {
+    opacity: 0.9;
+    transform: translateY(0) rotate(-45deg) scale(1);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateY(-38px) rotate(-45deg) scale(0.4);
+  }
+}
+
+@keyframes looiHeartFloatFour {
+  0%,
+  46% {
+    opacity: 0;
+    transform: translateY(10px) rotate(-45deg) scale(0.2);
+  }
+
+  60% {
+    opacity: 0.8;
+    transform: translateY(0) rotate(-45deg) scale(1);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateY(-30px) rotate(-45deg) scale(0.35);
+  }
+}
+
+@keyframes looiShockEyesMove {
+  0%,
+  100% {
+    transform: translateX(0) scaleY(1);
+  }
+
+  14% {
+    transform: translateX(-10px) scaleY(1.05);
+  }
+
+  24% {
+    transform: translateX(10px) scaleY(0.96);
+  }
+
+  36%,
+  78% {
+    transform: translateX(0) scaleY(1);
+  }
+}
+
+@keyframes looiShockEyePulse {
+  0%,
+  100% {
+    width: clamp(126px, 25vw, 258px);
+    height: clamp(104px, 20vw, 214px);
+    transform: translateY(-10px) scale(1);
+  }
+
+  18% {
+    width: clamp(142px, 20vw, 230px);
+    height: clamp(118px, 17vw, 205px);
+    transform: translateY(-16px) scale(1.08);
+  }
+
+  34%,
+  76% {
+    width: clamp(126px, 25vw, 258px);
+    height: clamp(104px, 20vw, 214px);
+    transform: translateY(-10px) scale(1);
+  }
+}
+
+@keyframes looiExclaimPop {
+  0%,
+  16% {
+    opacity: 0;
+    transform: translate(-50%, -50%) translateY(16px) rotate(18deg) scale(0.25);
+  }
+
+  28% {
+    opacity: 1;
+    transform: translate(-50%, -50%) translateY(-6px) rotate(-10deg) scale(1.18);
+  }
+
+  42% {
+    opacity: 1;
+    transform: translate(-50%, -50%) translateY(0) rotate(12deg) scale(0.96);
+  }
+
+  62%,
+  80% {
+    opacity: 1;
+    transform: translate(-50%, -50%) translateY(-4px) rotate(8deg) scale(1);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) translateY(-18px) rotate(20deg) scale(0.72);
+  }
+}
+
+@keyframes looiExclaimBarWiggle {
+  0%,
+  100% {
+    transform: translateX(-50%) rotate(9deg);
+  }
+
+  28% {
+    transform: translateX(-50%) rotate(-8deg);
+  }
+
+  42% {
+    transform: translateX(-50%) rotate(14deg);
+  }
+
+  62% {
+    transform: translateX(-50%) rotate(5deg);
+  }
+}
+
+@keyframes looiExclaimDotPop {
+  0%,
+  20% {
+    transform: translateX(-50%) scale(0.4);
+  }
+
+  30% {
+    transform: translateX(-50%) scale(1.25);
+  }
+
+  42%,
+  80% {
+    transform: translateX(-50%) scale(1);
+  }
+
+  100% {
+    transform: translateX(-50%) scale(0.55);
+  }
+}
+
+@keyframes looiTellEyesOpen {
+  0% {
+    transform: translateX(0) scaleY(1);
+  }
+
+  40% {
+    transform: translateX(-10px) scaleY(0.98);
+  }
+
+  100% {
+    transform: translateX(0) scaleY(1);
+  }
+}
+
+@keyframes looiTellEyeOpen {
+  0% {
+    transform: translateY(-18px) scale(1);
+  }
+
+  100% {
+    transform: translateY(-14px) scale(0.96);
+  }
+}
+
+@keyframes looiTellMouthOpen {
+  0%,
+  35% {
+    opacity: 0;
+    transform: translate(-50%, 10px) scale(0.7);
+  }
+
+  70% {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1.12, 1);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1, 0.55);
+  }
+}
+
+@keyframes looiTellMouthLoop {
+  0%,
+  100% {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1, 0.55);
+  }
+
+  50% {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1.12, 1);
+  }
+}
+
+@keyframes looiTellMouthFinish {
+  0% {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1, 0.55);
+  }
+
+  45% {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1.05, 0.65);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate(-50%, 10px) scale(0.7);
+  }
+}
+
+@keyframes looiTellEyesFinish {
+  0%,
+  100% {
+    transform: translateX(0) scaleY(1);
+  }
+}
+
+@keyframes looiTellEyeFinish {
+  0% {
+    transform: translateY(-14px) scale(0.96);
+  }
+
+  100% {
+    transform: translateY(-18px) scale(1);
+  }
+}
+
+@keyframes looiTellLeftMicOpen {
+  0% {
+    opacity: 0;
+    transform: translate(-120px, 180px) rotate(24deg);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translate(0, 0) rotate(24deg);
+  }
+}
+
+@keyframes looiTellRightMicOpen {
+  0% {
+    opacity: 0;
+    transform: translate(120px, 180px) rotate(-24deg);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translate(0, 0) rotate(-24deg);
+  }
+}
+
+@keyframes looiTellLeftMicFinish {
+  0% {
+    opacity: 1;
+    transform: translate(0, 0) rotate(24deg);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate(-90px, 150px) rotate(24deg);
+  }
+}
+
+@keyframes looiTellRightMicFinish {
+  0% {
+    opacity: 1;
+    transform: translate(0, 0) rotate(-24deg);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate(90px, 150px) rotate(-24deg);
+  }
+}
+
+@keyframes looiTellSparkOne {
+  0%,
+  36%,
+  54%,
+  100% {
+    opacity: 0;
+    transform: scale(0.4) rotate(0);
+  }
+
+  44% {
+    opacity: 1;
+    transform: scale(1.15) rotate(20deg);
+  }
+
+  50% {
+    opacity: 0.8;
+    transform: scale(0.85) rotate(-12deg);
+  }
+}
+
+@keyframes looiTellSparkTwo {
+  0%,
+  50%,
+  68%,
+  100% {
+    opacity: 0;
+    transform: scale(0.35) rotate(0);
+  }
+
+  56% {
+    opacity: 1;
+    transform: scale(1) rotate(-18deg);
+  }
+
+  62% {
+    opacity: 0.75;
+    transform: scale(0.8) rotate(12deg);
+  }
+}
+
+@keyframes looiTellSparkThree {
+  0%,
+  28%,
+  42%,
+  100% {
+    opacity: 0;
+    transform: scale(0.3) rotate(0);
+  }
+
+  34% {
+    opacity: 0.9;
+    transform: scale(1) rotate(18deg);
+  }
+}
+
+@keyframes looiKissEyesMove {
+  0%,
+  100% {
+    transform: translateX(0) scaleY(1);
+  }
+
+  24%,
+  72% {
+    transform: translateX(-26px) scaleY(0.98);
+  }
+}
+
+@keyframes looiKissEye {
+  0%,
+  100% {
+    width: clamp(126px, 25vw, 258px);
+    height: clamp(104px, 20vw, 214px);
+    transform: translateY(-18px) scale(1);
+  }
+
+  26%,
+  76% {
+    width: clamp(136px, 19vw, 220px);
+    height: clamp(92px, 13vw, 160px);
+    transform: translateY(-8px) scale(0.96);
+  }
+}
+
+@keyframes looiKissLid {
+  0%,
+  100% {
+    transform: translateY(125%);
+  }
+
+  26%,
+  76% {
+    transform: translateY(14%);
+  }
+}
+
+@keyframes looiKissMouth {
+  0%,
+  12% {
+    opacity: 0;
+    transform: translate(-50%, 18px) scale(0.3) rotate(-8deg);
+  }
+
+  22% {
+    opacity: 1;
+    transform: translate(-50%, 2px) scale(1.15, 0.9) rotate(0deg);
+  }
+
+  34% {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(0.82, 1.08) rotate(0deg);
+  }
+
+  46% {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(0.92) rotate(0deg);
+  }
+
+  64%,
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -8px) scale(0.25) rotate(8deg);
+  }
+}
+
+@keyframes looiBigKissHeart {
+  0%,
+  38% {
+    opacity: 0;
+    transform: translate(-50%, -50%) rotate(-45deg) scale(0.25);
+  }
+
+  48% {
+    opacity: 1;
+    transform: translate(-50%, -50%) rotate(-45deg) scale(1);
+  }
+
+  72% {
+    opacity: 0.65;
+    transform: translate(-50%, -50%) rotate(-45deg) scale(10);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) rotate(-45deg) scale(34);
   }
 }
 

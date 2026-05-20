@@ -48,6 +48,13 @@ export class GeminiLiveRuntime {
     this.pendingToolCalls = new Map();
     this.lastVisionContextSignature = "";
     this.lastVisionContextSentAt = 0;
+    this.lastSpeechStartScenarioSignature = "";
+    this.lastSpeechStartScenarioName = "";
+    this.lastSpeechStartScenarioAt = 0;
+    this.lastAcceptedRunScenarioName = "";
+    this.lastAcceptedRunScenarioAt = 0;
+    this.deferredSpeechStartScenario = null;
+    this.speechStartFinishTimer = 0;
     this.runToken = 0;
     this.audioDebug = {
       sentInputFrames: 0,
@@ -471,7 +478,7 @@ export class GeminiLiveRuntime {
       });
     }
 
-    this.handleTranscriptions(message);
+    const transcriptions = this.handleTranscriptions(message);
 
     if (message.serverContent?.interrupted) {
       this.interruptAudio("gemini_server_interrupted");
@@ -483,7 +490,7 @@ export class GeminiLiveRuntime {
       this.audioDebug.receivedAudioChunks += audioChunks.length;
       this.audioDebug.receivedAudioBytes += bytes;
     }
-    audioChunks.forEach((chunk) => this.enqueueOutputAudio(chunk.data, chunk.mimeType));
+    audioChunks.forEach((chunk) => this.enqueueOutputAudio(chunk.data, chunk.mimeType, transcriptions));
 
     const functionCalls = readFunctionCalls(message);
     const cancelledToolCallIds = readToolCallCancellationIds(message);
@@ -532,7 +539,13 @@ export class GeminiLiveRuntime {
         source: "gemini_live",
         priority: 1
       });
+
+      if (this.status.audioPlaying || this.activeOutputSources.size > 0) {
+        this.maybeTriggerSpeechStartScenario({ inputText, outputText });
+      }
     }
+
+    return { inputText, outputText };
   }
 
   async handleToolCalls(functionCalls = []) {
@@ -585,6 +598,11 @@ export class GeminiLiveRuntime {
     }
 
     const action = mapped.action;
+
+    if (this.shouldDeferSpeechStartToolCall(action)) {
+      return this.deferSpeechStartToolCall({ id, name, action });
+    }
+
     this.pendingToolCalls.set(id, {
       name,
       action,
@@ -607,6 +625,8 @@ export class GeminiLiveRuntime {
           `Gemini Live tool ${name} did not execute: status=${status} message="${result?.message ?? "no result"}"`,
           "warn"
         );
+      } else if (action.type === "run_scenario") {
+        this.rememberAcceptedRunScenario(action.args?.name);
       }
 
       return {
@@ -651,6 +671,12 @@ export class GeminiLiveRuntime {
         return;
       }
 
+      if (this.deferredSpeechStartScenario?.id === key) {
+        cancelled.push(this.deferredSpeechStartScenario);
+        this.deferredSpeechStartScenario = null;
+        return;
+      }
+
       const pending = this.pendingToolCalls.get(key);
       if (pending) {
         cancelled.push(pending);
@@ -673,11 +699,13 @@ export class GeminiLiveRuntime {
     this.log(`GEMINI STEP 7 tool cancellation: ${ids.join(", ")}`, "warn");
   }
 
-  enqueueOutputAudio(base64Data, mimeType = "") {
+  enqueueOutputAudio(base64Data, mimeType = "", speechContext = {}) {
     if (!base64Data) {
       this.log("GEMINI AUDIO skip empty output chunk", "warn");
       return;
     }
+
+    globalThis.clearTimeout(this.speechStartFinishTimer);
 
     if (!this.ensureOutputAudioContext()) {
       this.patchStatus({ lastError: "Web Audio output is unavailable." });
@@ -716,6 +744,9 @@ export class GeminiLiveRuntime {
     };
     source.start(startAt);
     this.audioDebug.queuedOutputChunks += 1;
+    if (!this.triggerDeferredSpeechStartScenario()) {
+      this.maybeTriggerSpeechStartScenario(speechContext);
+    }
     this.face?.setSpeaking?.(true);
     this.lifeEngine?.setSpeaking?.(true);
     this.patchStatus({
@@ -759,6 +790,8 @@ export class GeminiLiveRuntime {
       }
     });
     this.activeOutputSources.clear();
+    this.deferredSpeechStartScenario = null;
+    globalThis.clearTimeout(this.speechStartFinishTimer);
     this.nextOutputTime = this.outputAudioContext?.currentTime ?? 0;
     this.face?.setSpeaking?.(false);
     this.lifeEngine?.setSpeaking?.(false);
@@ -846,7 +879,242 @@ export class GeminiLiveRuntime {
     if (!playing) {
       this.face?.setSpeaking?.(false);
       this.lifeEngine?.setSpeaking?.(false);
+      this.scheduleSpeechStartScenarioFinish();
     }
+  }
+
+  scheduleSpeechStartScenarioFinish() {
+    globalThis.clearTimeout(this.speechStartFinishTimer);
+
+    if (this.lastSpeechStartScenarioName !== "tell_me_about_yourself") {
+      return false;
+    }
+
+    if (this.face?.isTellingActive?.() !== true) {
+      return false;
+    }
+
+    this.speechStartFinishTimer = globalThis.setTimeout(() => {
+      if (this.hasOutputAudioInFlight() || this.face?.isTellingActive?.() !== true) {
+        return;
+      }
+
+      this.executeSpeechStartScenarioAction({
+        id: `gemini_speech_finish_telling_${this.now()}`,
+        source: "gemini_live_speech_finish",
+        type: "run_scenario",
+        args: {
+          name: "finish_telling",
+          reason: "gemini_output_audio_ended"
+        },
+        reason: "gemini_live_speech_finish"
+      }, {
+        signature: `finish_telling:${this.now()}`,
+        logMessage: "Gemini speech-finish scenario"
+      });
+    }, 650);
+
+    return true;
+  }
+
+  maybeTriggerSpeechStartScenario({ inputText = "", outputText = "" } = {}) {
+    if (!this.toolExecutor?.executeBridgeAction) {
+      return false;
+    }
+
+    if (!String(outputText ?? "").trim()) {
+      return false;
+    }
+
+    const scenarioName = selectSpeechStartScenario({
+      inputText,
+      outputText
+    });
+
+    if (!scenarioName) {
+      return false;
+    }
+
+    const now = this.now();
+    const signature = buildSpeechStartScenarioSignature({
+      scenarioName,
+      inputText,
+      outputText
+    });
+    const scenarioCooldownMs = speechStartScenarioCooldownMs(scenarioName);
+
+    if (
+      this.lastSpeechStartScenarioSignature === signature &&
+      now - this.lastSpeechStartScenarioAt < 12_000
+    ) {
+      return false;
+    }
+
+    if (
+      this.lastSpeechStartScenarioName === scenarioName &&
+      now - this.lastSpeechStartScenarioAt < scenarioCooldownMs
+    ) {
+      return false;
+    }
+
+    if (
+      this.lastAcceptedRunScenarioName === scenarioName &&
+      now - this.lastAcceptedRunScenarioAt < 5_000
+    ) {
+      return false;
+    }
+
+    const action = {
+      id: `gemini_speech_start_${scenarioName}_${now}`,
+      source: "gemini_live_speech_start",
+      type: "run_scenario",
+      args: {
+        name: scenarioName,
+        reason: "gemini_output_audio_started"
+      },
+      reason: "gemini_live_speech_start"
+    };
+
+    return this.executeSpeechStartScenarioAction(action, {
+      signature,
+      logMessage: "Gemini speech-start scenario"
+    });
+  }
+
+  shouldDeferSpeechStartToolCall(action = {}) {
+    return Boolean(
+      action.type === "run_scenario" &&
+      isSpeechStartScenarioName(action.args?.name) &&
+      !this.hasOutputAudioInFlight()
+    );
+  }
+
+  hasOutputAudioInFlight() {
+    return Boolean(this.status.audioPlaying || this.activeOutputSources.size > 0);
+  }
+
+  deferSpeechStartToolCall({ id, name, action } = {}) {
+    const scenarioName = String(action?.args?.name ?? "").trim();
+    const now = this.now();
+    const expiresAt = now + 12_000;
+
+    this.deferredSpeechStartScenario = {
+      id,
+      name,
+      action,
+      scenarioName,
+      createdAt: now,
+      expiresAt
+    };
+    this.patchStatus({
+      lastToolResult: `${name}: queued_for_audio`
+    });
+    this.log(`Gemini deferred speech-start scenario until audio: ${scenarioName}`);
+
+    return {
+      id,
+      name,
+      response: {
+        output: {
+          accepted: true,
+          queued: true,
+          status: "queued",
+          executed: false,
+          physical: false,
+          message: `Scenario ${scenarioName} queued until Gemini output audio starts.`,
+          action: summarizeGeminiAction(action),
+          detail: {
+            scenario: scenarioName,
+            deferredUntil: "gemini_output_audio",
+            expiresAt
+          }
+        }
+      }
+    };
+  }
+
+  triggerDeferredSpeechStartScenario() {
+    const deferred = this.deferredSpeechStartScenario;
+    if (!deferred) {
+      return false;
+    }
+
+    this.deferredSpeechStartScenario = null;
+    const now = this.now();
+    if (now > deferred.expiresAt) {
+      this.log(`Gemini deferred speech-start scenario expired before audio: ${deferred.scenarioName}`, "warn");
+      return false;
+    }
+
+    const action = {
+      ...deferred.action,
+      args: {
+        ...deferred.action.args,
+        reason: "gemini_output_audio_started"
+      },
+      reason: "gemini_live_deferred_speech_start_audio_started"
+    };
+
+    return this.executeSpeechStartScenarioAction(action, {
+      signature: `deferred:${deferred.scenarioName}:${deferred.id}`,
+      logMessage: "Gemini deferred speech-start scenario"
+    });
+  }
+
+  executeSpeechStartScenarioAction(action = {}, { signature = "", logMessage = "Gemini speech-start scenario" } = {}) {
+    if (!this.toolExecutor?.executeBridgeAction) {
+      return false;
+    }
+
+    const scenarioName = String(action.args?.name ?? "").trim();
+    if (!scenarioName) {
+      return false;
+    }
+
+    const now = this.now();
+    this.lastSpeechStartScenarioSignature = signature || `${scenarioName}:${now}`;
+    this.lastSpeechStartScenarioName = scenarioName;
+    this.lastSpeechStartScenarioAt = now;
+    this.patchStatus({
+      lastToolCall: `speech_start ${scenarioName}`,
+      lastToolCallAt: now
+    });
+    this.log(`${logMessage}: ${scenarioName}`);
+    this.toolExecutor.executeBridgeAction(action)
+      .then((result) => {
+        const status = result?.status ?? "completed";
+        this.patchStatus({
+          lastToolResult: `speech_start ${scenarioName}: ${status}`
+        });
+
+        if (status !== "completed" || result?.executed === false) {
+          this.log(
+            `Gemini speech-start scenario ${scenarioName} did not execute: status=${status} message="${result?.message ?? "no result"}"`,
+            "warn"
+          );
+        } else {
+          this.rememberAcceptedRunScenario(scenarioName);
+        }
+      })
+      .catch((error) => {
+        this.patchStatus({
+          lastToolResult: `speech_start ${scenarioName}: failed`,
+          lastError: error.message
+        });
+        this.log(`Gemini speech-start scenario failed: ${error.message}`, "warn");
+      });
+
+    return true;
+  }
+
+  rememberAcceptedRunScenario(name) {
+    const scenarioName = String(name ?? "").trim();
+    if (!scenarioName) {
+      return;
+    }
+
+    this.lastAcceptedRunScenarioName = scenarioName;
+    this.lastAcceptedRunScenarioAt = this.now();
   }
 
   sendJson(payload) {
@@ -952,6 +1220,113 @@ export function arrayBufferToBase64(buffer) {
   }
 
   return globalThis.btoa(binary);
+}
+
+const SPEECH_START_SCENARIO_COOLDOWNS = Object.freeze({
+  angry: 3_500,
+  loving: 4_000,
+  question: 3_500,
+  shocked: 3_500,
+  tell_me_about_yourself: 8_000
+});
+const SPEECH_START_SCENARIO_NAMES = new Set(Object.keys(SPEECH_START_SCENARIO_COOLDOWNS));
+
+function selectSpeechStartScenario({ inputText = "", outputText = "" } = {}) {
+  const input = normalizeSpeechStartText(inputText);
+  const output = normalizeSpeechStartText(outputText);
+
+  if (!input && !output) {
+    return "";
+  }
+
+  if (matchesSelfIntroductionSpeech(input, output)) {
+    return "tell_me_about_yourself";
+  }
+
+  if (matchesAngrySpeech(output)) {
+    return "angry";
+  }
+
+  if (matchesShockedSpeech(output)) {
+    return "shocked";
+  }
+
+  if (matchesLovingSpeech(output)) {
+    return "loving";
+  }
+
+  if (matchesQuestionSpeech(output)) {
+    return "question";
+  }
+
+  return "";
+}
+
+function buildSpeechStartScenarioSignature({ scenarioName, inputText = "", outputText = "" } = {}) {
+  const output = normalizeSpeechStartText(outputText).slice(0, 220);
+  const input = normalizeSpeechStartText(inputText).slice(0, 160);
+  return `${scenarioName}:${input}:${output}`;
+}
+
+function speechStartScenarioCooldownMs(scenarioName) {
+  return SPEECH_START_SCENARIO_COOLDOWNS[scenarioName] ?? 4_000;
+}
+
+function isSpeechStartScenarioName(name) {
+  return SPEECH_START_SCENARIO_NAMES.has(String(name ?? "").trim());
+}
+
+function normalizeSpeechStartText(value) {
+  return String(value ?? "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function matchesSelfIntroductionSpeech(input, output) {
+  const inputAskedSelfIntroduction = /\b(tell me about yourself|introduce yourself|who are you|what are you|talk about yourself|about looi)\b/.test(input);
+  const outputIsSelfIntroduction = /\b(my name is looi|i am looi|i'm looi|i am your companion|i'm your companion|i am a small .*companion robot|i'm a small .*companion robot|as looi)\b/.test(output);
+  const outputLooksSelfDirected = /\b(i am|i'm|my name|looi|companion robot|phone-bodied)\b/.test(output);
+
+  return outputIsSelfIntroduction || (inputAskedSelfIntroduction && outputLooksSelfDirected);
+}
+
+function matchesAngrySpeech(output) {
+  if (!output || /\b(not angry|not mad|not frustrated|not annoyed)\b/.test(output)) {
+    return false;
+  }
+
+  return /(^|\s)(ugh|grr+|argh)(\s|[!,?.]|$)/.test(output) ||
+    /(^|\s)hey[!,]/.test(output) ||
+    /\b(not fair|come on|annoyed|annoying|frustrated|frustrating|mad|angry|how dare)\b/.test(output);
+}
+
+function matchesShockedSpeech(output) {
+  if (!output) {
+    return false;
+  }
+
+  return /(^|\s)(wow|whoa|woah|oh wow|no way)(\s|[!,?.]|$)/.test(output) ||
+    /(^|\s)(wait|hold on)[!,]/.test(output) ||
+    /\b(i just realized|i just realised|i did not expect|i didn't expect|that's surprising|that is surprising|surprising|unexpected|realization|realisation|i am shocked|i'm shocked|alarmed)\b/.test(output);
+}
+
+function matchesLovingSpeech(output) {
+  if (!output) {
+    return false;
+  }
+
+  return /(^|\s)(aww+|aw)(\s|[!,?.]|$)/.test(output) ||
+    /\b(that'?s so sweet|that is so sweet|that'?s sweet|that is sweet|so sweet of you|you are sweet|you're sweet|you are kind|you're kind|you are cute|you're cute)\b/.test(output) ||
+    /\b(i appreciate you|i really appreciate you|i love you|love you|sending love|that warms my heart)\b/.test(output);
+}
+
+function matchesQuestionSpeech(output) {
+  if (!output) {
+    return false;
+  }
+
+  return /\b(i'?m not sure|i am not sure|i don'?t understand|i do not understand|i'?m confused|i am confused|could you clarify|can you clarify|what do you mean)\b/.test(output);
 }
 
 function base64ToUint8Array(base64) {

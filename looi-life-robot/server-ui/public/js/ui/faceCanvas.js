@@ -12,9 +12,20 @@ const FACE_STATE = {
   lookTimer: 0,
   photoTimer: 0,
   followTimer: 0,
+  eatingTimer: 0,
+  drinkingTimer: 0,
+  questionTimer: 0,
+  angryTimer: 0,
+  lovingTimer: 0,
+  shockedTimer: 0,
+  tellingTimer: 0,
+  kissTimer: 0,
   previewTimer: 0,
   latestPhotoUrl: "",
   followVisualState: "idle",
+  eatingVisualState: "idle",
+  drinkingVisualState: "idle",
+  tellingVisualState: "idle",
   visionIndicator: {
     active: false,
     mode: "detecting"
@@ -26,6 +37,17 @@ const SOFT_CLOSE_TIME_MS = 420;
 const PHOTO_TIME_MS = 2400;
 const FOLLOW_OPEN_TIME_MS = 900;
 const FOLLOW_STOP_TIME_MS = 800;
+const BITE_TIME_MS = 3200;
+const FINISH_BURGER_TIME_MS = 2200;
+const DRINK_OPEN_TIME_MS = 1600;
+const FINISH_DRINK_TIME_MS = 1800;
+const QUESTION_TIME_MS = 2200;
+const ANGRY_TIME_MS = 1800;
+const LOVING_TIME_MS = 2400;
+const SHOCKED_TIME_MS = 1700;
+const TELL_OPEN_TIME_MS = 1400;
+const TELL_FINISH_TIME_MS = 1200;
+const KISS_TIME_MS = 2600;
 const AUTO_BLINK_MIN_MS = 2200;
 const AUTO_BLINK_JITTER_MS = 2400;
 const AUTO_GLANCE_MIN_MS = 1400;
@@ -47,9 +69,29 @@ export function initFaceCanvas(element) {
     return;
   }
 
+  FACE_STATE.tellingVisualState = "idle";
   rootRef.replaceChildren(createEyeDom());
   rootRef.classList.add("looi-eye-system");
-  rootRef.classList.remove("is-taking-picture", "is-follow-opening", "is-following", "is-follow-stopping");
+  rootRef.classList.remove(
+    "is-taking-picture",
+    "is-follow-opening",
+    "is-following",
+    "is-follow-stopping",
+    "is-taking-bite",
+    "is-bitten",
+    "is-finishing-burger",
+    "is-drink-opening",
+    "is-drinking",
+    "is-finish-drinking",
+    "is-questioning",
+    "is-angry",
+    "is-loving",
+    "is-shocked",
+    "is-tell-opening",
+    "is-telling",
+    "is-tell-finishing",
+    "is-kissing"
+  );
   rootRef.setAttribute("role", "img");
   rootRef.setAttribute("aria-label", "LOOI animated robot eyes");
 
@@ -198,6 +240,8 @@ export function setSpeaking(isSpeaking) {
 
   if (FACE_STATE.speaking) {
     clearMomentaryAnimations();
+    window.clearTimeout(FACE_STATE.kissTimer);
+    rootRef?.classList.remove("is-kissing");
     if (FACE_STATE.sleeping) {
       openEyes();
     }
@@ -221,15 +265,265 @@ export function takePicture() {
   window.clearTimeout(FACE_STATE.photoTimer);
   window.clearTimeout(FACE_STATE.followTimer);
   FACE_STATE.sleeping = false;
-  rootRef.classList.remove("is-following", "is-follow-opening", "is-follow-stopping");
   eyesRef.classList.remove("is-sleeping");
   eyesRef.style.setProperty("--look-x", "0px");
   eyesRef.style.setProperty("--look-scale-y", "1");
   forceRestartAnimation();
+  rootRef.classList.remove("is-taking-picture");
   rootRef.classList.add("is-taking-picture");
   FACE_STATE.photoTimer = window.setTimeout(() => {
     rootRef?.classList.remove("is-taking-picture");
   }, PHOTO_TIME_MS);
+}
+
+export function takeBite() {
+  if (!rootRef || !eyesRef) {
+    return;
+  }
+
+  clearMomentaryAnimations();
+  window.clearTimeout(FACE_STATE.lookTimer);
+  window.clearTimeout(FACE_STATE.eatingTimer);
+  FACE_STATE.sleeping = false;
+  FACE_STATE.eatingVisualState = "taking_bite";
+  rootRef.classList.remove("is-taking-bite", "is-finishing-burger", "is-bitten");
+  eyesRef.classList.remove("is-sleeping");
+  forceRestartAnimation();
+  rootRef.classList.add("is-taking-bite");
+  FACE_STATE.eatingTimer = window.setTimeout(() => {
+    FACE_STATE.eatingVisualState = "bitten";
+    rootRef?.classList.remove("is-taking-bite");
+    rootRef?.classList.add("is-bitten");
+  }, BITE_TIME_MS);
+}
+
+export function finishBurger() {
+  if (!rootRef || !eyesRef) {
+    return;
+  }
+
+  if (!isEatingActive()) {
+    return;
+  }
+
+  clearMomentaryAnimations();
+  window.clearTimeout(FACE_STATE.lookTimer);
+  window.clearTimeout(FACE_STATE.eatingTimer);
+  FACE_STATE.eatingVisualState = "finishing";
+  rootRef.classList.remove("is-taking-bite", "is-bitten");
+  eyesRef.classList.remove("is-sleeping");
+  forceRestartAnimation();
+  rootRef.classList.add("is-finishing-burger");
+  FACE_STATE.eatingTimer = window.setTimeout(() => {
+    FACE_STATE.eatingVisualState = "idle";
+    rootRef?.classList.remove("is-finishing-burger");
+  }, FINISH_BURGER_TIME_MS);
+}
+
+export function isEatingActive() {
+  return Boolean(
+    FACE_STATE.eatingVisualState !== "idle" ||
+    rootRef?.classList.contains("is-taking-bite") ||
+    rootRef?.classList.contains("is-bitten") ||
+    rootRef?.classList.contains("is-finishing-burger")
+  );
+}
+
+export function openDrink() {
+  if (!rootRef || !eyesRef) {
+    return;
+  }
+
+  clearMomentaryAnimations();
+  window.clearTimeout(FACE_STATE.lookTimer);
+  window.clearTimeout(FACE_STATE.drinkingTimer);
+  FACE_STATE.sleeping = false;
+  FACE_STATE.drinkingVisualState = "opening";
+  rootRef.classList.remove("is-drink-opening", "is-drinking", "is-finish-drinking");
+  eyesRef.classList.remove("is-sleeping");
+  forceRestartAnimation();
+  rootRef.classList.add("is-drink-opening");
+  FACE_STATE.drinkingTimer = window.setTimeout(() => {
+    FACE_STATE.drinkingVisualState = "drinking";
+    rootRef?.classList.remove("is-drink-opening");
+    rootRef?.classList.add("is-drinking");
+  }, DRINK_OPEN_TIME_MS);
+}
+
+export function finishDrink() {
+  if (!rootRef || !eyesRef) {
+    return;
+  }
+
+  if (!isDrinkingActive()) {
+    return;
+  }
+
+  clearMomentaryAnimations();
+  window.clearTimeout(FACE_STATE.lookTimer);
+  window.clearTimeout(FACE_STATE.drinkingTimer);
+  FACE_STATE.drinkingVisualState = "finishing";
+  rootRef.classList.remove("is-drink-opening", "is-drinking");
+  eyesRef.classList.remove("is-sleeping");
+  forceRestartAnimation();
+  rootRef.classList.add("is-finish-drinking");
+  FACE_STATE.drinkingTimer = window.setTimeout(() => {
+    FACE_STATE.drinkingVisualState = "idle";
+    rootRef?.classList.remove("is-finish-drinking");
+  }, FINISH_DRINK_TIME_MS);
+}
+
+export function isDrinkingActive() {
+  return Boolean(
+    FACE_STATE.drinkingVisualState !== "idle" ||
+    rootRef?.classList.contains("is-drink-opening") ||
+    rootRef?.classList.contains("is-drinking") ||
+    rootRef?.classList.contains("is-finish-drinking")
+  );
+}
+
+export function showQuestion() {
+  if (!rootRef || !eyesRef) {
+    return;
+  }
+
+  clearMomentaryAnimations();
+  window.clearTimeout(FACE_STATE.lookTimer);
+  window.clearTimeout(FACE_STATE.questionTimer);
+  FACE_STATE.sleeping = false;
+  eyesRef.classList.remove("is-sleeping");
+  rootRef.classList.remove("is-questioning");
+  forceRestartAnimation();
+  rootRef.classList.add("is-questioning");
+  FACE_STATE.questionTimer = window.setTimeout(() => {
+    rootRef?.classList.remove("is-questioning");
+  }, QUESTION_TIME_MS);
+}
+
+export function showAngry() {
+  if (!rootRef || !eyesRef) {
+    return;
+  }
+
+  clearMomentaryAnimations();
+  window.clearTimeout(FACE_STATE.lookTimer);
+  window.clearTimeout(FACE_STATE.angryTimer);
+  FACE_STATE.sleeping = false;
+  eyesRef.classList.remove("is-sleeping");
+  rootRef.classList.remove("is-angry");
+  forceRestartAnimation();
+  rootRef.classList.add("is-angry");
+  FACE_STATE.angryTimer = window.setTimeout(() => {
+    rootRef?.classList.remove("is-angry");
+  }, ANGRY_TIME_MS);
+}
+
+export function showLoving() {
+  if (!rootRef || !eyesRef) {
+    return;
+  }
+
+  clearMomentaryAnimations();
+  window.clearTimeout(FACE_STATE.lookTimer);
+  window.clearTimeout(FACE_STATE.lovingTimer);
+  FACE_STATE.sleeping = false;
+  eyesRef.classList.remove("is-sleeping");
+  rootRef.classList.remove("is-loving");
+  forceRestartAnimation();
+  rootRef.classList.add("is-loving");
+  FACE_STATE.lovingTimer = window.setTimeout(() => {
+    rootRef?.classList.remove("is-loving");
+  }, LOVING_TIME_MS);
+}
+
+export function showShocked() {
+  if (!rootRef || !eyesRef) {
+    return;
+  }
+
+  clearMomentaryAnimations();
+  window.clearTimeout(FACE_STATE.lookTimer);
+  window.clearTimeout(FACE_STATE.shockedTimer);
+  FACE_STATE.sleeping = false;
+  eyesRef.classList.remove("is-sleeping");
+  rootRef.classList.remove("is-shocked");
+  forceRestartAnimation();
+  rootRef.classList.add("is-shocked");
+  FACE_STATE.shockedTimer = window.setTimeout(() => {
+    rootRef?.classList.remove("is-shocked");
+  }, SHOCKED_TIME_MS);
+}
+
+export function showTellMeAboutYourself() {
+  if (!rootRef || !eyesRef) {
+    return;
+  }
+
+  clearMomentaryAnimations();
+  window.clearTimeout(FACE_STATE.lookTimer);
+  window.clearTimeout(FACE_STATE.tellingTimer);
+  FACE_STATE.sleeping = false;
+  FACE_STATE.tellingVisualState = "opening";
+  eyesRef.classList.remove("is-sleeping");
+  rootRef.classList.remove("is-tell-opening", "is-telling", "is-tell-finishing");
+  forceRestartAnimation();
+  rootRef.classList.add("is-tell-opening");
+  FACE_STATE.tellingTimer = window.setTimeout(() => {
+    FACE_STATE.tellingVisualState = "telling";
+    rootRef?.classList.remove("is-tell-opening");
+    rootRef?.classList.add("is-telling");
+  }, TELL_OPEN_TIME_MS);
+}
+
+export function finishTellMeAboutYourself() {
+  if (!rootRef || !eyesRef) {
+    return;
+  }
+
+  if (!isTellingActive()) {
+    return;
+  }
+
+  clearMomentaryAnimations();
+  window.clearTimeout(FACE_STATE.lookTimer);
+  window.clearTimeout(FACE_STATE.tellingTimer);
+  FACE_STATE.tellingVisualState = "finishing";
+  rootRef.classList.remove("is-tell-opening", "is-telling");
+  eyesRef.classList.remove("is-sleeping");
+  forceRestartAnimation();
+  rootRef.classList.add("is-tell-finishing");
+  FACE_STATE.tellingTimer = window.setTimeout(() => {
+    FACE_STATE.tellingVisualState = "idle";
+    rootRef?.classList.remove("is-tell-finishing");
+  }, TELL_FINISH_TIME_MS);
+}
+
+export function isTellingActive() {
+  return Boolean(
+    FACE_STATE.tellingVisualState !== "idle" ||
+    rootRef?.classList.contains("is-tell-opening") ||
+    rootRef?.classList.contains("is-telling") ||
+    rootRef?.classList.contains("is-tell-finishing")
+  );
+}
+
+export function showKiss() {
+  if (!rootRef || !eyesRef || FACE_STATE.speaking) {
+    return false;
+  }
+
+  clearMomentaryAnimations();
+  window.clearTimeout(FACE_STATE.lookTimer);
+  window.clearTimeout(FACE_STATE.kissTimer);
+  FACE_STATE.sleeping = false;
+  eyesRef.classList.remove("is-sleeping");
+  rootRef.classList.remove("is-kissing");
+  forceRestartAnimation();
+  rootRef.classList.add("is-kissing");
+  FACE_STATE.kissTimer = window.setTimeout(() => {
+    rootRef?.classList.remove("is-kissing");
+  }, KISS_TIME_MS);
+  return true;
 }
 
 export function startFollow() {
@@ -362,6 +656,20 @@ export function createFaceController(element) {
     invertLook,
     sleep,
     takePicture,
+    takeBite,
+    finishBurger,
+    isEatingActive,
+    openDrink,
+    finishDrink,
+    isDrinkingActive,
+    showQuestion,
+    showAngry,
+    showLoving,
+    showShocked,
+    showTellMeAboutYourself,
+    finishTellMeAboutYourself,
+    isTellingActive,
+    showKiss,
     startFollow,
     stopFollow,
     showPhoto,
@@ -418,6 +726,115 @@ function createEyeDom() {
   followShine.className = "looi-follow-shine";
   followTarget.append(followShine);
 
+  const mouth = document.createElement("div");
+  mouth.className = "looi-eating-mouth";
+
+  const crumbOne = document.createElement("div");
+  crumbOne.className = "looi-eating-crumb looi-eating-crumb--one";
+
+  const crumbTwo = document.createElement("div");
+  crumbTwo.className = "looi-eating-crumb looi-eating-crumb--two";
+
+  const burger = document.createElement("div");
+  burger.className = "looi-burger";
+  burger.innerHTML = `
+    <div class="looi-burger__bun-top"></div>
+    <div class="looi-burger__bite"></div>
+    <div class="looi-burger__cheese"></div>
+    <div class="looi-burger__lettuce"></div>
+    <div class="looi-burger__patty"></div>
+    <div class="looi-burger__bun-bottom"></div>
+  `;
+
+  const drinkMouth = document.createElement("div");
+  drinkMouth.className = "looi-drink-mouth";
+
+  const sipDots = ["one", "two", "three", "four"].map((name) => {
+    const dot = document.createElement("div");
+    dot.className = `looi-sip-dot looi-sip-dot--${name}`;
+    return dot;
+  });
+
+  const drinkStraw = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  drinkStraw.classList.add("looi-drink-straw");
+  drinkStraw.setAttribute("viewBox", "0 0 240 190");
+  drinkStraw.setAttribute("aria-hidden", "true");
+  drinkStraw.innerHTML = `
+    <path class="looi-drink-straw__shadow" d="M120 150 L120 86 Q120 48 152 44 L184 38"></path>
+    <path class="looi-drink-straw__path" d="M120 150 L120 86 Q120 48 152 44 L184 38"></path>
+  `;
+
+  const drinkCan = document.createElement("div");
+  drinkCan.className = "looi-drink-can";
+
+  const thoughtDots = ["one", "two"].map((name) => {
+    const dot = document.createElement("div");
+    dot.className = `looi-thought-dot looi-thought-dot--${name}`;
+    return dot;
+  });
+
+  const questionMark = document.createElement("div");
+  questionMark.className = "looi-question-mark";
+  questionMark.setAttribute("aria-hidden", "true");
+  questionMark.innerHTML = `
+    <svg viewBox="0 0 100 130">
+      <path class="looi-question-mark__stroke" d="M34 34 C34 16 68 14 73 34 C77 49 65 58 54 65 C47 70 46 76 46 83"></path>
+      <path class="looi-question-mark__highlight" d="M39 29 C48 20 63 23 67 34"></path>
+      <circle class="looi-question-mark__dot" cx="46" cy="111" r="9"></circle>
+    </svg>
+  `;
+
+  const angrySpark = document.createElement("div");
+  angrySpark.className = "looi-angry-spark";
+  angrySpark.setAttribute("aria-hidden", "true");
+  angrySpark.innerHTML = `
+    <svg viewBox="0 0 100 100">
+      <path class="looi-angry-spark__main" d="M50 8 C52 32 58 42 84 46 C58 50 52 60 50 92 C48 60 42 50 16 46 C42 42 48 32 50 8 Z"></path>
+      <path class="looi-angry-spark__highlight" d="M39 22 C43 36 48 41 62 43"></path>
+    </svg>
+  `;
+
+  const lovingHearts = document.createElement("div");
+  lovingHearts.className = "looi-loving-hearts";
+  lovingHearts.setAttribute("aria-hidden", "true");
+  lovingHearts.innerHTML = `
+    <div class="looi-loving-heart looi-loving-heart--one"></div>
+    <div class="looi-loving-heart looi-loving-heart--two"></div>
+    <div class="looi-loving-heart looi-loving-heart--three"></div>
+    <div class="looi-loving-heart looi-loving-heart--four"></div>
+  `;
+
+  const shockExclaim = document.createElement("div");
+  shockExclaim.className = "looi-shock-exclaim";
+  shockExclaim.setAttribute("aria-hidden", "true");
+  shockExclaim.innerHTML = `
+    <div class="looi-shock-exclaim__bar"></div>
+    <div class="looi-shock-exclaim__dot"></div>
+  `;
+
+  const tellSparks = ["one", "two", "three"].map((name) => {
+    const spark = document.createElement("div");
+    spark.className = `looi-tell-spark looi-tell-spark--${name}`;
+    return spark;
+  });
+
+  const tellLeftMic = document.createElement("div");
+  tellLeftMic.className = "looi-tell-mic looi-tell-mic--left";
+  tellLeftMic.innerHTML = `<div class="looi-tell-mic__flag">TV</div>`;
+
+  const tellRightMic = document.createElement("div");
+  tellRightMic.className = "looi-tell-mic looi-tell-mic--right";
+  tellRightMic.innerHTML = `<div class="looi-tell-mic__flag">NEWS</div>`;
+
+  const tellMouth = document.createElement("div");
+  tellMouth.className = "looi-tell-mouth";
+
+  const kissMouth = document.createElement("div");
+  kissMouth.className = "looi-kiss-mouth";
+
+  const kissHeart = document.createElement("div");
+  kissHeart.className = "looi-kiss-heart";
+
   const visionIndicator = document.createElement("div");
   visionIndicator.className = "looi-vision-indicator";
   visionIndicator.hidden = true;
@@ -430,7 +847,33 @@ function createEyeDom() {
   eyes.className = "looi-eyes";
   eyes.append(createEye(), createEye());
 
-  fragment.append(flash, followTarget, preview, cameraIcon, visionIndicator, eyes);
+  fragment.append(
+    flash,
+    mouth,
+    crumbOne,
+    crumbTwo,
+    burger,
+    drinkMouth,
+    ...sipDots,
+    drinkStraw,
+    drinkCan,
+    ...thoughtDots,
+    questionMark,
+    angrySpark,
+    lovingHearts,
+    shockExclaim,
+    ...tellSparks,
+    tellLeftMic,
+    tellRightMic,
+    tellMouth,
+    kissMouth,
+    kissHeart,
+    followTarget,
+    preview,
+    cameraIcon,
+    visionIndicator,
+    eyes
+  );
   return fragment;
 }
 
@@ -447,7 +890,13 @@ function createEye() {
   const scanLine = document.createElement("div");
   scanLine.className = "looi-eye__scan-line";
 
-  eye.append(glow, core, scanLine);
+  const lid = document.createElement("div");
+  lid.className = "looi-eye__lid";
+
+  const loveLid = document.createElement("div");
+  loveLid.className = "looi-eye__love-lid";
+
+  eye.append(glow, core, scanLine, lid, loveLid);
   return eye;
 }
 
@@ -537,6 +986,20 @@ function canAutoGlance() {
     !rootRef?.classList.contains("is-follow-opening") &&
     !rootRef?.classList.contains("is-following") &&
     !rootRef?.classList.contains("is-follow-stopping") &&
+    !rootRef?.classList.contains("is-taking-bite") &&
+    !rootRef?.classList.contains("is-bitten") &&
+    !rootRef?.classList.contains("is-finishing-burger") &&
+    !rootRef?.classList.contains("is-drink-opening") &&
+    !rootRef?.classList.contains("is-drinking") &&
+    !rootRef?.classList.contains("is-finish-drinking") &&
+    !rootRef?.classList.contains("is-questioning") &&
+    !rootRef?.classList.contains("is-angry") &&
+    !rootRef?.classList.contains("is-loving") &&
+    !rootRef?.classList.contains("is-shocked") &&
+    !rootRef?.classList.contains("is-tell-opening") &&
+    !rootRef?.classList.contains("is-telling") &&
+    !rootRef?.classList.contains("is-tell-finishing") &&
+    !rootRef?.classList.contains("is-kissing") &&
     !eyesRef.classList.contains("is-blinking") &&
     !eyesRef.classList.contains("is-soft-closing")
   );
@@ -561,10 +1024,6 @@ function clearMomentaryAnimations() {
 
   window.clearTimeout(FACE_STATE.animationTimer);
   eyesRef.classList.remove("is-blinking", "is-soft-closing");
-  rootRef?.classList.remove("is-follow-opening", "is-follow-stopping");
-  if (!rootRef?.classList.contains("is-following")) {
-    FACE_STATE.followVisualState = "idle";
-  }
 }
 
 function clearAllTimers() {
@@ -575,6 +1034,14 @@ function clearAllTimers() {
   window.clearTimeout(FACE_STATE.lookTimer);
   window.clearTimeout(FACE_STATE.photoTimer);
   window.clearTimeout(FACE_STATE.followTimer);
+  window.clearTimeout(FACE_STATE.eatingTimer);
+  window.clearTimeout(FACE_STATE.drinkingTimer);
+  window.clearTimeout(FACE_STATE.questionTimer);
+  window.clearTimeout(FACE_STATE.angryTimer);
+  window.clearTimeout(FACE_STATE.lovingTimer);
+  window.clearTimeout(FACE_STATE.shockedTimer);
+  window.clearTimeout(FACE_STATE.tellingTimer);
+  window.clearTimeout(FACE_STATE.kissTimer);
   window.clearTimeout(FACE_STATE.previewTimer);
 }
 
@@ -594,7 +1061,21 @@ function hasBlockingFaceAnimation() {
     rootRef?.classList.contains("is-taking-picture") ||
     rootRef?.classList.contains("is-follow-opening") ||
     rootRef?.classList.contains("is-following") ||
-    rootRef?.classList.contains("is-follow-stopping")
+    rootRef?.classList.contains("is-follow-stopping") ||
+    rootRef?.classList.contains("is-taking-bite") ||
+    rootRef?.classList.contains("is-bitten") ||
+    rootRef?.classList.contains("is-finishing-burger") ||
+    rootRef?.classList.contains("is-drink-opening") ||
+    rootRef?.classList.contains("is-drinking") ||
+    rootRef?.classList.contains("is-finish-drinking") ||
+    rootRef?.classList.contains("is-questioning") ||
+    rootRef?.classList.contains("is-angry") ||
+    rootRef?.classList.contains("is-loving") ||
+    rootRef?.classList.contains("is-shocked") ||
+    rootRef?.classList.contains("is-tell-opening") ||
+    rootRef?.classList.contains("is-telling") ||
+    rootRef?.classList.contains("is-tell-finishing") ||
+    rootRef?.classList.contains("is-kissing")
   );
 }
 

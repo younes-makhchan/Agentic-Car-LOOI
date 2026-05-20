@@ -1,4 +1,5 @@
 import {
+  getActiveScenarioLifecycles,
   getScenarioDefinition,
   normalizeScenarioName,
   normalizeRunScenarioName
@@ -203,24 +204,14 @@ export class ToolExecutor {
       });
     }
 
-    if (
-      this.followTargetController?.isRunning?.() &&
-      normalizedArgs.name !== "stop_following" &&
-      action.source !== "vision_follow"
-    ) {
-      return this.buildResult("rejected", {
-        action,
-        executed: false,
-        physical: false,
-        message: `Follow mode is active. Scenario ${normalizedArgs.name} is blocked until following stops.`,
-        detail: {
-          scenario: normalizedArgs.name,
-          activeFollow: this.followTargetController?.getStatus?.() ?? null
-        }
-      });
-    }
-
     if (normalizedArgs.name === "follow_target") {
+      const lifecyclePrelude = await this.runLifecycleExitsBeforeScenario(normalizedArgs.name, action, {
+        physical: false
+      });
+      if (lifecyclePrelude) {
+        return lifecyclePrelude;
+      }
+
       return this.executeFollowTargetScenario({
         label: normalizedArgs.label,
         mode: normalizedArgs.mode
@@ -228,6 +219,13 @@ export class ToolExecutor {
     }
 
     if (normalizedArgs.name === "stop_following") {
+      const lifecyclePrelude = await this.runLifecycleExitsBeforeScenario(normalizedArgs.name, action, {
+        physical: false
+      });
+      if (lifecyclePrelude) {
+        return lifecyclePrelude;
+      }
+
       return this.executeStopFollowingScenario({
         reason: normalizedArgs.reason || "run_scenario_stop_following"
       }, action);
@@ -269,10 +267,100 @@ export class ToolExecutor {
       });
     }
 
+    const lifecyclePrelude = await this.runLifecycleExitsBeforeScenario(scenario.name, action, {
+      physical: scenarioUsesMotion(scenario)
+    });
+    if (lifecyclePrelude) {
+      return lifecyclePrelude;
+    }
+
     return this.executeScenario(scenario, action, {
       motionPermission,
       allowSpeech: scenarioAllowsSpeech(scenario)
     });
+  }
+
+  async runLifecycleExitsBeforeScenario(nextScenarioName, action = {}, { physical = false } = {}) {
+    if (action.source === "vision_follow") {
+      return null;
+    }
+
+    const activeLifecycles = getActiveScenarioLifecycles(this.scenarioLifecycleContext());
+    const executedExits = new Set();
+
+    if (activeLifecycles.some((activeLifecycle) => activeLifecycle.exitScenario === nextScenarioName)) {
+      return null;
+    }
+
+    for (const activeLifecycle of activeLifecycles) {
+      const exitScenario = activeLifecycle.exitScenario;
+      if (!exitScenario || executedExits.has(exitScenario)) {
+        continue;
+      }
+
+      if (activeLifecycle.exitPolicy !== "auto_before_next") {
+        return this.buildResult("rejected", {
+          action,
+          executed: false,
+          physical,
+          message: `Scenario ${nextScenarioName} blocked by active scenario ${activeLifecycle.name}.`,
+          detail: {
+            scenario: nextScenarioName,
+            activeScenario: activeLifecycle.name,
+            exitScenario,
+            exitPolicy: activeLifecycle.exitPolicy
+          }
+        });
+      }
+
+      const exitResult = await this.executeLifecycleExitScenario(activeLifecycle, nextScenarioName, action);
+      executedExits.add(exitScenario);
+
+      if (exitResult.status !== "completed") {
+        return this.buildResult("rejected", {
+          action,
+          executed: false,
+          physical,
+          message: `Scenario ${nextScenarioName} blocked because ${exitScenario} did not complete: ${exitResult.message}`,
+          detail: {
+            scenario: nextScenarioName,
+            activeScenario: activeLifecycle.name,
+            exitScenario,
+            prelude: exitResult
+          }
+        });
+      }
+    }
+
+    return null;
+  }
+
+  async executeLifecycleExitScenario(activeLifecycle, nextScenarioName, action = {}) {
+    const exitScenarioName = activeLifecycle.exitScenario;
+    this.log(`STEP 4 SCENARIO_EXIT ${activeLifecycle.name} via ${exitScenarioName} before ${nextScenarioName}`);
+
+    const exitAction = {
+      ...action,
+      id: `${action.id ?? `scenario_${Date.now()}`}:${exitScenarioName}`,
+      source: "local",
+      args: { name: exitScenarioName, reason: `before:${nextScenarioName}` },
+      reason: `scenario_exit:${activeLifecycle.name}->${nextScenarioName}`
+    };
+
+    return this.executeRunScenario(exitAction.args, exitAction);
+  }
+
+  scenarioLifecycleContext() {
+    return {
+      face: this.face,
+      lifeEngine: this.lifeEngine,
+      robotClient: this.robotClient,
+      cameraInput: this.cameraInput,
+      visionScenarioManager: this.visionScenarioManager,
+      visionState: this.visionState,
+      followTargetController: this.followTargetController,
+      runtimeContext: this.getRuntimeContext?.() ?? null
+    };
   }
 
   async executeScenario(scenario, action, { motionPermission, allowSpeech } = {}) {

@@ -6,6 +6,9 @@ const faceEvents = [];
 const stops = [];
 const motions = [];
 const routedSequences = [];
+let eatingActive = false;
+let drinkingActive = false;
+let tellingActive = false;
 const policy = {
   cloudMotionArmed: false,
   cloudCameraAllowed: false,
@@ -27,6 +30,55 @@ const face = {
   },
   takePicture() {
     faceEvents.push({ type: "take_picture" });
+  },
+  takeBite() {
+    eatingActive = true;
+    faceEvents.push({ type: "take_bite" });
+  },
+  finishBurger() {
+    eatingActive = false;
+    faceEvents.push({ type: "finish_burger" });
+  },
+  isEatingActive() {
+    return eatingActive;
+  },
+  openDrink() {
+    drinkingActive = true;
+    faceEvents.push({ type: "open_drink" });
+  },
+  finishDrink() {
+    drinkingActive = false;
+    faceEvents.push({ type: "finish_drink" });
+  },
+  isDrinkingActive() {
+    return drinkingActive;
+  },
+  showQuestion() {
+    faceEvents.push({ type: "question" });
+  },
+  showAngry() {
+    faceEvents.push({ type: "angry" });
+  },
+  showLoving() {
+    faceEvents.push({ type: "loving" });
+  },
+  showShocked() {
+    faceEvents.push({ type: "shocked" });
+  },
+  showTellMeAboutYourself() {
+    tellingActive = true;
+    faceEvents.push({ type: "tell_me_about_yourself" });
+  },
+  finishTellMeAboutYourself() {
+    tellingActive = false;
+    faceEvents.push({ type: "finish_telling" });
+  },
+  isTellingActive() {
+    return tellingActive;
+  },
+  showKiss() {
+    faceEvents.push({ type: "kiss" });
+    return true;
   },
   showPhoto(dataUrl) {
     faceEvents.push({ type: "show_photo", dataUrl });
@@ -292,7 +344,179 @@ assert.equal(cameraCalls.some((call) => call.type === "snapshot"), true);
 assert.equal(faceEvents.some((event) => event.type === "take_picture"), true);
 assert.equal(faceEvents.some((event) => event.type === "show_photo"), true);
 
+const eatingScenario = await executor.executeBridgeAction({
+  id: "scenario_eating",
+  source: "gemini_live",
+  type: "run_scenario",
+  args: { name: "eating" }
+});
+assert.equal(eatingScenario.status, "completed");
+assert.equal(eatingActive, true);
+assert.equal(eatingScenario.detail.actionDetails.some((entry) => entry.action === "takeBite"), true);
+assert.equal(faceEvents.some((event) => event.type === "take_bite"), true);
+
+const routesBeforeEatingExit = routedSequences.length;
+const backUpAfterEating = await executor.executeBridgeAction({
+  id: "scenario_after_eating",
+  source: "gemini_live",
+  type: "run_scenario",
+  args: { name: "back_up" }
+});
+assert.equal(backUpAfterEating.status, "completed");
+assert.equal(eatingActive, false);
+assert.equal(routedSequences.length, routesBeforeEatingExit + 2);
+assert.equal(routedSequences.at(-2).action.args.scenario, "finish_burger");
+assert.equal(routedSequences.at(-1).action.args.scenario, "back_up");
+assert.equal(faceEvents.some((event) => event.type === "finish_burger"), true);
+
+const secondEatingScenario = await executor.executeBridgeAction({
+  id: "scenario_eating_again",
+  source: "gemini_live",
+  type: "run_scenario",
+  args: { name: "eating" }
+});
+assert.equal(secondEatingScenario.status, "completed");
+assert.equal(eatingActive, true);
+const routesBeforeDirectFinish = routedSequences.length;
+const directFinishBurger = await executor.executeBridgeAction({
+  id: "scenario_direct_finish_burger",
+  source: "gemini_live",
+  type: "run_scenario",
+  args: { name: "finish_burger" }
+});
+assert.equal(directFinishBurger.status, "completed");
+assert.equal(eatingActive, false);
+assert.equal(routedSequences.length, routesBeforeDirectFinish + 1);
+assert.equal(routedSequences.at(-1).action.args.scenario, "finish_burger");
+
+const drinkingScenario = await executor.executeBridgeAction({
+  id: "scenario_drinking",
+  source: "gemini_live",
+  type: "run_scenario",
+  args: { name: "drinking" }
+});
+assert.equal(drinkingScenario.status, "completed");
+assert.equal(drinkingActive, true);
+assert.equal(drinkingScenario.detail.actionDetails.some((entry) => entry.action === "openDrink"), true);
+assert.equal(faceEvents.some((event) => event.type === "open_drink"), true);
+
+const routesBeforeDrinkExit = routedSequences.length;
+const comeCloserAfterDrinking = await executor.executeBridgeAction({
+  id: "scenario_after_drinking",
+  source: "gemini_live",
+  type: "run_scenario",
+  args: { name: "come_closer" }
+});
+assert.equal(comeCloserAfterDrinking.status, "completed");
+assert.equal(drinkingActive, false);
+assert.equal(routedSequences.length, routesBeforeDrinkExit + 2);
+assert.equal(routedSequences.at(-2).action.args.scenario, "finish_drink");
+assert.equal(routedSequences.at(-1).action.args.scenario, "come_closer");
+assert.equal(faceEvents.some((event) => event.type === "finish_drink"), true);
+
+const secondDrinkingScenario = await executor.executeBridgeAction({
+  id: "scenario_drinking_again",
+  source: "gemini_live",
+  type: "run_scenario",
+  args: { name: "drinking" }
+});
+assert.equal(secondDrinkingScenario.status, "completed");
+assert.equal(drinkingActive, true);
+const routesBeforeDirectFinishDrink = routedSequences.length;
+const directFinishDrink = await executor.executeBridgeAction({
+  id: "scenario_direct_finish_drink",
+  source: "gemini_live",
+  type: "run_scenario",
+  args: { name: "finish_drink" }
+});
+assert.equal(directFinishDrink.status, "completed");
+assert.equal(drinkingActive, false);
+assert.equal(routedSequences.length, routesBeforeDirectFinishDrink + 1);
+assert.equal(routedSequences.at(-1).action.args.scenario, "finish_drink");
+
+const questionScenario = await executor.executeBridgeAction({
+  id: "scenario_question",
+  source: "gemini_live",
+  type: "run_scenario",
+  args: { name: "question" }
+});
+assert.equal(questionScenario.status, "completed");
+assert.equal(questionScenario.detail.actionDetails.some((entry) => entry.action === "showQuestion"), true);
+assert.equal(faceEvents.some((event) => event.type === "question"), true);
+
+const angryScenario = await executor.executeBridgeAction({
+  id: "scenario_angry",
+  source: "gemini_live",
+  type: "run_scenario",
+  args: { name: "angry" }
+});
+assert.equal(angryScenario.status, "completed");
+assert.equal(angryScenario.detail.actionDetails.some((entry) => entry.action === "showAngry"), true);
+assert.equal(faceEvents.some((event) => event.type === "angry"), true);
+
+const lovingScenario = await executor.executeBridgeAction({
+  id: "scenario_loving",
+  source: "gemini_live",
+  type: "run_scenario",
+  args: { name: "loving" }
+});
+assert.equal(lovingScenario.status, "completed");
+assert.equal(lovingScenario.detail.actionDetails.some((entry) => entry.action === "showLoving"), true);
+assert.equal(faceEvents.some((event) => event.type === "loving"), true);
+
+const shockedScenario = await executor.executeBridgeAction({
+  id: "scenario_shocked",
+  source: "gemini_live",
+  type: "run_scenario",
+  args: { name: "shocked" }
+});
+assert.equal(shockedScenario.status, "completed");
+assert.equal(shockedScenario.detail.actionDetails.some((entry) => entry.action === "showShocked"), true);
+assert.equal(faceEvents.some((event) => event.type === "shocked"), true);
+
+const tellMeAboutYourselfScenario = await executor.executeBridgeAction({
+  id: "scenario_tell_me_about_yourself",
+  source: "gemini_live",
+  type: "run_scenario",
+  args: { name: "tell_me_about_yourself" }
+});
+assert.equal(tellMeAboutYourselfScenario.status, "completed");
+assert.equal(
+  tellMeAboutYourselfScenario.detail.actionDetails.some((entry) => entry.action === "showTellMeAboutYourself"),
+  true
+);
+assert.equal(faceEvents.some((event) => event.type === "tell_me_about_yourself"), true);
+assert.equal(tellingActive, true);
+
+const kissScenario = await executor.executeBridgeAction({
+  id: "scenario_kiss",
+  source: "gemini_live",
+  type: "run_scenario",
+  args: { name: "kiss" }
+});
+assert.equal(kissScenario.status, "completed");
+assert.equal(routedSequences.at(-2).action.args.scenario, "finish_telling");
+assert.equal(faceEvents.some((event) => event.type === "finish_telling"), true);
+assert.equal(kissScenario.detail.actionDetails.some((entry) => entry.action === "showKiss"), true);
+assert.equal(faceEvents.some((event) => event.type === "kiss"), true);
+assert.equal(tellingActive, false);
+
+tellingActive = true;
+const directFinishTellingScenario = await executor.executeBridgeAction({
+  id: "scenario_direct_finish_telling",
+  source: "gemini_live",
+  type: "run_scenario",
+  args: { name: "finish_telling" }
+});
+assert.equal(directFinishTellingScenario.status, "completed");
+assert.equal(
+  directFinishTellingScenario.detail.actionDetails.some((entry) => entry.action === "finishTellMeAboutYourself"),
+  true
+);
+assert.equal(tellingActive, false);
+
 const followStarted = [];
+const followStops = [];
 let followRunning = false;
 executor.setVisionControllers({
   visionScenarioManager: {
@@ -307,6 +531,7 @@ executor.setVisionControllers({
       };
     },
     stopFollowing(reason) {
+      followStops.push(reason);
       followRunning = false;
       return { ok: true, reason };
     }
@@ -330,16 +555,37 @@ const followScenario = await executor.executeBridgeAction({
 assert.equal(followScenario.status, "completed");
 assert.equal(followStarted.at(-1).label, "bottle");
 
-const routesBeforeFollowBlock = routedSequences.length;
-const blockedWhileFollowing = await executor.executeBridgeAction({
-  id: "blocked_while_following",
+const activeFollowStopsBefore = followStops.length;
+const activeFollowStop = await executor.executeBridgeAction({
+  id: "follow_stop_active",
+  source: "gemini_live",
+  type: "run_scenario",
+  args: { name: "stop_following", reason: "conversation_continues" }
+});
+assert.equal(activeFollowStop.status, "completed");
+assert.equal(followStops.length, activeFollowStopsBefore + 1);
+
+const followScenarioAgain = await executor.executeBridgeAction({
+  id: "follow_2",
+  source: "gemini_live",
+  type: "run_scenario",
+  args: { name: "follow_target", label: "bottle", mode: "gentle" }
+});
+assert.equal(followScenarioAgain.status, "completed");
+assert.equal(followRunning, true);
+
+const routesBeforeFollowExit = routedSequences.length;
+const backUpWhileFollowing = await executor.executeBridgeAction({
+  id: "back_up_while_following",
   source: "gemini_live",
   type: "run_scenario",
   args: { name: "back_up" }
 });
-assert.equal(blockedWhileFollowing.status, "rejected");
-assert.match(blockedWhileFollowing.message, /blocked until following stops/i);
-assert.equal(routedSequences.length, routesBeforeFollowBlock);
+assert.equal(backUpWhileFollowing.status, "completed");
+assert.equal(followRunning, false);
+assert.equal(routedSequences.length, routesBeforeFollowExit + 1);
+assert.equal(routedSequences.at(-1).action.args.scenario, "back_up");
+assert.equal(followStops.at(-1), "before:back_up");
 
 const visionFollowTurn = await executor.executeBridgeAction({
   id: "vision_follow_left",
@@ -359,14 +605,6 @@ const rejectedVisionFollowScenario = await executor.executeBridgeAction({
 });
 assert.equal(rejectedVisionFollowScenario.status, "rejected");
 assert.match(rejectedVisionFollowScenario.message, /only run steering scenarios/i);
-
-const activeFollowStop = await executor.executeBridgeAction({
-  id: "follow_stop_active",
-  source: "gemini_live",
-  type: "run_scenario",
-  args: { name: "stop_following", reason: "conversation_continues" }
-});
-assert.equal(activeFollowStop.status, "completed");
 
 executor.getRuntimeContext = () => ({
   geminiLive: { lastInputTranscript: "stop following it" }

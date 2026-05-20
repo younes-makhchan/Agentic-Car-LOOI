@@ -1,5 +1,13 @@
 import { MOVEMENTS } from "./movementCatalog.js";
 import { photoPoseAndCapture } from "./scenarioActions/photoPoseAndCapture.js";
+import { finishDrink, openDrink } from "./scenarioActions/drinkingActions.js";
+import { finishBurger, takeBite } from "./scenarioActions/eatingActions.js";
+import { showQuestion } from "./scenarioActions/questionActions.js";
+import { showAngry } from "./scenarioActions/angryActions.js";
+import { showLoving } from "./scenarioActions/lovingActions.js";
+import { showShocked } from "./scenarioActions/shockedActions.js";
+import { finishTellMeAboutYourself, showTellMeAboutYourself } from "./scenarioActions/tellMeAboutYourselfActions.js";
+import { showKiss } from "./scenarioActions/kissActions.js";
 
 const PERMISSIONS = Object.freeze({
   none: Object.freeze({ motion: false, camera: false, speech: false }),
@@ -149,6 +157,175 @@ const SCENARIO_DEFINITIONS = Object.freeze({
       { type: "face", expression: "attentive", eyeDirection: "center", intensity: 0.68, durationMs: 90 }
     ]
   }),
+  eating: scenario({
+    name: "eating",
+    description: "Show LOOI eating a burger when the user is eating or asks LOOI to eat.",
+    permissions: PERMISSIONS.none,
+    lifecycle: {
+      exitScenario: "finish_burger",
+      exitPolicy: "auto_before_next",
+      isActive: ({ face } = {}) => face?.isEatingActive?.() === true
+    },
+    sequence: [
+      {
+        type: "action",
+        action: takeBite,
+        args: {
+          durationMs: 3200
+        }
+      }
+    ]
+  }),
+  finish_burger: scenario({
+    name: "finish_burger",
+    description: "Finish and clear the active eating animation before doing something else.",
+    permissions: PERMISSIONS.none,
+    sequence: [
+      {
+        type: "action",
+        action: finishBurger,
+        args: {
+          durationMs: 2200
+        }
+      }
+    ]
+  }),
+  drinking: scenario({
+    name: "drinking",
+    description: "Show LOOI drinking cola from a straw when the user is drinking coffee, water, juice, or another drink.",
+    permissions: PERMISSIONS.none,
+    lifecycle: {
+      exitScenario: "finish_drink",
+      exitPolicy: "auto_before_next",
+      isActive: ({ face } = {}) => face?.isDrinkingActive?.() === true
+    },
+    sequence: [
+      {
+        type: "action",
+        action: openDrink,
+        args: {
+          durationMs: 1600
+        }
+      }
+    ]
+  }),
+  finish_drink: scenario({
+    name: "finish_drink",
+    description: "Finish and clear the active drinking animation before doing something else.",
+    permissions: PERMISSIONS.none,
+    sequence: [
+      {
+        type: "action",
+        action: finishDrink,
+        args: {
+          durationMs: 1800
+        }
+      }
+    ]
+  }),
+  question: scenario({
+    name: "question",
+    description: "Show a question mark when LOOI is confused.",
+    permissions: PERMISSIONS.none,
+    sequence: [
+      {
+        type: "action",
+        action: showQuestion,
+        args: {
+          durationMs: 2200
+        }
+      }
+    ]
+  }),
+  angry: scenario({
+    name: "angry",
+    description: "Show an angry/frustrated face animation when LOOI feels angry or frustrated.",
+    permissions: PERMISSIONS.none,
+    sequence: [
+      {
+        type: "action",
+        action: showAngry,
+        args: {
+          durationMs: 1800
+        }
+      }
+    ]
+  }),
+  loving: scenario({
+    name: "loving",
+    description: "Show a loving heart animation when LOOI feels sweet, appreciative, loved, or cute.",
+    permissions: PERMISSIONS.none,
+    sequence: [
+      {
+        type: "action",
+        action: showLoving,
+        args: {
+          durationMs: 2400
+        }
+      }
+    ]
+  }),
+  shocked: scenario({
+    name: "shocked",
+    description: "Show a shocked exclamation animation when LOOI is alarmed, surprised, or has a realization.",
+    permissions: PERMISSIONS.none,
+    sequence: [
+      {
+        type: "action",
+        action: showShocked,
+        args: {
+          durationMs: 1700
+        }
+      }
+    ]
+  }),
+  tell_me_about_yourself: scenario({
+    name: "tell_me_about_yourself",
+    description: "Start and hold a self-introduction/interview animation while LOOI introduces itself or tells the user about itself.",
+    permissions: PERMISSIONS.none,
+    lifecycle: {
+      exitScenario: "finish_telling",
+      exitPolicy: "auto_before_next",
+      isActive: ({ face } = {}) => face?.isTellingActive?.() === true
+    },
+    sequence: [
+      {
+        type: "action",
+        action: showTellMeAboutYourself,
+        args: {
+          durationMs: 1400
+        }
+      }
+    ]
+  }),
+  finish_telling: scenario({
+    name: "finish_telling",
+    description: "Finish and clear the active self-introduction/interview animation.",
+    permissions: PERMISSIONS.none,
+    sequence: [
+      {
+        type: "action",
+        action: finishTellMeAboutYourself,
+        args: {
+          durationMs: 1200
+        }
+      }
+    ]
+  }),
+  kiss: scenario({
+    name: "kiss",
+    description: "Show a blown-kiss animation when live vision estimates a person's face is very close, roughly filling 80% or more of the frame, only while LOOI is not speaking.",
+    permissions: PERMISSIONS.none,
+    sequence: [
+      {
+        type: "action",
+        action: showKiss,
+        args: {
+          durationMs: 2600
+        }
+      }
+    ]
+  }),
   take_picture: scenario({
     name: "take_picture",
     description: "Take a local camera photo of the user and show a small preview.",
@@ -177,7 +354,12 @@ const MODEL_VISIBLE_SCENARIOS = Object.freeze(
 const MODEL_ONLY_SCENARIOS = Object.freeze({
   follow_target: Object.freeze({
     name: "follow_target",
-    description: "Start local object follow for a visible target label."
+    description: "Start local object follow for a visible target label.",
+    lifecycle: Object.freeze({
+      exitScenario: "stop_following",
+      exitPolicy: "auto_before_next",
+      isActive: ({ followTargetController } = {}) => followTargetController?.isRunning?.() === true
+    })
   }),
   stop_following: Object.freeze({
     name: "stop_following",
@@ -210,6 +392,15 @@ export function getScenarioDefinition(value) {
   return name ? SCENARIO_DEFINITIONS[name] : null;
 }
 
+export function getActiveScenarioLifecycles(context = {}) {
+  return [
+    ...Object.values(SCENARIO_DEFINITIONS),
+    ...Object.values(MODEL_ONLY_SCENARIOS)
+  ]
+    .map((definition) => buildActiveLifecycle(definition, context))
+    .filter(Boolean);
+}
+
 function scenario({
   name,
   description,
@@ -217,7 +408,8 @@ function scenario({
   sequence = [],
   cooldownMs = 0,
   interruptible = true,
-  modelVisible = true
+  modelVisible = true,
+  lifecycle = null
 }) {
   return Object.freeze({
     name,
@@ -226,7 +418,8 @@ function scenario({
     sequence: Object.freeze(sequence.map((frame) => Object.freeze({ ...frame }))),
     cooldownMs,
     interruptible,
-    modelVisible
+    modelVisible,
+    lifecycle: freezeLifecycle(lifecycle)
   });
 }
 
@@ -238,4 +431,37 @@ function face(expression, intensity, eyeDirection, durationMs) {
     eyeDirection,
     durationMs
   };
+}
+
+function buildActiveLifecycle(definition, context) {
+  const lifecycle = definition?.lifecycle;
+  if (!lifecycle || typeof lifecycle.isActive !== "function") {
+    return null;
+  }
+
+  try {
+    if (!lifecycle.isActive(context)) {
+      return null;
+    }
+  } catch (_error) {
+    return null;
+  }
+
+  return Object.freeze({
+    name: definition.name,
+    exitScenario: lifecycle.exitScenario,
+    exitPolicy: lifecycle.exitPolicy
+  });
+}
+
+function freezeLifecycle(lifecycle) {
+  if (!lifecycle || typeof lifecycle !== "object") {
+    return null;
+  }
+
+  return Object.freeze({
+    exitScenario: String(lifecycle.exitScenario ?? "").trim(),
+    exitPolicy: lifecycle.exitPolicy === "explicit_only" ? "explicit_only" : "auto_before_next",
+    isActive: lifecycle.isActive
+  });
 }
