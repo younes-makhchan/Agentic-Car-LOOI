@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { LocalEventBus } from "../public/js/core/localEventBus.js";
 import { AttentionSystem } from "../public/js/localBrain/attentionSystem.js";
-import { AutonomousScheduler } from "../public/js/localBrain/autonomousScheduler.js";
 import { BrainLatencyBudget } from "../public/js/localBrain/brainLatencyBudget.js";
 import { createDefaultBrainPolicy } from "../public/js/localBrain/brainPolicy.js";
 import { LocalBrainEngine } from "../public/js/localBrain/localBrainEngine.js";
@@ -35,8 +34,8 @@ assert.equal(liveGreeting.accepted, true);
 assert.equal(liveGreeting.shouldTriggerBrain, true);
 const liveMoveForward = liveGate.processTranscript({ text: "move forward", confidence: 1 });
 assert.equal(liveMoveForward.classification, "direct_to_robot");
-assert.equal(liveMoveForward.suggestedIntent.action, "drive");
-assert.equal(liveMoveForward.suggestedIntent.args.linear > 0, true);
+assert.equal(liveMoveForward.suggestedIntent.action, "run_scenario");
+assert.equal(liveMoveForward.suggestedIntent.args.name, "come_closer");
 
 const attention = new AttentionSystem({ logger: () => {} });
 attention.wake("smoke", 1000);
@@ -44,37 +43,11 @@ assert.equal(attention.getStatus().mode, "attentive");
 attention.attentionUntil = Date.now() - 1;
 assert.equal(attention.update().mode, "idle");
 attention.enterStopCooldown("smoke", 1000);
-assert.equal(attention.canAutonomouslyAct({ autonomousMode: true }), false);
+assert.equal(attention.shouldThinkAboutEvent({ type: "user_speech", payload: { classification: "open_speech" } }), false);
 
 const budget = new BrainLatencyBudget({ eventThoughtTimeoutMs: 5 });
 const fallbackValue = await budget.withTimeout(new Promise(() => {}), 5, async () => "fallback");
 assert.equal(fallbackValue, "fallback");
-
-const schedulerBus = new LocalEventBus({ logger: () => {} });
-const schedulerEvents = [];
-schedulerBus.subscribe("autonomous_tick", (event) => schedulerEvents.push(event));
-const scheduler = new AutonomousScheduler({
-  eventBus: schedulerBus,
-  getPolicy: () => ({ ...createDefaultBrainPolicy(), autonomousMode: false }),
-  getContext: () => ({ lifeState: { boredom: 0.95, isSpeaking: false, stopRespectUntil: 0 } }),
-  logger: () => {}
-});
-scheduler.start();
-assert.equal(scheduler.tick().allowed, false);
-scheduler.stop();
-const activeScheduler = new AutonomousScheduler({
-  eventBus: schedulerBus,
-  getPolicy: () => ({
-    ...createDefaultBrainPolicy(),
-    autonomousMode: true,
-    minAutonomousThoughtIntervalMs: 1
-  }),
-  getContext: () => ({ lifeState: { boredom: 0.95, isSpeaking: false, stopRespectUntil: 0 } }),
-  logger: () => {}
-});
-activeScheduler.start();
-assert.equal(schedulerEvents.length > 0, true);
-activeScheduler.stop();
 
 let policy = {
   ...createDefaultBrainPolicy(),
@@ -98,7 +71,7 @@ const engine = new LocalBrainEngine({
         status: "completed",
         type: action.type,
         executed: true,
-        physical: action.type === "stop",
+        physical: action.type === "run_scenario",
         message: `${action.type} executed`
       };
     }
@@ -109,20 +82,9 @@ const engine = new LocalBrainEngine({
     simulatorMode: true,
     robotConnected: true
   }),
-  adapter: {
-    async isAvailable() {
-      return true;
-    },
-    async think() {
-      adapterCalls += 1;
-      return {
-        ok: true,
-        source: "smoke",
-        action: { type: "perform", args: { speech: { text: "", tone: "soft" }, movement: ["move_forward_tiny"], timing: "parallel", iterateMovement: false } },
-        reason: "approach"
-      };
-    }
-  },
+  adapter: scenarioAdapter("come_closer", () => {
+    adapterCalls += 1;
+  }),
   fallback: new RuleBrainFallback(),
   logger: () => {}
 });
@@ -137,23 +99,9 @@ engineBus.publish("user_speech", {
 await wait(20);
 assert.equal(adapterCalls, 1);
 
-engine.setAdapter({
-  async isAvailable() {
-    return true;
-  },
-  async think() {
-    adapterCalls += 1;
-      return {
-        ok: true,
-        source: "server_llm",
-        action: { type: "perform", args: { speech: { text: "", tone: "soft" }, movement: ["look_left"], timing: "parallel", iterateMovement: false } },
-        reason: "speech"
-      };
-  }
-});
-engineBus.publish("autonomous_tick", {
-  reason: "boredom_high"
-});
+engine.setAdapter(scenarioAdapter("look_left", () => {
+  adapterCalls += 1;
+}));
 engineBus.publish("camera_observation", {
   observation: { userVisible: true }
 });
@@ -168,42 +116,18 @@ engineBus.publish("user_speech", {
 await wait(20);
 assert.equal(adapterCalls, 2);
 
-engine.setAdapter({
-  async isAvailable() {
-    return true;
-  },
-  async think() {
-      return {
-        ok: true,
-        source: "smoke",
-        action: { type: "perform", args: { speech: { text: "", tone: "soft" }, movement: ["move_forward_tiny"], timing: "parallel", iterateMovement: false } },
-        reason: "approach"
-      };
-  }
-});
-const disarmed = await engine.thinkNow("manual", {
+engine.setAdapter(scenarioAdapter("come_closer"));
+const scenarioThought = await engine.thinkNow("manual", {
   type: "user_text",
   payload: { text: "come here", accepted: true, shouldTriggerBrain: true }
 });
-assert.equal(disarmed.results[0].status, "completed");
-assert.equal(disarmed.results[0].type, "perform");
+assert.equal(scenarioThought.results[0].status, "completed");
+assert.equal(scenarioThought.results[0].type, "run_scenario");
 
-engine.setAdapter({
-  async isAvailable() {
-    return true;
-  },
-  async think() {
-      return {
-        ok: true,
-        source: "smoke",
-        action: { type: "perform", args: { speech: { text: "", tone: "soft" }, movement: ["still"], timing: "parallel", iterateMovement: false } },
-        reason: "stop"
-      };
-  }
-});
+engine.setAdapter(scenarioAdapter("still"));
 const stopped = await engine.thinkNow("manual");
 assert.equal(stopped.results[0].status, "completed");
-assert.equal(executedActions.some((action) => action.type === "perform" && action.args.movement.includes("still")), true);
+assert.equal(executedActions.some((action) => action.type === "run_scenario" && action.args.name === "still"), true);
 engine.stop();
 
 policy = {
@@ -214,9 +138,25 @@ policy = {
 console.log(JSON.stringify({
   ok: true,
   speechGateRecent: speechGate.getRecentTranscripts().length,
-  schedulerEvents: schedulerEvents.length,
   thoughts: engine.getRecentThoughts().length
 }));
+
+function scenarioAdapter(name, onThink = () => {}) {
+  return {
+    async isAvailable() {
+      return true;
+    },
+    async think() {
+      onThink();
+      return {
+        ok: true,
+        source: "smoke",
+        action: { type: "run_scenario", args: { name } },
+        reason: name
+      };
+    }
+  };
+}
 
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));

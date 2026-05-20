@@ -2,20 +2,7 @@ import {
   createPersonalityProfile,
   DEFAULT_PERSONALITY_PROFILE
 } from "../personality/personalityProfile.js";
-import { chooseBehavior } from "./behaviorTree.js";
-import {
-  approachUser,
-  curiousScan,
-  excitedWiggle,
-  listenPose,
-  retreat,
-  rotateTowardUser,
-  scaredStop,
-  sleepyIdle,
-  softIdle,
-  safeEnqueueMotion
-} from "./motionStyles.js";
-import { validateBehaviorRequest, validateMotionCommand, DEFAULT_LIMITS } from "./safetyGate.js";
+import { DEFAULT_LIMITS } from "./safetyGate.js";
 import {
   clamp01,
   createDefaultLifeState,
@@ -23,14 +10,6 @@ import {
   setMood,
   updateDriveValue
 } from "./state.js";
-
-const MOTION_BEHAVIORS = new Set([
-  "curious_scan",
-  "excited_wiggle",
-  "approach_user",
-  "retreat",
-  "rotate_toward_user"
-]);
 
 const PATCHABLE_STATE_KEYS = new Set([
   "mood",
@@ -93,16 +72,11 @@ export class LifeEngine {
     this.state = createDefaultLifeState();
     this.running = false;
     this.reflexTimer = null;
-    this.behaviorTimer = null;
     this.driveTimer = null;
-    this.lastExecutedBehavior = null;
-    this.behaviorCooldownMs = 500;
-    this.behaviorExecuting = false;
     this.lastTelemetryEventAt = 0;
     this.lastObstacleStopAt = 0;
     this.lastUserSeenAt = 0;
     this.limits = { ...DEFAULT_LIMITS };
-    this.macroSequencer = null;
     this.embodiedActionRouter = null;
   }
 
@@ -114,7 +88,6 @@ export class LifeEngine {
     this.running = true;
     this.reflexTimer = globalThis.setInterval(() => this.tickReflex(), 100);
     this.driveTimer = globalThis.setInterval(() => this.tickDrives(), 500);
-    this.behaviorTimer = globalThis.setInterval(() => this.tickBehavior(), 300);
 
     this.face?.setExpression?.(this.state.mood, 0.85);
     this.face?.setEyeDirection?.("center");
@@ -128,10 +101,8 @@ export class LifeEngine {
     this.running = false;
     clearInterval(this.reflexTimer);
     clearInterval(this.driveTimer);
-    clearInterval(this.behaviorTimer);
     this.reflexTimer = null;
     this.driveTimer = null;
-    this.behaviorTimer = null;
     this.emitStatus();
     this.log("Life Engine stopped.");
 
@@ -166,7 +137,6 @@ export class LifeEngine {
 
   setCalibration(calibration) {
     this.calibration = calibration;
-    this.macroSequencer?.setCalibration?.(calibration);
     const settings = calibration?.getSettings?.() ?? calibration ?? {};
     this.limits = {
       ...this.limits,
@@ -177,33 +147,9 @@ export class LifeEngine {
     return this.getState();
   }
 
-  setMacroSequencer(macroSequencer) {
-    this.macroSequencer = macroSequencer;
-    return this.getState();
-  }
-
   setEmbodiedActionRouter(router) {
     this.embodiedActionRouter = router;
     return this.getState();
-  }
-
-  async requestMacro(name, options = {}) {
-    if (!this.macroSequencer?.playMacro) {
-      return {
-        ok: false,
-        executed: false,
-        reason: "macro_sequencer_unavailable"
-      };
-    }
-
-    return this.macroSequencer.playMacro(name, {
-      source: "life_engine",
-      allowMotion: options.allowMotion !== false,
-      allowSpeech: options.allowSpeech === true,
-      priority: options.priority,
-      reason: options.reason ?? name,
-      context: options.context ?? {}
-    });
   }
 
   setPersonalityProfile(profile) {
@@ -397,40 +343,6 @@ export class LifeEngine {
     return this.getState();
   }
 
-  async requestBehavior(name, args = {}) {
-    if (MOTION_BEHAVIORS.has(name) && this.isStopRespectActive()) {
-      return {
-        allowed: false,
-        name,
-        args,
-        reason: "stop_respect_cooldown_active"
-      };
-    }
-
-    const validation = validateBehaviorRequest(name, args, this.state);
-
-    if (!validation.allowed) {
-      this.log(`Life behavior rejected (${validation.reason}): ${name}`, "warn");
-      return validation;
-    }
-
-    this.state.requestedBehavior = validation.name;
-    this.state.requestedBehaviorArgs = validation.args;
-    this.emitStatus();
-
-    try {
-      const result = await this.executeBehavior(validation.name, validation.args);
-      this.clearRequestedBehavior();
-      return {
-        ...validation,
-        result
-      };
-    } catch (error) {
-      this.clearRequestedBehavior();
-      throw error;
-    }
-  }
-
   clearRequestedBehavior() {
     this.state.requestedBehavior = null;
     this.state.requestedBehaviorArgs = null;
@@ -542,128 +454,6 @@ export class LifeEngine {
       this.state.boredom = updateDriveValue(this.state.boredom, 0.01);
       this.state.loneliness = updateDriveValue(this.state.loneliness, 0.03);
     }
-  }
-
-  async executeRobotAction(toolName, args = {}) {
-    try {
-      switch (toolName) {
-        case "drive":
-          return this.executeDirectDrive(args);
-        case "approach_user":
-        case "retreat":
-        case "curious_scan":
-        case "excited_wiggle": {
-          const result = await this.requestBehavior(toolName, args);
-          return normalizeLifeActionResult(toolName, result);
-        }
-        case "stop":
-          await this.commandQueue?.emergencyStop?.(args.reason ?? "robot_stop");
-          this.receiveEvent({ type: "stop", reason: args.reason ?? "robot_stop" });
-          return {
-            ok: true,
-            executed: true,
-            queued: false,
-            rejected: false,
-            reason: "stop_executed",
-            detail: { reason: args.reason ?? "robot_stop" }
-          };
-        case "express":
-          this.face?.setExpression?.(args.emotion ?? "neutral", args.intensity ?? 1);
-          return {
-            ok: true,
-            executed: true,
-            queued: false,
-            rejected: false,
-            reason: "expression_set",
-            detail: { emotion: args.emotion ?? "neutral" }
-          };
-        default:
-          return {
-            ok: false,
-            executed: false,
-            queued: false,
-            rejected: true,
-            reason: "unknown_robot_action",
-            detail: { toolName }
-          };
-      }
-    } catch (error) {
-      return {
-        ok: false,
-        executed: false,
-        queued: false,
-        rejected: false,
-        reason: error.message,
-        detail: { toolName }
-      };
-    }
-  }
-
-  async executeDirectDrive(args = {}) {
-    if (this.isStopRespectActive()) {
-      return {
-        ok: false,
-        executed: false,
-        queued: false,
-        rejected: true,
-        reason: "stop_respect_cooldown_active",
-        detail: {
-          stopRespectUntil: this.state.stopRespectUntil
-        }
-      };
-    }
-
-      const result = await safeEnqueueMotion(
-      {
-        state: this.state,
-        face: this.face,
-        robotClient: this.robotClient,
-        commandQueue: this.commandQueue,
-        safetyGate: { validateMotionCommand },
-        macroSequencer: this.macroSequencer,
-        limits: this.limits,
-        calibration: this.calibration,
-        logger: this.logger
-      },
-      {
-        linear: args.linear,
-        angular: args.angular,
-        durationMs: args.durationMs ?? args.duration_ms,
-        rampMs: args.rampMs ?? args.ramp_ms,
-        label: `cloud_drive_${args.style ?? "direct"}`
-      }
-    );
-
-    if (!result.allowed) {
-      return {
-        ok: false,
-        executed: false,
-        queued: false,
-        rejected: true,
-        reason: result.reason,
-        detail: result
-      };
-    }
-
-    if (result.error) {
-      return {
-        ok: false,
-        executed: false,
-        queued: false,
-        rejected: false,
-        reason: result.error.message ?? "drive_failed",
-        detail: result
-      };
-    }
-
-    return {
-      ok: true,
-      executed: Boolean(result.queued || result.completed),
-      queued: Boolean(result.queued),
-      rejected: false,
-      reason: result.queued ? "drive_queued" : result.reason ?? "drive_not_queued",
-      detail: result
-    };
   }
 
   applySystemEvent(value) {
@@ -808,102 +598,6 @@ export class LifeEngine {
     this.emitStatus();
   }
 
-  tickBehavior() {
-    if (!this.running || this.behaviorExecuting) {
-      return;
-    }
-
-    const now = Date.now();
-    const chosen = chooseBehavior(this.state, now, {
-      personalityProfile: this.personalityProfile,
-      calibration: this.calibration
-    });
-    const requested = chosen.name === this.state.requestedBehavior;
-
-    if (MOTION_BEHAVIORS.has(chosen.name) && !requested) {
-      if (now - Number(this.state.lastBehaviorAt || 0) < this.behaviorCooldownMs) {
-        return;
-      }
-
-      if (
-        this.lastExecutedBehavior === chosen.name &&
-        now - Number(this.state.lastBehaviorAt || 0) < 4000
-      ) {
-        return;
-      }
-    }
-
-    this.executeBehavior(chosen.name, chosen.args)
-      .then(() => {
-        if (requested) {
-          this.clearRequestedBehavior();
-        }
-      })
-      .catch((error) => {
-        this.log(`Life behavior loop failed: ${error.message}`, "error");
-      });
-  }
-
-  async executeBehavior(name, args = {}) {
-    const validation = validateBehaviorRequest(name, args, this.state);
-    const requested = validation.name === this.state.requestedBehavior;
-
-    if (!validation.allowed) {
-      this.log(`Life behavior rejected (${validation.reason}): ${name}`, "warn");
-      return validation;
-    }
-
-    const handler = BEHAVIOR_HANDLERS[validation.name];
-
-    if (!handler) {
-      this.log(`No Life Engine handler for ${validation.name}`, "warn");
-      return validation;
-    }
-
-    this.behaviorExecuting = true;
-    const previousBehavior = this.state.currentBehavior;
-    this.state.currentBehavior = validation.name;
-    this.state.lastBehaviorAt = Date.now();
-    this.lastExecutedBehavior = validation.name;
-
-    if (validation.name !== "soft_idle" || previousBehavior !== "soft_idle") {
-      this.log(`Life behavior: ${validation.name}`);
-    }
-
-    this.emitStatus();
-
-    const context = {
-      state: this.state,
-      face: this.face,
-      robotClient: this.robotClient,
-      commandQueue: this.commandQueue,
-      safetyGate: { validateMotionCommand },
-      macroSequencer: this.macroSequencer,
-      allowMotion: requested || validation.name === "scared_stop",
-      allowSpeech: false,
-      limits: this.limits,
-      calibration: this.calibration,
-      personalityProfile: this.personalityProfile,
-      logger: this.logger
-    };
-
-    try {
-      const result = await handler(context, validation.args);
-      this.emitStatus();
-      return result;
-    } catch (error) {
-      this.log(`Life behavior failed (${validation.name}): ${error.message}`, "error");
-      return {
-        allowed: false,
-        name: validation.name,
-        args: validation.args,
-        reason: error.message
-      };
-    } finally {
-      this.behaviorExecuting = false;
-    }
-  }
-
   emitStatus() {
     if (typeof this.statusCallback !== "function") {
       return;
@@ -933,86 +627,6 @@ export class LifeEngine {
   isStopRespectActive(now = Date.now()) {
     return now < Number(this.state.stopRespectUntil || 0);
   }
-}
-
-const BEHAVIOR_HANDLERS = {
-  soft_idle: softIdle,
-  listen_pose: listenPose,
-  curious_scan: curiousScan,
-  excited_wiggle: excitedWiggle,
-  approach_user: approachUser,
-  retreat,
-  rotate_toward_user: rotateTowardUser,
-  sleepy_idle: sleepyIdle,
-  scared_stop: scaredStop
-};
-
-function normalizeLifeActionResult(toolName, requestResult) {
-  if (!requestResult) {
-    return {
-      ok: false,
-      executed: false,
-      queued: false,
-      rejected: false,
-      reason: "missing_life_engine_result",
-      detail: { toolName }
-    };
-  }
-
-  if (requestResult.allowed === false) {
-    return {
-      ok: false,
-      executed: false,
-      queued: false,
-      rejected: true,
-      reason: requestResult.reason ?? "life_engine_rejected",
-      detail: requestResult
-    };
-  }
-
-  const behaviorResult = requestResult.result ?? requestResult;
-
-  if (behaviorResult.allowed === false) {
-    return {
-      ok: false,
-      executed: false,
-      queued: false,
-      rejected: true,
-      reason: behaviorResult.reason ?? "life_motion_rejected",
-      detail: requestResult
-    };
-  }
-
-  if (behaviorResult.error) {
-    return {
-      ok: false,
-      executed: false,
-      queued: false,
-      rejected: false,
-      reason: behaviorResult.error.message ?? "life_motion_failed",
-      detail: requestResult
-    };
-  }
-
-  const queued = Boolean(behaviorResult.queued);
-  const executed = Boolean(
-    queued ||
-      behaviorResult.completed ||
-      behaviorResult.moved ||
-      behaviorResult.stopped ||
-      behaviorResult.behavior
-  );
-
-  return {
-    ok: true,
-    executed,
-    queued,
-    rejected: false,
-    reason:
-      behaviorResult.reason ??
-      (queued ? `${toolName}_queued` : `${toolName}_completed`),
-    detail: requestResult
-  };
 }
 
 function normalizeObservationValue(value) {

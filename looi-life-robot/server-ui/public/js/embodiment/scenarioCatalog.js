@@ -59,7 +59,7 @@ const SCENARIO_DEFINITIONS = Object.freeze({
   }),
   body_talking: Object.freeze({
     name: "body_talking",
-    description: "used this tool when the convseration is casual and you want to add more body language to make the conversation more engaging.",
+    description: "Add gentle body language during casual conversation.",
     movement: Object.freeze([
       MOVEMENTS.look_left,
       MOVEMENTS.look_right,

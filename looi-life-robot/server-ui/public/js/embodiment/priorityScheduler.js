@@ -7,8 +7,6 @@ export const PRIORITY_LEVELS = Object.freeze({
   direct_user_command: 70,
   local_brain_action: 60,
   camera_user_tracking: 50,
-  autonomous_life_event: 40,
-  idle_micro_behavior: 20,
   decorative_face_only: 10
 });
 
@@ -210,7 +208,7 @@ export class PriorityScheduler {
     this.history.unshift({
       ...compactTask(task),
       resultOk: result?.ok !== false,
-      resultReason: result?.reason ?? result?.macro ?? result?.error ?? "completed",
+      resultReason: result?.reason ?? result?.sequence ?? result?.error ?? "completed",
       latencyMs: Math.max(0, Date.now() - startedAt),
       completedAt: new Date().toISOString()
     });

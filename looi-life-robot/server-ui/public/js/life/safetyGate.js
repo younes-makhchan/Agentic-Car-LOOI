@@ -9,18 +9,6 @@ export const DEFAULT_LIMITS = {
   defaultRampMs: 120
 };
 
-const ALLOWED_BEHAVIORS = new Set([
-  "soft_idle",
-  "listen_pose",
-  "curious_scan",
-  "excited_wiggle",
-  "approach_user",
-  "retreat",
-  "rotate_toward_user",
-  "sleepy_idle",
-  "scared_stop"
-]);
-
 export function validateMotionCommand(command, state = {}, limits = DEFAULT_LIMITS) {
   const calibration = limits?.calibration?.getSettings?.() ?? limits?.calibration ?? {};
   const activeLimits = {
@@ -106,24 +94,6 @@ export function validateMotionCommand(command, state = {}, limits = DEFAULT_LIMI
     command: safeCommand,
     reason: warnings.length ? warnings.join(",") : "ok",
     warnings
-  };
-}
-
-export function validateBehaviorRequest(name, args = {}, _state = {}) {
-  if (!ALLOWED_BEHAVIORS.has(name)) {
-    return {
-      allowed: false,
-      name,
-      args,
-      reason: "unknown_behavior"
-    };
-  }
-
-  return {
-    allowed: true,
-    name,
-    args: args ?? {},
-    reason: "ok"
   };
 }
 

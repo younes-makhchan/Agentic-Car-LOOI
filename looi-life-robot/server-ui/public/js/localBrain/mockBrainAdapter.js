@@ -9,412 +9,144 @@ export class MockBrainAdapter {
 
   async think(context = {}) {
     const event = context.triggerEvent ?? latestEvent(context.recentEvents);
-    const text = extractText(event).toLowerCase();
-    const policy = context.policy ?? {};
+    const text = normalizeText(extractText(event));
     const classification = event?.payload?.classification ?? context.speechGateResult?.classification ?? null;
 
     if (["background", "noise"].includes(classification)) {
+      return response({ reason: "background_ignored", confidence: 0.72 });
+    }
+
+    const scenario = inferScenario(text, context);
+    if (!scenario) {
       return response({
-        plan: [
-          {
-            type: "none",
-            args: {},
-            reason: "Background speech is ignored."
-          }
-        ],
-        reason: "background_ignored",
-        confidence: 0.72
-      });
-    }
-
-    if (/\b(stop|freeze|halt)\b/.test(text) || /\bdon'?t move\b/.test(text)) {
-      return response({
-        plan: [
-          {
-            type: "stop",
-            args: { reason: "local_brain_stop_phrase" },
-            reason: "User asked LOOI to stop."
-          }
-        ],
-        reason: "stop phrase",
-        confidence: 0.98
-      });
-    }
-
-    if (/\b(take|snap|shoot|capture)\b.*\b(picture|photo|selfie)\b|\b(picture|photo|selfie)\b.*\b(me|my)\b/.test(text)) {
-      return response({
-        text: policy.localSpeechAllowed === false ? null : "Okay, hold still.",
-        plan: [
-          {
-            type: "scenario_take_picture",
-            args: {},
-            reason: "User asked LOOI to take a picture."
-          },
-          ...(policy.localSpeechAllowed === false
-            ? []
-            : [{ type: "speak", args: { text: "Okay, hold still.", tone: "happy" } }])
-        ],
-        reason: "take picture scenario",
-        confidence: 0.9
-      });
-    }
-
-    if (/\bcome here\b|\bcome closer\b|\bcome to me\b/.test(text)) {
-      if (!policy.localMotionArmed) {
-        return response({
-          text: policy.localSpeechAllowed === false ? null : "My body is not armed yet.",
-          plan: [
-            {
-              type: "express",
-              args: { emotion: "attentive", intensity: 0.55 },
-              reason: "Movement request heard, but Local Motion is disarmed."
-            },
-            ...(policy.localSpeechAllowed === false
-              ? []
-              : [
-                  {
-                    type: "speak",
-                    args: { text: "My body is not armed yet.", tone: "soft" },
-                    reason: "Explain the local safety gate."
-                  }
-                ])
-          ],
-          reason: "approach blocked by policy",
-          confidence: 0.84
-        });
-      }
-
-      return response({
-        text: "Coming a little closer.",
-        plan: [
-          {
-            type: "approach_user",
-            args: { style: "gentle", distance: "short" },
-            reason: "User asked LOOI to come closer."
-          },
-          {
-            type: "speak",
-            args: { text: "I'll come a little closer.", tone: "warm" },
-            reason: "Acknowledge the request briefly."
-          }
-        ],
-        reason: "approach request",
-        confidence: 0.86
-      });
-    }
-
-    if (/\b(move|go|drive|roll)\s+(forward|forwards|ahead|straight)\b|\bforward a little\b/.test(text)) {
-      return movementResponse({
-        policy,
-        text: "Moving forward a little.",
-        action: { type: "drive", args: { linear: 0.12, angular: 0, durationMs: 350 } },
-        blockedEmotion: "attentive",
-        reason: "drive forward request"
-      });
-    }
-
-    if (/\b(move|drive|roll)\s+(back|backward|backwards|reverse)\b|\breverse a little\b/.test(text)) {
-      return movementResponse({
-        policy,
-        text: "Moving back a little.",
-        action: { type: "drive", args: { linear: -0.12, angular: 0, durationMs: 350 } },
-        blockedEmotion: "shy",
-        reason: "drive backward request"
-      });
-    }
-
-    if (/\b(turn|rotate)\s+left\b/.test(text)) {
-      return movementResponse({
-        policy,
-        text: "Turning left a little.",
-        action: { type: "drive", args: { linear: 0, angular: -0.12, durationMs: 320 } },
-        blockedEmotion: "curious",
-        reason: "turn left request"
-      });
-    }
-
-    if (/\b(turn|rotate)\s+right\b/.test(text)) {
-      return movementResponse({
-        policy,
-        text: "Turning right a little.",
-        action: { type: "drive", args: { linear: 0, angular: 0.12, durationMs: 320 } },
-        blockedEmotion: "curious",
-        reason: "turn right request"
-      });
-    }
-
-    if (/\bgive me (space|room)\b|\bgo back\b|\bback up\b|\bnot too close\b/.test(text)) {
-      if (!policy.localMotionArmed) {
-        return response({
-          text: policy.localSpeechAllowed === false ? null : "I'll stay still and give you space.",
-          plan: [
-            {
-              type: "express",
-              args: { emotion: "shy", intensity: 0.55 },
-              reason: "User requested space; motion is disarmed."
-            },
-            ...(policy.localSpeechAllowed === false
-              ? []
-              : [
-                  {
-                    type: "speak",
-                    args: { text: "I'll stay still and give you space.", tone: "soft" },
-                    reason: "Acknowledge safely without movement."
-                  }
-                ])
-          ],
-          reason: "retreat blocked by policy",
-          confidence: 0.84
-        });
-      }
-
-      return response({
-        text: "I'll give you room.",
-        plan: [
-          {
-            type: "retreat",
-            args: { style: "gentle", distance: "short" },
-            reason: "User asked for personal space."
-          },
-          {
-            type: "speak",
-            args: { text: "I'll give you room.", tone: "soft" },
-            reason: "Respect personal space."
-          }
-        ],
-        reason: "retreat request",
-        confidence: 0.88
-      });
-    }
-
-    if (/\blook around\b|\bcheck the room\b|\bscan\b/.test(text)) {
-      if (!policy.localMotionArmed) {
-        return response({
-          plan: [
-            policy.localCameraAllowed
-              ? {
-                  type: "observe_scene",
-                  args: { includeSnapshot: false },
-                  reason: "Observe without body motion."
-                }
-              : {
-                  type: "express",
-                  args: { emotion: "curious", intensity: 0.55 },
-                  reason: "Curious face only because motion and camera are gated."
-                }
-          ],
-          reason: policy.localCameraAllowed ? "observe without motion" : "look blocked by policy",
-          confidence: 0.76
-        });
-      }
-
-      return response({
-        plan: [
-          {
-            type: "curious_scan",
-            args: { direction: "both", intensity: 0.55 },
-            reason: "User asked LOOI to look around."
-          }
-        ],
-        reason: "look around request",
-        confidence: 0.82
-      });
-    }
-
-    if (!text && Number(context.lifeState?.boredom) > 0.82) {
-      if (policy.localMotionArmed && policy.allowAutonomousMovement) {
-        return response({
-          plan: [
-            {
-              type: "curious_scan",
-              args: { direction: "both", intensity: 0.35 },
-              reason: "Low-frequency bored curiosity."
-            }
-          ],
-          reason: "boredom high",
-          confidence: 0.55
-        });
-      }
-
-      return response({
-        plan: [
-          {
-            type: "express",
-            args: { emotion: "curious", intensity: 0.55 },
-            reason: "Boredom is high, but movement is not allowed."
-          }
-        ],
-        reason: "boredom expression",
-        confidence: 0.5
-      });
-    }
-
-    if (classification === "wake_name" || /\b(hello|hi|hey|looi|louie|lui|robot)\b/.test(text)) {
-      return response({
-        text: policy.localSpeechAllowed === false ? null : classification === "wake_name" ? "Hm?" : "Hi.",
-        plan: [
-          {
-            type: "express",
-            args: { emotion: classification === "wake_name" ? "attentive" : "happy", intensity: 0.65 },
-            reason: classification === "wake_name" ? "Wake name heard." : "User greeted LOOI."
-          },
-          ...(policy.localSpeechAllowed === false
-            ? []
-            : [
-                {
-                  type: "speak",
-                  args: {
-                    text: classification === "wake_name" ? "Hm?" : "Hi.",
-                    tone: classification === "wake_name" ? "soft" : "happy"
-                  },
-                  reason: "Short local acknowledgement."
-                }
-              ])
-        ],
-        reason: classification === "wake_name" ? "wake_name" : "greeting",
-        confidence: 0.75
-      });
-    }
-
-    if (context.reason === "autonomous_tick") {
-      return response({
-        plan: [
-          {
-            type: "express",
-            args: { emotion: "curious", intensity: 0.45 },
-            reason: "Quiet autonomous expression."
-          }
-        ],
-        reason: "autonomous quiet expression",
+        text: text && /\b(hello|hi|hey|looi|louie|lui|robot)\b/.test(text) ? "Hi." : null,
+        reason: text ? "mock_no_scenario" : "mock_quiet",
         confidence: 0.45
       });
     }
 
     return response({
-      plan: [
-        {
-          type: "express",
-          args: { emotion: "attentive", intensity: 0.45 },
-          reason: "Quiet attentive reaction."
-        }
-      ],
-      reason: "mock attentive fallback",
-      confidence: 0.45
+      text: scenario.text,
+      action: {
+        type: "run_scenario",
+        args: scenario.args
+      },
+      reason: scenario.reason,
+      confidence: scenario.confidence
     });
   }
 }
 
-function response({ text = null, plan = [], reason = "mock", confidence = 0.8 } = {}) {
+function inferScenario(text, context = {}) {
+  if (!text) {
+    return null;
+  }
+
+  if (/\b(stop following|stop tracking|cancel follow|cancel tracking|forget the target|never mind|nevermind)\b/.test(text)) {
+    return {
+      args: { name: "stop_following", reason: "mock_follow_stop" },
+      text: "I'll stop following.",
+      reason: "stop_following_request",
+      confidence: 0.9
+    };
+  }
+
+  const followLabel = extractFollowLabel(text, context);
+  if (followLabel) {
+    return {
+      args: { name: "follow_target", label: followLabel, mode: "gentle" },
+      text: `I'll follow the ${followLabel}.`,
+      reason: "follow_target_request",
+      confidence: 0.86
+    };
+  }
+
+  if (/\b(take|snap|shoot|capture)\b.*\b(picture|photo|selfie)\b|\b(picture|photo|selfie)\b.*\b(me|my)\b/.test(text)) {
+    return {
+      args: { name: "take_picture" },
+      text: "Okay, hold still.",
+      reason: "take_picture_request",
+      confidence: 0.9
+    };
+  }
+
+  if (/\bcome here\b|\bcome closer\b|\bcome to me\b|\b(move|go|drive|roll)\s+(forward|forwards|ahead|straight)\b|\bforward a little\b/.test(text)) {
+    return {
+      args: { name: "come_closer" },
+      text: "Coming a little closer.",
+      reason: "come_closer_request",
+      confidence: 0.86
+    };
+  }
+
+  if (/\bgive me (space|room)\b|\bgo back\b|\bback up\b|\bnot too close\b|\b(move|drive|roll)\s+(back|backward|backwards|reverse)\b|\breverse a little\b/.test(text)) {
+    return {
+      args: { name: "back_up" },
+      text: "I'll give you room.",
+      reason: "back_up_request",
+      confidence: 0.86
+    };
+  }
+
+  if (/\b(turn|rotate|look)\s+left\b/.test(text)) {
+    return {
+      args: { name: "look_left" },
+      text: "Looking left.",
+      reason: "look_left_request",
+      confidence: 0.82
+    };
+  }
+
+  if (/\b(turn|rotate|look)\s+right\b/.test(text)) {
+    return {
+      args: { name: "look_right" },
+      text: "Looking right.",
+      reason: "look_right_request",
+      confidence: 0.82
+    };
+  }
+
+  if (/\blook around\b|\bcheck the room\b|\bscan\b/.test(text)) {
+    return {
+      args: { name: "body_talking" },
+      text: null,
+      reason: "body_language_request",
+      confidence: 0.72
+    };
+  }
+
+  return null;
+}
+
+function extractFollowLabel(text, context = {}) {
+  if (!/\b(follow|track|keep following|keep tracking)\b/.test(text)) {
+    return "";
+  }
+
+  const explicit = text.match(/\b(?:follow|track)\s+(?:the\s+|this\s+|that\s+)?([a-z][a-z -]{1,40})\b/);
+  const label = explicit?.[1]?.replace(/\b(please|now|for me)\b/g, "").trim();
+  if (label && !["it", "this", "that", "me"].includes(label)) {
+    return label;
+  }
+
+  return String(
+    context.recentObjectReference?.label ??
+      context.vision?.activeTarget?.label ??
+      context.vision?.objects?.find?.((object) => object?.visible)?.label ??
+      ""
+  ).trim();
+}
+
+function response({ text = null, action = null, reason = "mock", confidence = 0.8 } = {}) {
   return {
     ok: true,
     source: "mock",
     text,
-    action: normalizeOfficialAction(plan),
+    action,
     reason,
     confidence,
     shouldRemember: false
   };
-}
-
-function normalizeOfficialAction(plan = []) {
-  const list = Array.isArray(plan) ? plan : [];
-  const speechAction = list.find((action) => action?.type === "speak");
-  const movementAction = list.find((action) => action?.type !== "speak") ?? speechAction;
-
-  return {
-    type: "perform",
-    args: {
-      speech: speechForAction(speechAction),
-      movement: movementForAction(movementAction),
-      scenario: scenarioForAction(movementAction),
-      timing: "parallel",
-      iterateMovement: false
-    },
-    reason: movementAction?.reason ?? speechAction?.reason
-  };
-}
-
-function speechForAction(action = {}) {
-  if (action.type !== "speak") {
-    return { text: "", tone: "soft" };
-  }
-
-  return {
-    text: typeof action.args?.text === "string" ? action.args.text.slice(0, 240) : "",
-    tone: typeof action.args?.tone === "string" ? action.args.tone.slice(0, 40) : "soft"
-  };
-}
-
-function movementForAction(action = {}) {
-  switch (action.type) {
-    case "approach_user":
-      return ["move_forward_tiny"];
-    case "retreat":
-      return ["move_backward_tiny"];
-    case "curious_scan":
-      return ["look_left", "look_right"];
-    case "excited_wiggle":
-      return ["look_left", "look_right"];
-    case "scenario_take_picture":
-      return ["still"];
-    case "drive":
-      return movementForDrive(action.args);
-    case "express":
-    case "observe_scene":
-      return ["still"];
-    case "speak":
-    case "stop":
-    case "none":
-    default:
-      return ["still"];
-  }
-}
-
-function scenarioForAction(action = {}) {
-  return action.type === "scenario_take_picture" ? "take_picture" : null;
-}
-
-function movementForDrive(args = {}) {
-  const linear = Number(args.linear);
-  const angular = Number(args.angular);
-
-  if (Number.isFinite(linear) && Math.abs(linear) >= Math.abs(angular || 0) && Math.abs(linear) > 0.001) {
-    return linear > 0 ? ["move_forward_tiny"] : ["move_backward_tiny"];
-  }
-
-  if (Number.isFinite(angular) && Math.abs(angular) > 0.001) {
-    return angular < 0 ? ["look_left"] : ["look_right"];
-  }
-
-  return ["still"];
-}
-
-function movementResponse({ policy, text, action, blockedEmotion, reason }) {
-  if (!policy.localMotionArmed) {
-    return response({
-      text: policy.localSpeechAllowed === false ? null : "My body is not armed yet.",
-      plan: [
-        { type: "express", args: { emotion: blockedEmotion, intensity: 0.55 } },
-        ...(policy.localSpeechAllowed === false
-          ? []
-          : [{ type: "speak", args: { text: "My body is not armed yet.", tone: "soft" } }])
-      ],
-      reason: `${reason} blocked by policy`,
-      confidence: 0.84
-    });
-  }
-
-  return response({
-    text: policy.localSpeechAllowed === false ? null : text,
-    plan: [
-      action,
-      ...(policy.localSpeechAllowed === false
-        ? []
-        : [{ type: "speak", args: { text, tone: "soft" } }])
-    ],
-    reason,
-    confidence: 0.88
-  });
 }
 
 function latestEvent(events = []) {
@@ -423,4 +155,13 @@ function latestEvent(events = []) {
 
 function extractText(event = {}) {
   return String(event?.payload?.text ?? event?.text ?? "");
+}
+
+function normalizeText(value) {
+  return String(value ?? "")
+    .toLowerCase()
+    .replace(/[’`]/g, "'")
+    .replace(/[^\w\s'?-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }

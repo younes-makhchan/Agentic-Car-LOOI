@@ -13,7 +13,6 @@ export class FollowTargetController {
     lifeEngine,
     commandQueue,
     safetyGate,
-    macroSequencer,
     eventBus,
     voiceOutput,
     getPolicy,
@@ -26,7 +25,6 @@ export class FollowTargetController {
     this.lifeEngine = lifeEngine;
     this.commandQueue = commandQueue;
     this.safetyGate = safetyGate;
-    this.macroSequencer = macroSequencer;
     this.eventBus = eventBus;
     this.voiceOutput = voiceOutput;
     this.getPolicy = getPolicy;

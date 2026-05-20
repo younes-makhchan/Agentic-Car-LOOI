@@ -4,8 +4,8 @@ import { ToolExecutor } from "../public/js/robot/toolExecutor.js";
 
 const logs = [];
 const faceEvents = [];
-const behaviorRequests = [];
 const stops = [];
+const routedSequences = [];
 const policy = {
   cloudMotionArmed: false,
   cloudCameraAllowed: false,
@@ -15,8 +15,7 @@ const policy = {
   allowNonPhysical: true,
   localMotionArmed: false,
   localCameraAllowed: false,
-  localSpeechAllowed: true,
-  allowAutonomousMovement: false
+  localSpeechAllowed: true
 };
 
 const face = {
@@ -56,7 +55,6 @@ const commandQueue = {
   }
 };
 
-const cameraCalls = [];
 const cameraStatus = {
   supported: true,
   secureContext: true,
@@ -66,24 +64,10 @@ const cameraStatus = {
   lastError: null,
   lastFrameAt: Date.now(),
   lastSnapshotAt: null,
-  visionSupported: {
-    faceDetector: false
-  },
-  observation: {
-    timestamp: new Date().toISOString(),
-    cameraRunning: true,
-    facingMode: "user",
-    detector: "none",
-    userVisible: false,
-    faceCount: null,
-    userPosition: "unknown",
-    userDistance: "unknown",
-    brightness: null,
-    motion: null,
-    note: "mock camera"
-  }
+  visionSupported: { faceDetector: false },
+  observation: null
 };
-
+const cameraCalls = [];
 const cameraInput = {
   getCameraStatus() {
     return cameraStatus;
@@ -92,16 +76,6 @@ const cameraInput = {
     cameraCalls.push({ type: "start", facingMode });
     cameraStatus.running = true;
     cameraStatus.facingMode = facingMode;
-    return { ok: true, status: cameraStatus };
-  },
-  async switchCamera() {
-    cameraCalls.push({ type: "switch" });
-    cameraStatus.facingMode = cameraStatus.facingMode === "user" ? "environment" : "user";
-    return { ok: true, status: cameraStatus };
-  },
-  async stopCamera() {
-    cameraCalls.push({ type: "stop" });
-    cameraStatus.running = false;
     return { ok: true, status: cameraStatus };
   },
   async captureSnapshot({ includeDataUrl, maxWidth }) {
@@ -129,7 +103,8 @@ const lifeEngine = {
       energy: 0.7,
       boredom: 0.2,
       fear: 0,
-      recentEvents: []
+      recentEvents: [],
+      stopRespectUntil: 0
     };
   },
   patchState(partialState, reason) {
@@ -137,17 +112,6 @@ const lifeEngine = {
   },
   receiveEvent(event) {
     return event;
-  },
-  async executeRobotAction(toolName, args) {
-    behaviorRequests.push({ toolName, args });
-    return {
-      ok: true,
-      executed: true,
-      queued: toolName !== "express",
-      rejected: false,
-      reason: `${toolName}_accepted`,
-      detail: { toolName, args }
-    };
   }
 };
 
@@ -157,6 +121,29 @@ const executor = new ToolExecutor({
   robotClient,
   commandQueue,
   cameraInput,
+  embodiedActionRouter: {
+    async execute(action, context) {
+      routedSequences.push({ action, context });
+      if (context.allowMotion === false && action.args?.movement?.some?.((entry) => Array.isArray(entry) && entry.some((frame) => frame.type === "motion"))) {
+        return {
+          ok: true,
+          status: "completed",
+          sequence: action.args?.scenario ?? "scenario_sequence",
+          result: {
+            executed: false,
+            partial: true,
+            skippedFrames: ["motion_not_allowed"]
+          }
+        };
+      }
+      return {
+        ok: true,
+        status: "completed",
+        sequence: action.args?.scenario ?? "scenario_sequence",
+        result: { executed: true, executedFrames: 1 }
+      };
+    }
+  },
   logger: (message, level = "info") => logs.push({ level, message }),
   getExecutionPolicy: () => ({ ...policy }),
   getRuntimeContext: () => ({
@@ -164,323 +151,122 @@ const executor = new ToolExecutor({
     robotTelemetry: robotClient.getLatestTelemetry(),
     connectionState: "simulated_connected",
     simulatorMode: true,
-    cloudMotionArmed: policy.cloudMotionArmed,
-    cloudCameraAllowed: policy.cloudCameraAllowed,
+    localMotionArmed: policy.localMotionArmed,
+    localCameraAllowed: policy.localCameraAllowed,
     cameraStatus,
     recentLifeEvents: []
   })
 });
 
-const expressResult = await executor.executeBridgeAction({
-  id: "express_1",
-  source: "test",
+const rejectedLegacy = await executor.executeBridgeAction({
+  id: "legacy_express",
+  source: "gemini_live",
   type: "express",
-  args: {
-    emotion: "happy",
-    intensity: 0.8
-  }
+  args: { emotion: "happy" }
 });
-assert.equal(expressResult.status, "completed");
-assert.equal(expressResult.executed, true);
-assert.equal(expressResult.physical, false);
-assert.equal(faceEvents.some((event) => event.expression === "happy"), true);
+assert.equal(rejectedLegacy.status, "rejected");
+assert.match(rejectedLegacy.message, /Unknown action type/i);
 
-const observeResult = await executor.executeBridgeAction({
-  id: "observe_1",
-  source: "test",
-  type: "observe_scene",
-  args: {}
-});
-assert.equal(observeResult.status, "completed");
-assert.equal(observeResult.detail.connectionState, "simulated_connected");
-assert.equal(observeResult.detail.cloudCameraAllowed, false);
-assert.equal(observeResult.detail.cameraStatus.running, true);
-
-const rejectedCamera = await executor.executeBridgeAction({
-  id: "camera_rejected_1",
-  source: "test",
-  type: "open_front_camera",
-  args: {}
-});
-assert.equal(rejectedCamera.status, "rejected");
-assert.match(rejectedCamera.message, /not allowed/i);
-
-policy.cloudCameraAllowed = true;
-const openCamera = await executor.executeBridgeAction({
-  id: "camera_open_1",
-  source: "test",
-  type: "open_front_camera",
-  args: {}
-});
-assert.equal(openCamera.status, "completed");
-assert.equal(openCamera.physical, false);
-assert.equal(cameraCalls.some((call) => call.type === "start" && call.facingMode === "user"), true);
-
-const snapshot = await executor.executeBridgeAction({
-  id: "camera_snapshot_1",
-  source: "test",
-  type: "capture_snapshot",
-  args: {
-    includeDataUrl: true,
-    maxWidth: 320
-  }
-});
-assert.equal(snapshot.status, "completed");
-assert.equal(snapshot.detail.snapshot.width, 320);
-
-const observeSnapshot = await executor.executeBridgeAction({
-  id: "observe_snapshot_1",
-  source: "test",
-  type: "observe_scene",
-  args: {
-    includeSnapshot: true,
-    includeDataUrl: false
-  }
-});
-assert.equal(observeSnapshot.status, "completed");
-assert.equal("dataUrl" in observeSnapshot.detail.snapshot, false);
-
-policy.cloudCameraAllowed = false;
-
-const speakResult = await executor.executeBridgeAction({
-  id: "speak_1",
-  source: "test",
-  type: "speak",
-  args: {
-    text: "Short local smoke phrase.",
-    tone: "curious"
-  }
-});
-assert.equal(speakResult.status, "completed");
-assert.equal(speakResult.physical, false);
-
-const routedMovements = [];
-policy.localCameraAllowed = true;
-policy.localMotionArmed = true;
-executor.setEmbodiedActionRouter({
-  async execute(action, context) {
-    routedMovements.push({ action, context });
-    return {
-      ok: true,
-      status: "completed",
-      macro: "perform_embodied",
-      result: { executed: true }
-    };
-  }
-});
-const photoScenario = await executor.executeBridgeAction({
-  id: "scenario_photo_1",
-  source: "local_brain",
-  type: "perform",
-  args: {
-    speech: { text: "Okay, hold still.", tone: "happy" },
-    movement: ["move_forward_tiny"],
-    scenario: "take_picture",
-    timing: "parallel",
-    iterateMovement: false
-  }
-});
-assert.equal(photoScenario.status, "completed");
-assert.equal(photoScenario.detail.scenario, "take_picture");
-assert.deepEqual(photoScenario.detail.scenarioMovement, ["move_backward"]);
-assert.deepEqual(photoScenario.detail.ignoredMovement, ["move_forward_tiny"]);
-assert.equal(routedMovements.at(-1).action.args.movement.includes(MOVEMENTS.move_backward), true);
-assert.equal(faceEvents.some((event) => event.type === "take_picture"), true);
-assert.equal(faceEvents.some((event) => event.type === "show_photo"), true);
-policy.localCameraAllowed = false;
-policy.localMotionArmed = false;
-
-executor.setEmbodiedActionRouter({
-  async execute(action, context) {
-    routedMovements.push({ action, context });
-    return {
-      ok: true,
-      status: "completed",
-      macro: "movement_embodied",
-      result: { executed: true }
-    };
-  }
-});
-const faceOnlyMovement = await executor.executeBridgeAction({
-  id: "movement_face_1",
-  source: "test",
-  type: "movement",
-  args: {
-    movement: ["look_left"]
-  }
-});
-assert.equal(faceOnlyMovement.status, "completed");
-assert.equal(routedMovements.at(-1).context.allowMotion, false);
-
-executor.setEmbodiedActionRouter({
-  async execute(action, context) {
-    routedMovements.push({ action, context });
-    return {
-      ok: true,
-      status: "completed",
-      macro: "perform_embodied",
-      result: {
-        executed: true,
-        partial: true,
-        skippedFrames: ["motion_not_allowed"]
-      }
-    };
-  }
-});
 const disarmedScenario = await executor.executeBridgeAction({
-  id: "scenario_disarmed_1",
+  id: "scenario_disarmed",
   source: "gemini_live",
   type: "run_scenario",
-  args: {
-    name: "body_talking"
-  }
+  args: { name: "body_talking" }
 });
 assert.equal(disarmedScenario.status, "rejected");
 assert.equal(disarmedScenario.executed, false);
 assert.match(disarmedScenario.message, /did not move/i);
+assert.equal(routedSequences.at(-1).context.priority, 70);
+assert.equal(routedSequences.at(-1).action.type, "run_sequence");
+assert.equal(routedSequences.at(-1).action.reason, "run_scenario:body_talking");
 
-executor.setEmbodiedActionRouter(null);
 policy.localMotionArmed = true;
-const unroutedScenario = await executor.executeBridgeAction({
-  id: "scenario_unrouted_1",
+const bodyScenario = await executor.executeBridgeAction({
+  id: "scenario_body",
   source: "gemini_live",
   type: "run_scenario",
-  args: {
-    name: "ack_yes"
-  }
+  args: { name: "body_talking" }
 });
-assert.equal(unroutedScenario.status, "rejected");
-assert.equal(unroutedScenario.executed, false);
-assert.match(unroutedScenario.message, /motion_not_executed/i);
-policy.localMotionArmed = false;
+assert.equal(bodyScenario.status, "completed");
+assert.equal(bodyScenario.physical, true);
+assert.deepEqual(bodyScenario.detail.scenarioMovement, ["look_left", "look_right", "move_forward_tiny", "move_backward_tiny"]);
+assert.equal(routedSequences.at(-1).action.args.movement.includes(MOVEMENTS.look_left), true);
 
-const curiousDisarmed = await executor.executeBridgeAction({
-  id: "curious_1",
-  source: "test",
-  type: "curious_scan",
-  args: {
-    direction: "both",
-    intensity: 0.7
-  }
+policy.localCameraAllowed = true;
+const photoScenario = await executor.executeBridgeAction({
+  id: "scenario_photo",
+  source: "gemini_live",
+  type: "run_scenario",
+  args: { name: "take_picture" }
 });
-assert.equal(curiousDisarmed.status, "completed");
-assert.equal(curiousDisarmed.physical, false);
-assert.equal(curiousDisarmed.detail.partial, true);
+assert.equal(photoScenario.status, "completed");
+assert.equal(photoScenario.detail.scenario, "take_picture");
+assert.equal(cameraCalls.some((call) => call.type === "snapshot"), true);
+assert.equal(faceEvents.some((event) => event.type === "take_picture"), true);
+assert.equal(faceEvents.some((event) => event.type === "show_photo"), true);
 
-const disarmedApproach = await executor.executeBridgeAction({
-  id: "approach_1",
-  source: "test",
-  type: "approach_user",
-  args: {
-    style: "happy",
-    distance: "short"
+const followStarted = [];
+executor.setVisionControllers({
+  visionScenarioManager: {
+    async startFollowTarget(payload) {
+      followStarted.push(payload);
+      return {
+        status: "completed",
+        executed: true,
+        message: `Started following ${payload.label}.`,
+        detail: { targetLabel: payload.label, scenario: "follow_object" }
+      };
+    },
+    stopFollowing(reason) {
+      return { ok: true, reason };
+    }
+  },
+  followTargetController: {
+    isRunning() {
+      return true;
+    },
+    stop(reason) {
+      return { ok: true, reason };
+    }
   }
 });
-assert.equal(disarmedApproach.status, "rejected");
-assert.match(disarmedApproach.message, /not armed/i);
+const followScenario = await executor.executeBridgeAction({
+  id: "follow_1",
+  source: "gemini_live",
+  type: "run_scenario",
+  args: { name: "follow_target", label: "bottle", mode: "gentle" }
+});
+assert.equal(followScenario.status, "completed");
+assert.equal(followStarted.at(-1).label, "bottle");
+
+const rejectedFollowStop = await executor.executeBridgeAction({
+  id: "follow_stop_rejected",
+  source: "gemini_live",
+  type: "run_scenario",
+  args: { name: "stop_following", reason: "conversation_continues" }
+});
+assert.equal(rejectedFollowStop.status, "rejected");
+
+executor.getRuntimeContext = () => ({
+  geminiLive: { lastInputTranscript: "stop following it" }
+});
+const stoppedFollow = await executor.executeBridgeAction({
+  id: "follow_stop",
+  source: "gemini_live",
+  type: "run_scenario",
+  args: { name: "stop_following", reason: "user_request" }
+});
+assert.equal(stoppedFollow.status, "completed");
 
 const stopResult = await executor.executeBridgeAction({
   id: "stop_1",
-  source: "test",
+  source: "local",
   type: "stop",
-  args: {
-    reason: "smoke_stop"
-  }
+  args: { reason: "smoke_stop" }
 });
 assert.equal(stopResult.status, "completed");
 assert.equal(stopResult.executed, true);
-assert.deepEqual(stops, ["smoke_stop"]);
-
-policy.cloudMotionArmed = true;
-executor.setEmbodiedActionRouter({
-  async execute(action, context) {
-    routedMovements.push({ action, context });
-    return {
-      ok: true,
-      status: "completed",
-      macro: "movement_embodied",
-      result: { executed: true }
-    };
-  }
-});
-const physicalMovement = await executor.executeBridgeAction({
-  id: "movement_physical_1",
-  source: "test",
-  type: "movement",
-  args: {
-    movement: ["move_forward_tiny"]
-  }
-});
-assert.equal(physicalMovement.status, "completed");
-assert.equal(routedMovements.at(-1).context.allowMotion, true);
-executor.setEmbodiedActionRouter(null);
-
-const armedApproach = await executor.executeBridgeAction({
-  id: "approach_2",
-  source: "test",
-  type: "approach_user",
-  args: {
-    style: "happy",
-    distance: "short"
-  }
-});
-assert.equal(armedApproach.status, "completed");
-assert.equal(armedApproach.physical, true);
-assert.equal(behaviorRequests.some((request) => request.toolName === "approach_user"), true);
-
-const retreatResult = await executor.executeBridgeAction({
-  id: "retreat_1",
-  source: "test",
-  type: "retreat",
-  args: {
-    style: "gentle",
-    distance: "short"
-  }
-});
-assert.equal(retreatResult.status, "completed");
-
-const driveResult = await executor.executeBridgeAction({
-  id: "drive_1",
-  source: "test",
-  type: "drive",
-  args: {
-    linear: 0.1,
-    angular: 0,
-    duration_ms: 100
-  }
-});
-assert.equal(driveResult.status, "completed");
-
-const wiggleResult = await executor.executeBridgeAction({
-  id: "wiggle_1",
-  source: "test",
-  type: "excited_wiggle",
-  args: {
-    intensity: 0.5
-  }
-});
-assert.equal(wiggleResult.status, "completed");
-
-const originalFetch = globalThis.fetch;
-globalThis.fetch = async () => ({
-  ok: true,
-  json: async () => ({ ok: true })
-});
-try {
-  const rememberResult = await executor.executeBridgeAction({
-    id: "remember_1",
-    source: "test",
-    type: "remember",
-    args: {
-      memory_type: "learned_phrase",
-      text: "Smoke memory should use mocked fetch.",
-      importance: "medium"
-    }
-  });
-  assert.equal(rememberResult.status, "completed");
-} finally {
-  globalThis.fetch = originalFetch;
-}
+assert.equal(routedSequences.some((entry) => entry.action.type === "stop"), true);
 
 const unknownResult = await executor.executeBridgeAction({
   id: "unknown_1",
@@ -494,6 +280,7 @@ console.log(
   JSON.stringify({
     ok: true,
     results: executor.getActionHistory().length,
+    routed: routedSequences.length,
     logs: logs.length
   })
 );

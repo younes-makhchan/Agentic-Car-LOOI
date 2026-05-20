@@ -1,63 +1,12 @@
-import {
-  movementNamesFor,
-  movementRequestsMotion
-} from "../embodiment/movementCatalog.js";
+import { movementNamesFor } from "../embodiment/movementCatalog.js";
 import {
   getScenarioDefinition,
-  normalizeRunScenarioName,
-  normalizeScenarioName
+  normalizeRunScenarioName
 } from "../embodiment/scenarioCatalog.js";
+import { PRIORITY_LEVELS } from "../embodiment/priorityScheduler.js";
 
-const PHYSICAL_ACTIONS = new Set([
-  "run_scenario",
-  "perform",
-  "movement",
-  "drive",
-  "approach_user",
-  "retreat",
-  "curious_scan",
-  "excited_wiggle"
-]);
-
-const ACTION_TYPES = new Set([
-  "run_scenario",
-  "perform",
-  "speak",
-  "movement",
-  "express",
-  "drive",
-  "stop",
-  "approach_user",
-  "retreat",
-  "curious_scan",
-  "excited_wiggle",
-  "observe_scene",
-  "remember",
-  "open_front_camera",
-  "open_back_camera",
-  "switch_camera",
-  "close_camera",
-  "capture_snapshot"
-]);
-
-const CAMERA_ACTIONS = new Set([
-  "open_front_camera",
-  "open_back_camera",
-  "switch_camera",
-  "close_camera",
-  "capture_snapshot"
-]);
-
-const FACE_EXPRESSIONS = new Set([
-  "neutral",
-  "happy",
-  "curious",
-  "attentive",
-  "sleepy",
-  "scared",
-  "shy",
-  "sad"
-]);
+const PHYSICAL_ACTIONS = new Set(["run_scenario", "stop"]);
+const ACTION_TYPES = new Set(["run_scenario", "stop"]);
 
 // Browser-only execution layer. It never talks to ESP32 directly for movement.
 export class ToolExecutor {
@@ -182,40 +131,8 @@ export class ToolExecutor {
     switch (type) {
       case "run_scenario":
         return this.executeRunScenario(args, action);
-      case "perform":
-        return this.executePerform(args, action);
-      case "speak":
-        return this.executeSpeak(args, action);
-      case "movement":
-        return this.executeMovement(args, action);
-      case "express":
-        return this.executeExpress(args, action);
-      case "drive":
-        return this.executeDrive(args, action);
       case "stop":
         return this.executeStop(args, action);
-      case "approach_user":
-        return this.executeApproachUser(args, action);
-      case "retreat":
-        return this.executeRetreat(args, action);
-      case "curious_scan":
-        return this.executeCuriousScan(args, action);
-      case "excited_wiggle":
-        return this.executeExcitedWiggle(args, action);
-      case "observe_scene":
-        return this.executeObserveScene(args, action);
-      case "remember":
-        return this.executeRemember(args, action);
-      case "open_front_camera":
-        return this.executeOpenCamera("user", action);
-      case "open_back_camera":
-        return this.executeOpenCamera("environment", action);
-      case "switch_camera":
-        return this.executeSwitchCamera(action);
-      case "close_camera":
-        return this.executeCloseCamera(action);
-      case "capture_snapshot":
-        return this.executeCaptureSnapshot(args, action);
       default:
         return this.buildResult("rejected", {
           action,
@@ -266,61 +183,14 @@ export class ToolExecutor {
       });
     }
 
-    const motionPermission = this.performMotionPermission(action, Boolean(scenario.requiresMotion));
-    return this.executeScenario(scenario, {
-      speech: { text: "", tone: "soft" },
-      movement: [],
-      scenario: scenario.name,
-      timing: scenario.timing ?? "sequence",
-      iterateMovement: Boolean(scenario.iterateMovement)
-    }, action, {
+    const motionPermission = this.scenarioMotionPermission(action, Boolean(scenario.requiresMotion));
+    return this.executeScenario(scenario, action, {
       motionPermission,
       allowSpeech: true
     });
   }
 
-  async executePerform(args = {}, action = {}) {
-    const normalizedArgs = normalizePerformArgs(args);
-    const scenario = getScenarioDefinition(normalizedArgs.scenario);
-    const wantsMotion = performRequestsMotion(normalizedArgs);
-    const motionPermission = this.performMotionPermission(action, wantsMotion);
-    const allowSpeech = !normalizedArgs.speech?.text || this.isSpeechAllowed(action);
-
-    this.log(
-      `STEP 4 PERFORM_PLAN speech=${Boolean(normalizedArgs.speech?.text)} scenario=${scenario?.name ?? "none"} movement=${safeStringify(scenario ? scenario.movement : normalizedArgs.movement)} motionAllowed=${motionPermission.allowed}${motionPermission.reason ? ` reason=${motionPermission.reason}` : ""}`
-    );
-
-    if (scenario) {
-      return this.executeScenario(scenario, normalizedArgs, action, {
-        motionPermission,
-        allowSpeech
-      });
-    }
-
-    const routed = await this.executeEmbodiedRoute(action, {
-      physical: wantsMotion,
-      allowMotion: motionPermission.allowed,
-      allowSpeech,
-      allowCamera: false,
-      args: normalizedArgs
-    });
-    if (routed) {
-      return routed;
-    }
-
-    if (normalizedArgs.speech?.text) {
-      return this.executeSpeak(normalizedArgs.speech, action);
-    }
-
-    return this.buildResult("rejected", {
-      action,
-      executed: false,
-      physical: wantsMotion,
-      message: "Perform action could not be routed."
-    });
-  }
-
-  async executeScenario(scenario, normalizedArgs, action, { motionPermission, allowSpeech } = {}) {
+  async executeScenario(scenario, action, { motionPermission, allowSpeech } = {}) {
     if (this.activeScenario) {
       return this.buildResult("rejected", {
         action,
@@ -373,14 +243,16 @@ export class ToolExecutor {
       }
 
       const scenarioArgs = {
-        speech: normalizedArgs.speech,
+        speech: { text: "", tone: "soft" },
         movement: [...scenario.movement],
+        scenario: scenario.name,
         timing: scenario.timing ?? "sequence",
         iterateMovement: Boolean(scenario.iterateMovement)
       };
       const routeAction = {
         ...action,
-        type: "perform",
+        type: "run_sequence",
+        reason: `run_scenario:${scenario.name}`,
         args: scenarioArgs
       };
 
@@ -422,7 +294,6 @@ export class ToolExecutor {
             scenario: scenario.name,
             route: routeResult ?? null,
             motionPermission,
-            ignoredMovement: normalizedArgs.movement,
             scenarioMovement: movementNamesFor(scenario.movement)
           }
         });
@@ -437,7 +308,6 @@ export class ToolExecutor {
           detail: {
             scenario: scenario.name,
             route: routeResult ?? null,
-            ignoredMovement: normalizedArgs.movement,
             scenarioMovement: movementNamesFor(scenario.movement)
           }
         });
@@ -488,13 +358,12 @@ export class ToolExecutor {
         physical: Boolean(scenario.requiresMotion),
         message: `Scenario completed: ${scenario.name}`,
         detail: {
-            scenario: scenario.name,
-            route: routeResult ?? null,
-            ignoredMovement: normalizedArgs.movement,
-            scenarioMovement: movementNamesFor(scenario.movement),
-            cameraStatus: sanitizeCameraStatus(snapshotResult.status),
-            snapshot: sanitizeSnapshotMetadata(snapshotResult.snapshot)
-          }
+          scenario: scenario.name,
+          route: routeResult ?? null,
+          scenarioMovement: movementNamesFor(scenario.movement),
+          cameraStatus: sanitizeCameraStatus(snapshotResult.status),
+          snapshot: sanitizeSnapshotMetadata(snapshotResult.snapshot)
+        }
       });
     } finally {
       if (token === this.scenarioToken) {
@@ -503,217 +372,8 @@ export class ToolExecutor {
     }
   }
 
-  async executeMovement(args = {}, action = {}) {
-    const normalizedArgs = sanitizeMovementActionArgs(args);
-    const wantsMotion = performRequestsMotion(normalizedArgs);
-    const motionPermission = this.performMotionPermission(action, wantsMotion);
-
-    this.log(
-      `STEP 4 MOVEMENT_PLAN movement=${safeStringify(normalizedArgs.movement)} motionAllowed=${motionPermission.allowed}${motionPermission.reason ? ` reason=${motionPermission.reason}` : ""}`
-    );
-
-    const routed = await this.executeEmbodiedRoute(action, {
-      physical: wantsMotion,
-      allowMotion: motionPermission.allowed,
-      allowSpeech: false,
-      allowCamera: false,
-      args: normalizedArgs
-    });
-    if (routed) {
-      return routed;
-    }
-
-    return this.buildResult("rejected", {
-      action,
-      executed: false,
-      physical: wantsMotion,
-      message: "Movement action could not be routed."
-    });
-  }
-
-  async executeSpeak(args = {}, action = {}) {
-    if (!this.isSpeechAllowed(action)) {
-      return this.buildResult("rejected", {
-        action,
-        executed: false,
-        physical: false,
-        message: `${this.policyLabel(action)} speech is disabled in the browser UI.`
-      });
-    }
-
-    const text = normalizeShortText(args.text, 240);
-
-    if (!text) {
-      return this.buildResult("rejected", {
-        action,
-        executed: false,
-        physical: false,
-        message: "Speak action requires short text."
-      });
-    }
-
-    const routed = await this.executeEmbodiedRoute(action, {
-      physical: false,
-      allowMotion: false,
-      allowSpeech: true,
-      args: { ...args, text }
-    });
-    if (routed) {
-      return routed;
-    }
-
-    if (this.voiceOutput?.speak) {
-      const result = await this.voiceOutput.speak({
-        text,
-        tone: args.tone ?? "soft",
-        interrupt: args.interrupt === true
-      });
-
-      return this.buildResult("completed", {
-        action,
-        executed: Boolean(result.executed),
-        physical: false,
-        message: result.executed
-          ? `Spoke ${this.policyLabel(action)} text.`
-          : `Speech not spoken: ${result.reason}`,
-        detail: {
-          textLength: text.length,
-          tone: args.tone ?? "soft",
-          muted: Boolean(result.muted),
-          reason: result.reason
-        }
-      });
-    }
-
-    if (!globalThis.speechSynthesis || typeof globalThis.SpeechSynthesisUtterance !== "function") {
-      return this.buildResult("completed", {
-        action,
-        executed: false,
-        physical: false,
-        message: "Speech synthesis is unavailable in this browser.",
-        detail: { text }
-      });
-    }
-
-    this.lifeEngine?.setSpeaking?.(true);
-
-    try {
-      await new Promise((resolve) => {
-        const utterance = new globalThis.SpeechSynthesisUtterance(text);
-        const timeout = globalThis.setTimeout(resolve, Math.min(5000, 1200 + text.length * 45));
-
-        utterance.rate = toneToRate(args.tone);
-        utterance.pitch = toneToPitch(args.tone);
-        utterance.onend = () => {
-          clearTimeout(timeout);
-          resolve();
-        };
-        utterance.onerror = () => {
-          clearTimeout(timeout);
-          resolve();
-        };
-
-        globalThis.speechSynthesis.speak(utterance);
-      });
-    } finally {
-      this.lifeEngine?.setSpeaking?.(false);
-    }
-
-    return this.buildResult("completed", {
-      action,
-      executed: true,
-      physical: false,
-      message: `Spoke ${this.policyLabel(action)} text.`,
-      detail: { text, tone: args.tone ?? "soft" }
-    });
-  }
-
-  async executeExpress(args = {}, action = {}) {
-    const nonPhysical = this.ensureNonPhysicalAllowed(action);
-    if (nonPhysical) {
-      return nonPhysical;
-    }
-
-    const emotion = typeof args.emotion === "string" ? args.emotion : "neutral";
-    const intensity = clampNumber(args.intensity, 0, 1.5, 1);
-
-    if (!FACE_EXPRESSIONS.has(emotion)) {
-      return this.buildResult("rejected", {
-        action,
-        executed: false,
-        physical: false,
-        message: `Unsupported expression: ${emotion}`
-      });
-    }
-
-    const routed = await this.executeEmbodiedRoute(action, {
-      physical: false,
-      allowMotion: false,
-      allowSpeech: false
-    });
-    if (routed) {
-      return routed;
-    }
-
-    const expression = emotion === "sad" ? "shy" : emotion;
-    this.face?.setExpression?.(expression, intensity);
-    this.lifeEngine?.patchState?.({ mood: expression }, `${this.policyLabel(action)}_express`);
-
-    return this.buildResult("completed", {
-      action,
-      executed: true,
-      physical: false,
-      message: `Set expression to ${emotion}.`,
-      detail: { emotion, expression, intensity }
-    });
-  }
-
-  async executeDrive(args = {}, action = {}) {
-    const linear = Number(args.linear);
-    const angular = Number(args.angular);
-    const durationMs = Number(args.duration_ms ?? args.durationMs);
-
-    if (!Number.isFinite(linear) || !Number.isFinite(angular) || !Number.isFinite(durationMs)) {
-      return this.buildResult("rejected", {
-        action,
-        executed: false,
-        physical: true,
-        message: "Drive action requires numeric linear, angular, and duration_ms."
-      });
-    }
-
-    if (Math.abs(linear) < 0.001 && Math.abs(angular) < 0.001) {
-      return this.executeStop({ reason: args.reason ?? `${this.policyLabel(action)}_zero_drive` }, action);
-    }
-
-    const gate = this.ensurePhysicalAllowed(action);
-    if (gate) {
-      return gate;
-    }
-
-    if (args.style) {
-      const routed = await this.executeEmbodiedRoute(action, {
-        physical: true,
-        allowMotion: true,
-        allowSpeech: false
-      });
-      if (routed) {
-        return routed;
-      }
-    }
-
-    const result = await this.lifeEngine?.executeRobotAction?.("drive", {
-      linear,
-      angular,
-      durationMs,
-      style: args.style
-    });
-
-    return this.resultFromLifeEngine(action, result, "Drive action routed through Life Engine.");
-  }
-
   async executeStop(args = {}, action = {}) {
-    const reason = normalizeShortText(args.reason, 160) || "cloud_stop";
+    const reason = normalizeShortText(args.reason, 160) || "local_stop";
     this.scenarioToken += 1;
     this.activeScenario = null;
     this.visionScenarioManager?.stopFollowing?.(reason) ?? this.followTargetController?.stop?.(reason);
@@ -754,310 +414,6 @@ export class ToolExecutor {
         detail: { reason }
       });
     }
-  }
-
-  async executeApproachUser(args = {}, action = {}) {
-    const gate = this.ensurePhysicalAllowed(action);
-    if (gate) {
-      return gate;
-    }
-
-    const routed = await this.executeEmbodiedRoute(action, {
-      physical: true,
-      allowMotion: true,
-      allowSpeech: this.isSpeechAllowed(action)
-    });
-    if (routed) {
-      return routed;
-    }
-
-    const result = await this.lifeEngine?.executeRobotAction?.("approach_user", args);
-    return this.resultFromLifeEngine(action, result, "Approach user routed through Life Engine.");
-  }
-
-  async executeRetreat(args = {}, action = {}) {
-    const gate = this.ensurePhysicalAllowed(action);
-    if (gate) {
-      return gate;
-    }
-
-    const routed = await this.executeEmbodiedRoute(action, {
-      physical: true,
-      allowMotion: true,
-      allowSpeech: this.isSpeechAllowed(action)
-    });
-    if (routed) {
-      return routed;
-    }
-
-    const result = await this.lifeEngine?.executeRobotAction?.("retreat", args);
-    return this.resultFromLifeEngine(action, result, "Retreat routed through Life Engine.");
-  }
-
-  async executeCuriousScan(args = {}, action = {}) {
-    if (!this.isMotionArmed(action)) {
-      const routed = await this.executeEmbodiedRoute(action, {
-        physical: false,
-        allowMotion: false,
-        allowSpeech: false
-      });
-      if (routed) {
-        return routed;
-      }
-
-      const nonPhysical = this.ensureNonPhysicalAllowed(action);
-      if (nonPhysical) {
-        return nonPhysical;
-      }
-
-      this.face?.setExpression?.("curious", clampNumber(args.intensity, 0, 1.5, 1));
-      this.face?.setEyeDirection?.(normalizeDirection(args.direction));
-
-      return this.buildResult("completed", {
-        action,
-        executed: true,
-        physical: false,
-        message: `Curious expression shown; body motion skipped because ${this.policyLabel(action)} motion is disarmed.`,
-        detail: { partial: true, bodyMotionSkipped: `${this.policyLabel(action)}_motion_not_armed` }
-      });
-    }
-
-    const gate = this.ensurePhysicalAllowed(action);
-    if (gate) {
-      return gate;
-    }
-
-    const routed = await this.executeEmbodiedRoute(action, {
-      physical: true,
-      allowMotion: true,
-      allowSpeech: false
-    });
-    if (routed) {
-      return routed;
-    }
-
-    const result = await this.lifeEngine?.executeRobotAction?.("curious_scan", args);
-    return this.resultFromLifeEngine(action, result, "Curious scan routed through Life Engine.");
-  }
-
-  async executeExcitedWiggle(args = {}, action = {}) {
-    const gate = this.ensurePhysicalAllowed(action);
-    if (gate) {
-      return gate;
-    }
-
-    const routed = await this.executeEmbodiedRoute(action, {
-      physical: true,
-      allowMotion: true,
-      allowSpeech: false
-    });
-    if (routed) {
-      return routed;
-    }
-
-    const result = await this.lifeEngine?.executeRobotAction?.("excited_wiggle", args);
-    return this.resultFromLifeEngine(action, result, "Excited wiggle routed through Life Engine.");
-  }
-
-  async executeObserveScene(args = {}, action = {}) {
-    const nonPhysical = this.ensureNonPhysicalAllowed(action);
-    if (nonPhysical) {
-      return nonPhysical;
-    }
-
-    const includeSnapshot = args.includeSnapshot === true;
-
-    if (includeSnapshot) {
-      const cameraGate = this.ensureCameraAllowed(action);
-      if (cameraGate) {
-        return cameraGate;
-      }
-    }
-
-    const context =
-      typeof this.getRuntimeContext === "function" ? this.getRuntimeContext(args) : {};
-    const detail = compactRuntimeContext(context);
-
-    if (includeSnapshot) {
-      if (!this.cameraInput?.captureSnapshot) {
-        return this.buildResult("failed", {
-          action,
-          executed: false,
-          physical: false,
-          message: "Camera input is not available.",
-          detail
-        });
-      }
-
-      const snapshotResult = await this.cameraInput.captureSnapshot({
-        includeDataUrl: args.includeDataUrl === true,
-        maxWidth: clampNumber(args.maxWidth, 160, 640, 320),
-        quality: clampNumber(args.quality, 0.3, 0.8, 0.65)
-      });
-
-      if (!snapshotResult.ok) {
-        return this.buildResult("failed", {
-          action,
-          executed: false,
-          physical: false,
-          message: snapshotResult.error ?? "Snapshot capture failed.",
-          detail: {
-            ...detail,
-            cameraStatus: sanitizeCameraStatus(snapshotResult.status)
-          }
-        });
-      }
-
-      detail.snapshot = sanitizeSnapshotMetadata(snapshotResult.snapshot);
-      detail.cameraStatus = sanitizeCameraStatus(snapshotResult.status);
-    }
-
-    return this.buildResult("completed", {
-      action,
-      executed: true,
-      physical: false,
-      message: "Returned local robot runtime context.",
-      detail
-    });
-  }
-
-  async executeOpenCamera(facingMode, action = {}) {
-    const nonPhysical = this.ensureNonPhysicalAllowed(action);
-    if (nonPhysical) {
-      return nonPhysical;
-    }
-
-    const cameraGate = this.ensureCameraAllowed(action);
-    if (cameraGate) {
-      return cameraGate;
-    }
-
-    if (!this.cameraInput?.startCamera) {
-      return this.buildResult("failed", {
-        action,
-        executed: false,
-        physical: false,
-        message: "Camera input is not available."
-      });
-    }
-
-    const result = await this.cameraInput.startCamera({ facingMode });
-
-    return this.buildResult(result.ok ? "completed" : "failed", {
-      action,
-      executed: Boolean(result.ok),
-      physical: false,
-      message: result.ok
-        ? `${facingMode === "environment" ? "Back" : "Front"} camera opened locally.`
-        : result.error ?? "Camera open failed.",
-      detail: {
-        cameraStatus: sanitizeCameraStatus(result.status)
-      }
-    });
-  }
-
-  async executeSwitchCamera(action = {}) {
-    const nonPhysical = this.ensureNonPhysicalAllowed(action);
-    if (nonPhysical) {
-      return nonPhysical;
-    }
-
-    const cameraGate = this.ensureCameraAllowed(action);
-    if (cameraGate) {
-      return cameraGate;
-    }
-
-    if (!this.cameraInput?.switchCamera) {
-      return this.buildResult("failed", {
-        action,
-        executed: false,
-        physical: false,
-        message: "Camera input is not available."
-      });
-    }
-
-    const result = await this.cameraInput.switchCamera();
-
-    return this.buildResult(result.ok ? "completed" : "failed", {
-      action,
-      executed: Boolean(result.ok),
-      physical: false,
-      message: result.ok ? "Camera switched locally." : result.error ?? "Camera switch failed.",
-      detail: {
-        cameraStatus: sanitizeCameraStatus(result.status)
-      }
-    });
-  }
-
-  async executeCloseCamera(action = {}) {
-    const nonPhysical = this.ensureNonPhysicalAllowed(action);
-    if (nonPhysical) {
-      return nonPhysical;
-    }
-
-    const cameraGate = this.ensureCameraAllowed(action);
-    if (cameraGate) {
-      return cameraGate;
-    }
-
-    if (!this.cameraInput?.stopCamera) {
-      return this.buildResult("failed", {
-        action,
-        executed: false,
-        physical: false,
-        message: "Camera input is not available."
-      });
-    }
-
-    const result = await this.cameraInput.stopCamera();
-
-    return this.buildResult("completed", {
-      action,
-      executed: true,
-      physical: false,
-      message: "Camera closed locally.",
-      detail: {
-        cameraStatus: sanitizeCameraStatus(result.status)
-      }
-    });
-  }
-
-  async executeCaptureSnapshot(args = {}, action = {}) {
-    const nonPhysical = this.ensureNonPhysicalAllowed(action);
-    if (nonPhysical) {
-      return nonPhysical;
-    }
-
-    const cameraGate = this.ensureCameraAllowed(action);
-    if (cameraGate) {
-      return cameraGate;
-    }
-
-    if (!this.cameraInput?.captureSnapshot) {
-      return this.buildResult("failed", {
-        action,
-        executed: false,
-        physical: false,
-        message: "Camera input is not available."
-      });
-    }
-
-    const result = await this.cameraInput.captureSnapshot({
-      includeDataUrl: args.includeDataUrl === true,
-      maxWidth: clampNumber(args.maxWidth, 160, 640, 320),
-      quality: clampNumber(args.quality, 0.3, 0.8, 0.65)
-    });
-
-    return this.buildResult(result.ok ? "completed" : "failed", {
-      action,
-      executed: Boolean(result.ok),
-      physical: false,
-      message: result.ok ? "Captured a small local camera snapshot." : result.error ?? "Snapshot capture failed.",
-      detail: {
-        cameraStatus: sanitizeCameraStatus(result.status),
-        snapshot: sanitizeSnapshotMetadata(result.snapshot)
-      }
-    });
   }
 
   async executeFollowTargetScenario(args = {}, action = {}) {
@@ -1152,9 +508,8 @@ export class ToolExecutor {
         allowMotion,
         allowSpeech,
         allowCamera,
-        autonomous: routedAction.autonomous === true,
         force,
-        priority: routedAction.type === "stop" ? 100 : routedAction.autonomous === true ? 40 : 60,
+        priority: priorityForRoutedAction(routedAction, { physical }),
         reason: routedAction.reason ?? routedAction.type
       });
 
@@ -1164,90 +519,17 @@ export class ToolExecutor {
 
       return this.buildResult("completed", {
         action: routedAction,
-        executed: routed.result?.executed !== false,
+        executed: routeResultExecuted(routed),
         physical,
-        message: `Embodied macro ${routed.macro ?? routedAction.type} completed.`,
+        message: `Embodied sequence ${routed.sequence ?? routedAction.type} completed.`,
         detail: {
-          macro: routed.macro ?? null,
+          sequence: routed.sequence ?? null,
           route: routed
         }
       });
     } catch (error) {
       this.log(`Embodied route failed (${routedAction.type}): ${error.message}`, "warn");
       return null;
-    }
-  }
-
-  async executeRemember(args = {}, action = {}) {
-    const nonPhysical = this.ensureNonPhysicalAllowed(action);
-    if (nonPhysical) {
-      return nonPhysical;
-    }
-
-    const text = normalizeShortText(args.text, 2000);
-    const memoryType = normalizeMemoryType(args.memory_type);
-    const importance = normalizeImportance(args.importance);
-    const stored = {};
-
-    if (!text) {
-      return this.buildResult("rejected", {
-        action,
-        executed: false,
-        physical: false,
-        message: "Remember action requires text."
-      });
-    }
-
-    if (looksLikeSecret(text) || looksLikeSecret(args.phrase) || looksLikeSecret(args.meaning)) {
-      return this.buildResult("rejected", {
-        action,
-        executed: false,
-        physical: false,
-        message: "Memory text appears to contain a token, API key, or password."
-      });
-    }
-
-    const storageType = selectMemoryStorageType(memoryType, importance);
-
-    try {
-      if (memoryType === "learned_phrase" && args.phrase && args.action) {
-        const phrasePayload = await postJson("/api/memory/learned-phrases", {
-          phrase: args.phrase,
-          meaning: args.meaning ?? text,
-          action: args.action,
-          args: args.args ?? {},
-          confidence: args.confidence ?? importance,
-          source: action.source ?? "manual"
-        });
-        stored.learnedPhrase = phrasePayload.phrase ?? null;
-      }
-
-      const memoryPayload = await postJson("/api/memory/write", {
-        type: storageType,
-        text: `[${memoryType}/${importance}] ${text}`,
-        metadata: {
-          source: action.source ?? "manual",
-          importance,
-          memory_type: memoryType
-        }
-      });
-      stored.memory = memoryPayload.memory ?? null;
-
-      return this.buildResult("completed", {
-        action,
-        executed: true,
-        physical: false,
-        message: "Memory stored locally.",
-        detail: { memoryType, importance, storageType, stored }
-      });
-    } catch (error) {
-      return this.buildResult("failed", {
-        action,
-        executed: false,
-        physical: false,
-        message: `Memory write failed: ${error.message}`,
-        detail: { memoryType, importance, storageType }
-      });
     }
   }
 
@@ -1284,21 +566,13 @@ export class ToolExecutor {
     return PHYSICAL_ACTIONS.has(type);
   }
 
-  performMotionPermission(action = {}, requested = false) {
+  scenarioMotionPermission(action = {}, requested = false) {
     if (!requested) {
       return { allowed: false, reason: "motion_not_requested" };
     }
 
     if (!this.isMotionArmed(action)) {
       return { allowed: false, reason: `${this.policyLabel(action)}_motion_not_armed` };
-    }
-
-    if (
-      this.isLocalBrainAction(action) &&
-      action.autonomous === true &&
-      this.policy().allowAutonomousMovement !== true
-    ) {
-      return { allowed: false, reason: "autonomous_movement_disabled" };
     }
 
     const stopRespectUntil = Number(this.lifeEngine?.getState?.().stopRespectUntil || 0);
@@ -1313,13 +587,9 @@ export class ToolExecutor {
     return { allowed: true, reason: "ok" };
   }
 
-  isCameraAction(type) {
-    return CAMERA_ACTIONS.has(type);
-  }
-
   isMotionArmed(action = {}) {
     const policy = this.policy();
-    return this.isLocalBrainAction(action)
+    return this.isLocalAction(action)
       ? Boolean(policy.localMotionArmed)
       : Boolean(policy.cloudMotionArmed);
   }
@@ -1390,75 +660,9 @@ export class ToolExecutor {
     }
   }
 
-  ensurePhysicalAllowed(action) {
-    if (!this.isMotionArmed(action)) {
-      return this.buildResult("rejected", {
-        action,
-        executed: false,
-        physical: true,
-        message: `${this.policyLabel(action)} motion is not armed in the browser UI.`
-      });
-    }
-
-    if (
-      this.isLocalBrainAction(action) &&
-      action.autonomous === true &&
-      this.policy().allowAutonomousMovement !== true
-    ) {
-      return this.buildResult("rejected", {
-        action,
-        executed: false,
-        physical: true,
-        message: "Autonomous Local Brain movement is disabled in the browser UI."
-      });
-    }
-
-    const stopRespectUntil = Number(this.lifeEngine?.getState?.().stopRespectUntil || 0);
-
-    if (stopRespectUntil > Date.now()) {
-      return this.buildResult("rejected", {
-        action,
-        executed: false,
-        physical: true,
-        message: "Robot is respecting a recent stop/freeze request.",
-        detail: {
-          stopRespectUntil
-        }
-      });
-    }
-
-    if (!this.robotClient?.isConnected?.()) {
-      return this.buildResult("failed", {
-        action,
-        executed: false,
-        physical: true,
-        message: "Robot or simulator is not connected."
-      });
-    }
-
-    return null;
-  }
-
-  ensureNonPhysicalAllowed(action) {
-    if (this.isLocalBrainAction(action)) {
-      return null;
-    }
-
-    if (this.policy().allowNonPhysical === false) {
-      return this.buildResult("rejected", {
-        action,
-        executed: false,
-        physical: false,
-        message: "Cloud non-physical actions are disabled in the browser UI."
-      });
-    }
-
-    return null;
-  }
-
   ensureCameraAllowed(action) {
     const policy = this.policy();
-    const allowed = this.isLocalBrainAction(action)
+    const allowed = this.isLocalAction(action)
       ? policy.localCameraAllowed
       : policy.cloudCameraAllowed;
 
@@ -1478,69 +682,12 @@ export class ToolExecutor {
     return null;
   }
 
-  isSpeechAllowed(action = {}) {
-    const policy = this.policy();
-
-    if (!this.isLocalBrainAction(action)) {
-      return policy.allowSpeak !== false;
-    }
-
-    if (policy.localSpeechAllowed === false) {
-      return false;
-    }
-
-    if (action.autonomous === true && policy.allowAutonomousSpeech === false) {
-      return false;
-    }
-
-    return true;
-  }
-
-  isLocalBrainAction(action = {}) {
+  isLocalAction(action = {}) {
     return action?.source === "local_brain" || action?.source === "local" || action?.source === "gemini_live";
   }
 
   policyLabel(action = {}) {
-    return this.isLocalBrainAction(action) ? "local" : "cloud";
-  }
-
-  resultFromLifeEngine(action, result, fallbackMessage) {
-    if (!result) {
-      return this.buildResult("failed", {
-        action,
-        executed: false,
-        physical: true,
-        message: "Life Engine did not return a result."
-      });
-    }
-
-    if (result.rejected || result.allowed === false) {
-      return this.buildResult("rejected", {
-        action,
-        executed: false,
-        physical: true,
-        message: result.reason ?? "Life Engine rejected the action.",
-        detail: result
-      });
-    }
-
-    if (result.ok === false) {
-      return this.buildResult("failed", {
-        action,
-        executed: false,
-        physical: true,
-        message: result.reason ?? "Life Engine failed the action.",
-        detail: result
-      });
-    }
-
-    return this.buildResult("completed", {
-      action,
-      executed: result.executed !== false,
-      physical: true,
-      message: result.reason ?? result.message ?? fallbackMessage,
-      detail: result
-    });
+    return this.isLocalAction(action) ? "local" : "cloud";
   }
 
   policy() {
@@ -1555,9 +702,6 @@ export class ToolExecutor {
       localMotionArmed: false,
       localCameraAllowed: false,
       localSpeechAllowed: true,
-      autonomousMode: false,
-      allowAutonomousMovement: false,
-      allowAutonomousSpeech: true,
       ...(typeof this.getExecutionPolicy === "function" ? this.getExecutionPolicy() : {})
     };
   }
@@ -1613,6 +757,32 @@ function isExplicitFollowStopIntent(text) {
   );
 }
 
+function priorityForRoutedAction(action = {}, { physical = false } = {}) {
+  if (action.type === "stop") {
+    return PRIORITY_LEVELS.emergency_stop;
+  }
+
+  if (physical) {
+    return PRIORITY_LEVELS.direct_user_command;
+  }
+
+  return PRIORITY_LEVELS.local_brain_action;
+}
+
+function routeResultExecuted(routed = {}) {
+  const result = routed?.result ?? {};
+
+  if (result.skipped === true || result.interrupted === true) {
+    return false;
+  }
+
+  if (typeof result.executed === "boolean") {
+    return result.executed;
+  }
+
+  return Number(result.executedFrames || 0) > 0;
+}
+
 function inspectRouteMotion(routeResult = null) {
   const skippedFrames = routeResult?.detail?.route?.result?.skippedFrames
     ?? routeResult?.detail?.skippedFrames
@@ -1635,78 +805,6 @@ function wait(ms) {
   return new Promise((resolve) => {
     setTimeout(resolve, Math.max(0, Number(ms) || 0));
   });
-}
-
-function compactRuntimeContext(context = {}) {
-  return {
-    lifeState: context.lifeState ?? null,
-    robotTelemetry: context.robotTelemetry ?? null,
-    connectionState: context.connectionState ?? "unknown",
-    simulatorMode: Boolean(context.simulatorMode),
-    cloudMotionArmed: Boolean(context.cloudMotionArmed),
-    cloudCameraAllowed: Boolean(context.cloudCameraAllowed),
-    localPolicy: context.localPolicy ?? null,
-    localMotionArmed: Boolean(context.localMotionArmed ?? context.localPolicy?.localMotionArmed),
-    localCameraAllowed: Boolean(context.localCameraAllowed ?? context.localPolicy?.localCameraAllowed),
-    recentLifeEvents: Array.isArray(context.recentLifeEvents)
-      ? context.recentLifeEvents.slice(0, 8)
-      : [],
-    personality: context.personality ?? null,
-    lifeSignals: context.lifeSignals ?? null,
-    learnedPhraseCount: Number(context.learnedPhraseCount || 0),
-    cameraStatus: sanitizeCameraStatus(context.cameraStatus ?? context.camera),
-    vision: sanitizeVisionContext(context.vision),
-    recentObjectReference: context.recentObjectReference
-      ? {
-          label: normalizeShortText(context.recentObjectReference.label, 80),
-          trackId: normalizeShortText(context.recentObjectReference.trackId, 80)
-        }
-      : null,
-    latestObservation:
-      context.latestObservation ??
-      context.camera?.latestObservation ??
-      context.cameraStatus?.observation ??
-      null,
-    voice: context.voice ?? null,
-    timestamp: new Date().toISOString()
-  };
-}
-
-function sanitizeVisionContext(vision = {}) {
-  return {
-    visibleLabels: normalizeShortText(vision.visibleLabels, 240),
-    objects: Array.isArray(vision.objects)
-      ? vision.objects.slice(0, 12).map((object) => ({
-          label: normalizeShortText(object?.label, 80),
-          visible: Boolean(object?.visible),
-          confidence: Number.isFinite(Number(object?.confidence)) ? Number(object.confidence) : null,
-          position: normalizeShortText(object?.position, 40),
-          distance: normalizeShortText(object?.distance, 40),
-          trackId: normalizeShortText(object?.trackId, 80),
-          lastSeenMs: Number.isFinite(Number(object?.lastSeenMs)) ? Number(object.lastSeenMs) : null
-        }))
-      : [],
-    activeTarget: vision.activeTarget
-      ? {
-          label: normalizeShortText(vision.activeTarget.label, 80),
-          visible: Boolean(vision.activeTarget.visible),
-          position: normalizeShortText(vision.activeTarget.position, 40),
-          distance: normalizeShortText(vision.activeTarget.distance, 40),
-          trackId: normalizeShortText(vision.activeTarget.trackId, 80),
-          lostForMs: Number.isFinite(Number(vision.activeTarget.lostForMs))
-            ? Number(vision.activeTarget.lostForMs)
-            : null
-        }
-      : null,
-    scenario: vision.scenario
-      ? {
-          active: Boolean(vision.scenario.active),
-          type: normalizeShortText(vision.scenario.type, 80),
-          targetLabel: normalizeShortText(vision.scenario.targetLabel, 80),
-          state: normalizeShortText(vision.scenario.state, 80)
-        }
-      : null
-  };
 }
 
 function sanitizeCameraStatus(status = {}) {
@@ -1792,160 +890,4 @@ function normalizeRunScenarioArgs(args = {}) {
     mode: ["gentle", "curious", "cautious"].includes(mode) ? mode : "gentle",
     reason: normalizeShortText(args.reason ?? nested.reason, 120)
   };
-}
-
-function normalizeDirection(direction) {
-  return ["left", "right", "both", "center"].includes(direction) ? direction : "center";
-}
-
-function normalizePerformArgs(args = {}) {
-  const speech = args.speech && typeof args.speech === "object" && !Array.isArray(args.speech)
-    ? args.speech
-    : {};
-  const expression = args.expression && typeof args.expression === "object" && !Array.isArray(args.expression)
-    ? args.expression
-    : {};
-  const timing = ["parallel", "sequence"].includes(args.timing) ? args.timing : "parallel";
-  const scenario = normalizeScenarioName(args.scenario);
-  const movement = readMovementNames(args.movement);
-
-  return {
-    speech: {
-      text: normalizeShortText(speech.text ?? args.text, 240),
-      tone: normalizeShortText(speech.tone ?? args.tone, 40) || "soft"
-    },
-    expression: {
-      emotion: normalizeShortText(expression.emotion ?? args.emotion, 40),
-      intensity: clampNumber(expression.intensity ?? args.intensity, 0, 1.5, 0.8)
-    },
-    movement: movement
-      .map((entry) => normalizeShortText(entry, 80))
-      .filter(Boolean)
-      .slice(0, 6),
-    scenario,
-    iterateMovement: args.iterateMovement === true,
-    timing
-  };
-}
-
-function sanitizeMovementActionArgs(args = {}) {
-  const movement = readMovementNames(args.movement)
-    .map((entry) => normalizeShortText(entry, 80))
-    .filter(Boolean)
-    .slice(0, 6);
-
-  return {
-    movement,
-    iterateMovement: args.iterateMovement === true || args.iterate === true,
-    timing: ["parallel", "sequence"].includes(args.timing) ? args.timing : "sequence"
-  };
-}
-
-function performRequestsMotion(args = {}) {
-  const scenario = getScenarioDefinition(args.scenario);
-  if (scenario) {
-    return Boolean(scenario.requiresMotion);
-  }
-
-  const movementList = Array.isArray(args.movement) ? args.movement : [];
-  return movementRequestsMotion(movementList, {
-    iterate: args.iterateMovement === true || args.iterate === true
-  });
-}
-
-function readMovementNames(input) {
-  const values = Array.isArray(input) ? input : input ? [input] : [];
-  return values
-    .flatMap((value) => {
-      if (value && typeof value === "object" && !Array.isArray(value)) {
-        return [];
-      }
-
-      return String(value ?? "").split(",");
-    })
-    .map((value) => value.trim())
-    .filter(Boolean);
-}
-
-function normalizeMemoryType(memoryType) {
-  return [
-    "user_preference",
-    "learned_phrase",
-    "robot_identity",
-    "shared_moment",
-    "environment"
-  ].includes(memoryType)
-    ? memoryType
-    : "shared_moment";
-}
-
-function normalizeImportance(importance) {
-  return ["low", "medium", "high"].includes(importance) ? importance : "medium";
-}
-
-function selectMemoryStorageType(memoryType, importance) {
-  if (memoryType === "robot_identity") {
-    return "personality_note";
-  }
-
-  if (importance === "high" || ["learned_phrase", "user_preference"].includes(memoryType)) {
-    return "long_term";
-  }
-
-  return "daily";
-}
-
-async function postJson(url, body) {
-  const response = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body)
-  });
-  const payload = await response.json().catch(() => ({}));
-
-  if (!response.ok || payload.ok === false) {
-    throw new Error(payload.error ?? `HTTP ${response.status}`);
-  }
-
-  return payload;
-}
-
-function looksLikeSecret(value) {
-  const text = String(value ?? "");
-  const lower = text.toLowerCase();
-
-  return (
-    /\b(api[_ -]?key|token|password|secret|bearer)\b/.test(lower) ||
-    /\bsk-[a-z0-9_-]{12,}/i.test(text)
-  );
-}
-
-function clampNumber(value, min, max, fallback) {
-  const numericValue = Number(value);
-
-  if (!Number.isFinite(numericValue)) {
-    return fallback;
-  }
-
-  return Math.min(max, Math.max(min, numericValue));
-}
-
-function toneToRate(tone) {
-  return {
-    shy: 0.9,
-    serious: 0.92,
-    playful: 1.08,
-    happy: 1.04,
-    curious: 1
-  }[tone] ?? 0.96;
-}
-
-function toneToPitch(tone) {
-  return {
-    shy: 0.92,
-    serious: 0.9,
-    playful: 1.12,
-    happy: 1.08,
-    curious: 1.05
-  }[tone] ?? 1;
 }

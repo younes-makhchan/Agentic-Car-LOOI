@@ -279,7 +279,7 @@ function updateVision({ tracker, visionState }, result) {
 }
 
 {
-  assert.deepEqual([...LOCAL_BRAIN_ALLOWED_ACTIONS].sort(), ["perform", "run_scenario"]);
+  assert.deepEqual([...LOCAL_BRAIN_ALLOWED_ACTIONS].sort(), ["run_scenario"]);
   assert.equal(validateBrainAction({ type: "run_scenario", args: { name: "follow_target", label: "apple" } }).ok, true);
   assert.equal(validateBrainAction({ type: "raw_motor", args: { pwm: 255 } }).ok, false);
   assert.equal(validateBrainAction({ type: "perform", args: { pwm: 255 } }).ok, false);

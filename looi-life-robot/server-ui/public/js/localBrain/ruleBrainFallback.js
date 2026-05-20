@@ -19,40 +19,40 @@ export class RuleBrainFallback {
       return "background";
     }
 
+    if (/\b(stop following|stop tracking|cancel follow|cancel tracking|forget the target|never mind|nevermind)\b/.test(normalized)) {
+      return "scenario_stop_following";
+    }
+
     if (!/\bstopping\b|\bstop by\b/.test(normalized) && (/\b(stop|freeze|halt)\b/.test(normalized) || /\bdon'?t move\b|\bdo not move\b|\bstay still\b/.test(normalized))) {
       return "safety_stop";
     }
 
-    if (/\bcome here\b|\bcome closer\b|\bcome to me\b/.test(normalized)) {
-      return "direct_command_approach";
+    if (/\b(follow|track)\b/.test(normalized)) {
+      return "scenario_follow_target";
     }
 
     if (/\b(take|snap|shoot|capture)\b.*\b(picture|photo|selfie)\b|\b(picture|photo|selfie)\b.*\b(me|my)\b/.test(normalized)) {
       return "scenario_take_picture";
     }
 
-    if (/\b(move|go|drive|roll)\s+(forward|forwards|ahead|straight)\b|\bforward a little\b/.test(normalized)) {
-      return "direct_command_drive_forward";
+    if (/\bcome here\b|\bcome closer\b|\bcome to me\b|\b(move|go|drive|roll)\s+(forward|forwards|ahead|straight)\b|\bforward a little\b/.test(normalized)) {
+      return "scenario_come_closer";
     }
 
-    if (/\b(move|drive|roll)\s+(back|backward|backwards|reverse)\b|\breverse a little\b/.test(normalized)) {
-      return "direct_command_drive_backward";
+    if (/\bgive me (space|room)\b|\bgo back\b|\bback up\b|\bnot too close\b|\b(move|drive|roll)\s+(back|backward|backwards|reverse)\b|\breverse a little\b/.test(normalized)) {
+      return "scenario_back_up";
     }
 
-    if (/\b(turn|rotate)\s+left\b/.test(normalized)) {
-      return "direct_command_turn_left";
+    if (/\b(turn|rotate|look)\s+left\b/.test(normalized)) {
+      return "scenario_look_left";
     }
 
-    if (/\b(turn|rotate)\s+right\b/.test(normalized)) {
-      return "direct_command_turn_right";
-    }
-
-    if (/\bgive me (space|room)\b|\bgo back\b|\bback up\b|\bnot too close\b/.test(normalized)) {
-      return "direct_command_retreat";
+    if (/\b(turn|rotate|look)\s+right\b/.test(normalized)) {
+      return "scenario_look_right";
     }
 
     if (/\blook around\b|\bcheck the room\b|\bscan\b/.test(normalized)) {
-      return "direct_command_look";
+      return "scenario_body_talking";
     }
 
     if (/\b(hello|hi|hey|looi|louie|lui|robot)\b/.test(normalized)) {
@@ -63,409 +63,142 @@ export class RuleBrainFallback {
       return "direct_question";
     }
 
-    if (context.reason === "autonomous_tick") {
-      return "background";
-    }
-
     return "unknown";
   }
 
   async think(context = {}) {
     const text = String(context.triggerEvent?.payload?.text ?? context.latestText ?? "");
     const classification = this.classifyText(text, context);
-    const policy = context.policy ?? context.localPolicy ?? {};
 
     switch (classification) {
-      case "safety_stop":
+      case "scenario_stop_following":
         return brainResponse({
-          plan: [
-            {
-              type: "stop",
-              args: { reason: "rule_brain_stop" },
-              reason: "Safety stop phrase."
-            }
-          ],
-          reason: classification,
-          confidence: 0.99
-        });
-      case "direct_command_approach":
-        if (!policy.localMotionArmed) {
-          return brainResponse({
-            text: policy.localSpeechAllowed === false ? null : "My body is not armed yet.",
-            plan: [
-              {
-                type: "express",
-                args: { emotion: "attentive", intensity: 0.55 },
-                reason: "User asked for movement while local motion is disarmed."
-              },
-              ...(policy.localSpeechAllowed === false
-                ? []
-                : [
-                    {
-                      type: "speak",
-                      args: { text: "My body is not armed yet.", tone: "soft" },
-                      reason: "Explain motion safety gate briefly."
-                    }
-                  ])
-            ],
-            reason: "motion_disarmed_approach",
-            confidence: 0.82
-          });
-        }
-        return brainResponse({
-          plan: [
-            {
-              type: "approach_user",
-              args: { style: "gentle", distance: "short" },
-              reason: "User asked LOOI to come closer."
-            }
-          ],
-          reason: classification,
-          confidence: 0.86
-        });
-      case "scenario_take_picture":
-        return brainResponse({
-          text: policy.localSpeechAllowed === false ? null : "Okay, hold still.",
-          plan: [
-            {
-              type: "scenario_take_picture",
-              args: {},
-              reason: "User asked LOOI to take a picture."
-            },
-            ...(policy.localSpeechAllowed === false
-              ? []
-              : [{ type: "speak", args: { text: "Okay, hold still.", tone: "happy" } }])
-          ],
+          text: "I'll stop following.",
+          action: scenarioAction("stop_following", { reason: "rule_follow_stop" }),
           reason: classification,
           confidence: 0.9
         });
-      case "direct_command_drive_forward":
-        return this.motionResponse({
-          policy,
-          text: "Moving forward a little.",
-          action: {
-            type: "drive",
-            args: { linear: 0.12, angular: 0, durationMs: 350 },
-            reason: "User asked for a small forward body movement."
-          },
-          blockedEmotion: "attentive",
-          reason: classification,
-          confidence: 0.88
+      case "scenario_follow_target": {
+        const label = extractFollowLabel(text, context);
+        return brainResponse({
+          text: label ? `I'll follow the ${label}.` : null,
+          action: label ? scenarioAction("follow_target", { label, mode: "gentle" }) : null,
+          reason: label ? classification : "follow_target_missing_label",
+          confidence: label ? 0.82 : 0.45
         });
-      case "direct_command_drive_backward":
-        return this.motionResponse({
-          policy,
-          text: "Moving back a little.",
-          action: {
-            type: "drive",
-            args: { linear: -0.12, angular: 0, durationMs: 350 },
-            reason: "User asked for a small backward body movement."
-          },
-          blockedEmotion: "shy",
+      }
+      case "scenario_take_picture":
+        return brainResponse({
+          text: "Okay, hold still.",
+          action: scenarioAction("take_picture"),
           reason: classification,
-          confidence: 0.88
+          confidence: 0.9
         });
-      case "direct_command_turn_left":
-        return this.motionResponse({
-          policy,
-          text: "Turning left a little.",
-          action: {
-            type: "drive",
-            args: { linear: 0, angular: -0.12, durationMs: 320 },
-            reason: "User asked for a small left turn."
-          },
-          blockedEmotion: "curious",
+      case "scenario_come_closer":
+        return brainResponse({
+          text: "Coming a little closer.",
+          action: scenarioAction("come_closer"),
           reason: classification,
           confidence: 0.86
         });
-      case "direct_command_turn_right":
-        return this.motionResponse({
-          policy,
-          text: "Turning right a little.",
-          action: {
-            type: "drive",
-            args: { linear: 0, angular: 0.12, durationMs: 320 },
-            reason: "User asked for a small right turn."
-          },
-          blockedEmotion: "curious",
+      case "scenario_back_up":
+        return brainResponse({
+          text: "I'll give you room.",
+          action: scenarioAction("back_up"),
           reason: classification,
           confidence: 0.86
         });
-      case "direct_command_retreat":
-        if (!policy.localMotionArmed) {
-          return brainResponse({
-            text: policy.localSpeechAllowed === false ? null : "I'll stay still and give you space.",
-            plan: [
-              {
-                type: "express",
-                args: { emotion: "shy", intensity: 0.55 },
-                reason: "Respect personal space without moving because motion is disarmed."
-              },
-              ...(policy.localSpeechAllowed === false
-                ? []
-                : [
-                    {
-                      type: "speak",
-                      args: { text: "I'll stay still and give you space.", tone: "soft" },
-                      reason: "Acknowledge personal-space request safely."
-                    }
-                  ])
-            ],
-            reason: "motion_disarmed_retreat",
-            confidence: 0.82
-          });
-        }
+      case "scenario_look_left":
         return brainResponse({
-          plan: [
-            {
-              type: "retreat",
-              args: { style: "gentle", distance: "short" },
-              reason: "User asked for more space."
-            }
-          ],
+          text: "Looking left.",
+          action: scenarioAction("look_left"),
           reason: classification,
-          confidence: 0.88
+          confidence: 0.82
         });
-      case "direct_command_look":
-        if (!policy.localMotionArmed) {
-          return brainResponse({
-            plan: [
-              policy.localCameraAllowed
-                ? {
-                    type: "observe_scene",
-                    args: { includeSnapshot: false },
-                    reason: "Look request handled as local observation while motion is disarmed."
-                  }
-                : {
-                    type: "express",
-                    args: { emotion: "curious", intensity: 0.55 },
-                    reason: "Curious face only; motion and camera are not allowed."
-                  }
-            ],
-            reason: policy.localCameraAllowed ? "observe_without_motion" : "curious_without_motion",
-            confidence: 0.74
-          });
-        }
+      case "scenario_look_right":
         return brainResponse({
-          plan: [
-            {
-              type: "curious_scan",
-              args: { direction: "both", intensity: 0.55 },
-              reason: "User asked LOOI to look around."
-            }
-          ],
+          text: "Looking right.",
+          action: scenarioAction("look_right"),
           reason: classification,
-          confidence: 0.8
+          confidence: 0.82
+        });
+      case "scenario_body_talking":
+        return brainResponse({
+          action: scenarioAction("body_talking"),
+          reason: classification,
+          confidence: 0.72
+        });
+      case "safety_stop":
+        return brainResponse({
+          text: "Stopping.",
+          action: null,
+          reason: classification,
+          confidence: 0.99
         });
       case "greeting":
       case "wake_name":
         return brainResponse({
-          text: policy.localSpeechAllowed === false ? null : classification === "wake_name" ? "Hm?" : "Hi.",
-          plan: [
-            {
-              type: "express",
-              args: { emotion: classification === "wake_name" ? "attentive" : "happy", intensity: 0.6 },
-              reason: classification === "wake_name" ? "Wake name heard." : "Friendly greeting."
-            },
-            ...(policy.localSpeechAllowed === false
-              ? []
-              : [
-                  {
-                    type: "speak",
-                    args: {
-                      text: classification === "wake_name" ? "Hm?" : "Hi.",
-                      tone: classification === "wake_name" ? "soft" : "happy"
-                    },
-                    reason: "Short local attention response."
-                  }
-                ])
-          ],
+          text: classification === "wake_name" ? "Hm?" : "Hi.",
+          action: null,
           reason: classification,
           confidence: 0.7
         });
       case "direct_question":
-        return brainResponse({
-          plan: [
-            {
-              type: "express",
-              args: { emotion: "curious", intensity: 0.55 },
-              reason: "A question deserves attention, but no real model is connected yet."
-            },
-            {
-              type: "speak",
-              args: { text: "I'm listening. My local brain is only a simple mock for now.", tone: "soft" },
-              reason: "Explain current local-brain limitation briefly."
-            }
-          ],
-          reason: classification,
-          confidence: 0.55
-        });
       case "background":
       case "unknown":
       default:
-        if (context.reason === "autonomous_tick" && Number(context.lifeState?.boredom) > 0.82) {
-          return brainResponse({
-            plan: [
-              {
-                type: "express",
-                args: { emotion: "curious", intensity: 0.5 },
-                reason: "Quiet autonomous curiosity without movement."
-              }
-            ],
-            reason: "autonomous_boredom_expression",
-            confidence: 0.46
-          });
-        }
-
         return brainResponse({
-          plan: [
-            {
-              type: "none",
-              args: {},
-              reason: "No safe local action needed."
-            }
-          ],
+          action: null,
           reason: classification,
-          confidence: 0.35
+          confidence: classification === "background" ? 0.35 : 0.5
         });
     }
   }
-
-  motionResponse({ policy, text, action, blockedEmotion, reason, confidence }) {
-    if (!policy.localMotionArmed) {
-      return brainResponse({
-        text: policy.localSpeechAllowed === false ? null : "My body is not armed yet.",
-        plan: [
-          {
-            type: "express",
-            args: { emotion: blockedEmotion, intensity: 0.55 },
-            reason: "User asked for movement while local motion is disarmed."
-          },
-          ...(policy.localSpeechAllowed === false
-            ? []
-            : [
-                {
-                  type: "speak",
-                  args: { text: "My body is not armed yet.", tone: "soft" },
-                  reason: "Explain motion safety gate briefly."
-                }
-              ])
-        ],
-        reason: `${reason}_motion_disarmed`,
-        confidence
-      });
-    }
-
-    return brainResponse({
-      text: policy.localSpeechAllowed === false ? null : text,
-      plan: [
-        action,
-        ...(policy.localSpeechAllowed === false
-          ? []
-          : [
-              {
-                type: "speak",
-                args: { text, tone: "soft" },
-                reason: "Acknowledge direct movement command briefly."
-              }
-            ])
-      ],
-      reason,
-      confidence
-    });
-  }
 }
 
-function brainResponse({ text = null, plan = [], reason = "rule", confidence = 0.5 } = {}) {
+function scenarioAction(name, args = {}) {
+  return {
+    type: "run_scenario",
+    args: {
+      name,
+      ...args
+    }
+  };
+}
+
+function brainResponse({ text = null, action = null, reason = "rule", confidence = 0.5 } = {}) {
   return {
     ok: true,
     source: "rule_fallback",
     text,
-    action: normalizeOfficialAction(plan),
+    action,
     reason,
     confidence,
     shouldRemember: false
   };
 }
 
-function normalizeOfficialAction(plan = []) {
-  const list = Array.isArray(plan) ? plan : [];
-  const speechAction = list.find((action) => action?.type === "speak");
-  const movementAction = list.find((action) => action?.type !== "speak") ?? speechAction;
-
-  return {
-    type: "perform",
-    args: {
-      speech: speechForAction(speechAction),
-      movement: movementForAction(movementAction),
-      scenario: scenarioForAction(movementAction),
-      timing: "parallel",
-      iterateMovement: false
-    },
-    reason: movementAction?.reason ?? speechAction?.reason
-  };
-}
-
-function speechForAction(action = {}) {
-  if (action.type !== "speak") {
-    return { text: "", tone: "soft" };
+function extractFollowLabel(text, context = {}) {
+  const normalized = normalizeText(text);
+  const explicit = normalized.match(/\b(?:follow|track)\s+(?:the\s+|this\s+|that\s+)?([a-z][a-z -]{1,40})\b/);
+  const label = explicit?.[1]?.replace(/\b(please|now|for me)\b/g, "").trim();
+  if (label && !["it", "this", "that", "me"].includes(label)) {
+    return label;
   }
 
-  return {
-    text: typeof action.args?.text === "string" ? action.args.text.slice(0, 240) : "",
-    tone: typeof action.args?.tone === "string" ? action.args.tone.slice(0, 40) : "soft"
-  };
-}
-
-function movementForAction(action = {}) {
-  switch (action.type) {
-    case "approach_user":
-      return ["move_forward_tiny"];
-    case "retreat":
-      return ["move_backward_tiny"];
-    case "curious_scan":
-      return ["look_left", "look_right"];
-    case "excited_wiggle":
-      return ["look_left", "look_right"];
-    case "scenario_take_picture":
-      return ["still"];
-    case "drive":
-      return movementForDrive(action.args);
-    case "express":
-    case "observe_scene":
-      return ["still"];
-    case "speak":
-    case "stop":
-    case "none":
-    default:
-      return ["still"];
-  }
-}
-
-function scenarioForAction(action = {}) {
-  return action.type === "scenario_take_picture" ? "take_picture" : null;
-}
-
-function movementForDrive(args = {}) {
-  const linear = Number(args.linear);
-  const angular = Number(args.angular);
-
-  if (Number.isFinite(linear) && Math.abs(linear) >= Math.abs(angular || 0) && Math.abs(linear) > 0.001) {
-    return linear > 0 ? ["move_forward_tiny"] : ["move_backward_tiny"];
-  }
-
-  if (Number.isFinite(angular) && Math.abs(angular) > 0.001) {
-    return angular < 0 ? ["look_left"] : ["look_right"];
-  }
-
-  return ["still"];
+  return String(
+    context.recentObjectReference?.label ??
+      context.vision?.activeTarget?.label ??
+      context.vision?.objects?.find?.((object) => object?.visible)?.label ??
+      ""
+  ).trim();
 }
 
 function normalizeText(text) {
   return String(text ?? "")
     .toLowerCase()
     .replace(/[’`]/g, "'")
-    .replace(/[^\w\s'?]/g, " ")
+    .replace(/[^\w\s'?-]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }

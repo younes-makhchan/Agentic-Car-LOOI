@@ -1,47 +1,31 @@
 import assert from "node:assert/strict";
-import { AttentionMotorController } from "../public/js/embodiment/attentionMotorController.js";
-import { compileMovementFrames } from "../public/js/embodiment/movementCatalog.js";
-import { EmbodiedActionRouter } from "../public/js/embodiment/embodiedActionRouter.js";
-import { IdleMicroBehavior } from "../public/js/embodiment/idleMicroBehavior.js";
+import { MOVEMENTS, compileMovementFrames } from "../public/js/embodiment/movementCatalog.js";
 import {
-  listMacros,
-  validateMacro
-} from "../public/js/embodiment/motionMacroLibrary.js";
-import { MotionMacroSequencer } from "../public/js/embodiment/motionMacroSequencer.js";
+  MODEL_SCENARIO_NAMES,
+  getScenarioDefinition
+} from "../public/js/embodiment/scenarioCatalog.js";
+import { EmbodiedActionRouter } from "../public/js/embodiment/embodiedActionRouter.js";
+import {
+  ScenarioFrameSequencer,
+  validateFrameSequence
+} from "../public/js/embodiment/scenarioFrameSequencer.js";
 import { PriorityScheduler } from "../public/js/embodiment/priorityScheduler.js";
 import { PerformanceMonitor } from "../public/js/runtime/performanceMonitor.js";
 import { WakeLockManager } from "../public/js/runtime/wakeLockManager.js";
 
-const requiredMacros = [
-  "soft_idle",
-  "soft_listen",
-  "thinking_pose",
-  "curious_scan",
-  "happy_approach",
-  "gentle_approach",
-  "shy_retreat",
-  "scared_stop",
-  "excited_wiggle",
-  "user_returned_greeting",
-  "sleepy_idle",
-  "surprised_back",
-  "soft_recenter",
-  "tiny_yes",
-  "tiny_no",
-  "look_around_only"
-];
-
-const macros = listMacros();
-const macroNames = new Set(macros.map((macro) => macro.name));
-requiredMacros.forEach((name) => assert.equal(macroNames.has(name), true, `missing ${name}`));
-macros.forEach((macro) => {
-  assert.equal(validateMacro(macro).ok, true, macro.name);
-  macro.frames
+["still", "ack_yes", "ack_no", "come_closer", "back_up", "look_left", "look_right", "body_talking", "take_picture"].forEach((name) => {
+  assert.equal(MODEL_SCENARIO_NAMES.includes(name), true, `missing scenario ${name}`);
+  const scenario = getScenarioDefinition(name);
+  assert.equal(Boolean(scenario), true, `missing scenario definition ${name}`);
+  const frames = compileMovementFrames(scenario.movement, {
+    iterate: Boolean(scenario.iterateMovement)
+  }).frames;
+  frames
     .filter((frame) => frame.type === "motion")
     .forEach((frame) => {
-      assert.ok(Math.abs(frame.linear ?? 0) <= 0.22, `${macro.name} linear too high`);
-      assert.ok(Math.abs(frame.angular ?? 0) <= 0.22, `${macro.name} angular too high`);
-      assert.ok(Number(frame.durationMs) <= 700, `${macro.name} duration too high`);
+      assert.ok(Math.abs(frame.linear ?? 0) <= 0.22, `${name} linear too high`);
+      assert.ok(Math.abs(frame.angular ?? 0) <= 0.22, `${name} angular too high`);
+      assert.ok(Number(frame.durationMs) <= 700, `${name} duration too high`);
     });
 });
 
@@ -57,7 +41,6 @@ const lifeState = {
   stopRespectUntil: 0
 };
 const lifeEngine = {
-  running: true,
   face: {
     setExpression(expression, intensity) {
       faceEvents.push({ type: "expression", expression, intensity });
@@ -110,7 +93,8 @@ const voiceOutput = {
   },
   cancel() {}
 };
-const sequencer = new MotionMacroSequencer({
+
+const sequencer = new ScenarioFrameSequencer({
   face: lifeEngine.face,
   voiceOutput,
   commandQueue,
@@ -118,30 +102,40 @@ const sequencer = new MotionMacroSequencer({
   logger: () => {}
 });
 
-const faceOnly = await sequencer.playMacro("soft_listen", { allowMotion: false });
+const faceOnly = await sequencer.playFrameSequence({
+  name: "smoke_face",
+  priority: 10,
+  requiresMotion: false,
+  frames: [{ type: "face", expression: "attentive", eyeDirection: "center", durationMs: 10 }]
+}, { allowMotion: false });
 assert.equal(faceOnly.ok, true);
 assert.equal(faceEvents.some((event) => event.expression === "attentive"), true);
 
-const motionResult = await sequencer.playMacro("happy_approach", { allowMotion: true });
+const motionSequence = {
+  name: "smoke_motion",
+  priority: 10,
+  requiresMotion: true,
+  frames: [{ type: "motion", linear: 0.05, angular: 0, durationMs: 80, rampMs: 40, label: "smoke_sequence_forward" }]
+};
+assert.equal(validateFrameSequence(motionSequence).ok, true);
+const motionResult = await sequencer.playFrameSequence(motionSequence, { allowMotion: true });
 assert.equal(motionResult.ok, true);
-assert.equal(motions.some((motion) => motion.label === "macro_happy_approach_forward"), true);
+assert.equal(motions.some((motion) => motion.label === "smoke_sequence_forward"), true);
 
-const skippedMotion = await new MotionMacroSequencer({
-  face: lifeEngine.face,
-  commandQueue,
-  lifeEngine,
-  logger: () => {}
-}).playMacro("happy_approach", { allowMotion: false });
+const skippedMotion = await sequencer.playFrameSequence({
+  ...motionSequence,
+  name: "smoke_motion_disarmed"
+}, { allowMotion: false });
 assert.equal(skippedMotion.partial, true);
 assert.equal(skippedMotion.skippedFrames.includes("motion_not_allowed"), true);
 
-const interruptSequencer = new MotionMacroSequencer({
+const interruptSequencer = new ScenarioFrameSequencer({
   face: lifeEngine.face,
   commandQueue,
   lifeEngine,
   logger: () => {}
 });
-const longMacro = interruptSequencer.playMacroObject({
+const longSequence = interruptSequencer.playFrameSequence({
   name: "long_pause",
   priority: 10,
   interruptible: true,
@@ -149,18 +143,24 @@ const longMacro = interruptSequencer.playMacroObject({
   frames: [{ type: "pause", durationMs: 500 }]
 }, {});
 setTimeout(() => interruptSequencer.interrupt("smoke_interrupt", 100), 20);
-const interrupted = await longMacro;
+const interrupted = await longSequence;
 assert.equal(interrupted.interrupted, true);
 
-const stopSequencer = new MotionMacroSequencer({
+const stopSequencer = new ScenarioFrameSequencer({
   face: lifeEngine.face,
   commandQueue,
   lifeEngine,
   logger: () => {}
 });
-const stopResult = await stopSequencer.playMacro("scared_stop", { allowMotion: false });
+const stopResult = await stopSequencer.playFrameSequence({
+  name: "safety_stop",
+  priority: 100,
+  interruptible: false,
+  requiresMotion: false,
+  frames: [{ type: "event", eventType: "emergency_stop", payload: { reason: "smoke_stop" }, durationMs: 10 }]
+}, { allowMotion: false });
 assert.equal(stopResult.ok, true);
-assert.equal(stops.length > 0, true);
+assert.equal(stops.includes("smoke_stop"), true);
 lifeState.stopRespectUntil = 0;
 
 const scheduler = new PriorityScheduler();
@@ -188,7 +188,7 @@ assert.equal(highResult.ok, true);
 assert.equal(order[0], "high");
 await low;
 
-const routerSequencer = new MotionMacroSequencer({
+const routerSequencer = new ScenarioFrameSequencer({
   face: lifeEngine.face,
   voiceOutput,
   commandQueue,
@@ -196,18 +196,12 @@ const routerSequencer = new MotionMacroSequencer({
   logger: () => {}
 });
 const router = new EmbodiedActionRouter({
-  macroSequencer: routerSequencer,
+  frameSequencer: routerSequencer,
   priorityScheduler: new PriorityScheduler(),
   lifeEngine,
   logger: () => {}
 });
-const approach = router.mapActionToMacro({ type: "approach_user", args: { style: "happy" } });
-assert.equal(approach.macroName, "happy_approach");
-const retreat = router.mapActionToMacro({ type: "retreat", args: {} });
-assert.equal(retreat.macroName, "shy_retreat");
-const stop = router.mapActionToMacro({ type: "stop", args: {} });
-assert.equal(stop.macroObject.name, "scared_stop");
-const unknown = router.mapActionToMacro({ type: "raw_pwm", args: {} });
+const unknown = router.mapActionToSequence({ type: "raw_pwm", args: {} });
 assert.equal(unknown.ok, false);
 
 const movementPlan = compileMovementFrames(["look_left", "look_right", "invented_dance"], { iterate: true });
@@ -215,134 +209,56 @@ assert.equal(movementPlan.names.includes("look_left"), true);
 assert.equal(movementPlan.names.includes("look_right"), true);
 assert.equal(movementPlan.ignored.includes("invented_dance"), true);
 assert.equal(movementPlan.frames.filter((frame) => frame.type === "motion").length > 0, true);
-const canonicalMovement = compileMovementFrames(["look_left", "move_forward_tiny"], { iterate: false });
+const canonicalMovement = compileMovementFrames([MOVEMENTS.look_left, MOVEMENTS.move_forward_tiny], { iterate: false });
 assert.equal(canonicalMovement.names.includes("look_left"), true);
 assert.equal(canonicalMovement.names.includes("move_forward_tiny"), true);
 
-const performSpeechOnly = router.mapActionToMacro({
-  type: "perform",
+const sequenceMapped = router.mapActionToSequence({
+  type: "run_sequence",
   args: {
-    speech: { text: "Hi there.", tone: "happy" },
-    movement: ["still"],
-    timing: "parallel"
-  }
-});
-assert.equal(performSpeechOnly.macroObject.name, "perform_embodied");
-assert.equal(validateMacro(performSpeechOnly.macroObject).ok, true);
-
-const performNewMovementShape = router.mapActionToMacro({
-  type: "perform",
-  args: {
-    speech: { text: "I can wiggle.", tone: "happy" },
-    movement: ["look_left", "look_right"],
+    speech: { text: "I can move softly.", tone: "happy" },
+    movement: [MOVEMENTS.look_left, MOVEMENTS.look_right],
     iterateMovement: true,
     timing: "parallel"
   }
 });
-assert.equal(performNewMovementShape.macroObject.name, "perform_embodied");
-assert.equal(validateMacro(performNewMovementShape.macroObject).ok, true);
+assert.equal(sequenceMapped.ok, true);
+assert.equal(sequenceMapped.sequence.name, "scenario_sequence");
+assert.equal(validateFrameSequence(sequenceMapped.sequence).ok, true);
 
-const movementOnly = router.mapActionToMacro({
-  type: "movement",
-  args: {
-    movement: ["look_left", "move_backward_tiny"],
-    timing: "sequence"
-  }
-});
-assert.equal(movementOnly.macroObject.name, "movement_embodied");
-assert.equal(validateMacro(movementOnly.macroObject).ok, true);
-
-const performDisarmed = await router.execute({
-  type: "perform",
+const sequenceDisarmed = await router.execute({
+  type: "run_sequence",
   args: {
     speech: { text: "I can wiggle softly.", tone: "happy" },
-    movement: ["look_left", "look_right"],
+    movement: [MOVEMENTS.look_left, MOVEMENTS.look_right],
     iterateMovement: true,
     timing: "parallel"
   },
-  source: "local_brain"
+  source: "local"
 }, {
   allowMotion: false,
   allowSpeech: true,
-  reason: "smoke_perform_disarmed"
+  reason: "smoke_sequence_disarmed"
 });
-assert.equal(performDisarmed.ok, true);
-assert.equal(performDisarmed.result.partial, true);
-assert.equal(performDisarmed.result.skippedFrames.includes("motion_not_allowed"), true);
+assert.equal(sequenceDisarmed.ok, true);
+assert.equal(sequenceDisarmed.result.partial, true);
+assert.equal(sequenceDisarmed.result.skippedFrames.includes("motion_not_allowed"), true);
 assert.equal(spoken.some((entry) => entry.text === "I can wiggle softly."), true);
 
-const performArmed = await router.execute({
-  type: "perform",
+const sequenceArmed = await router.execute({
+  type: "run_sequence",
   args: {
-    speech: { text: "Coming closer.", tone: "happy" },
-    movement: ["move_forward_tiny"],
-    timing: "parallel"
+    movement: [MOVEMENTS.move_forward_tiny],
+    timing: "sequence"
   },
-  source: "local_brain"
+  source: "local"
 }, {
   allowMotion: true,
-  allowSpeech: true,
-  reason: "smoke_perform_armed"
+  allowSpeech: false,
+  reason: "smoke_sequence_armed"
 });
-assert.equal(performArmed.ok, true);
-assert.equal(motions.some((motion) => motion.label === "perform_tiny_forward"), true);
-
-const interruptPerformSequencer = new MotionMacroSequencer({
-  face: lifeEngine.face,
-  voiceOutput: {
-    async speak(payload) {
-      spoken.push(payload);
-      await wait(160);
-      return { executed: true, payload };
-    },
-    cancel() {}
-  },
-  commandQueue,
-  lifeEngine,
-  logger: () => {}
-});
-const interruptRouter = new EmbodiedActionRouter({
-  macroSequencer: interruptPerformSequencer,
-  lifeEngine,
-  logger: () => {}
-});
-const runningPerform = interruptRouter.execute({
-  type: "perform",
-  args: {
-    speech: { text: "This should be interrupted.", tone: "soft" },
-    movement: ["look_left", "look_right"],
-    iterateMovement: true,
-    timing: "parallel"
-  },
-  source: "local_brain"
-}, {
-  allowMotion: true,
-  allowSpeech: true,
-  reason: "smoke_perform_interrupt"
-});
-setTimeout(() => interruptPerformSequencer.interrupt("smoke_perform_stop", 100), 20);
-const interruptedPerform = await runningPerform;
-assert.equal(interruptedPerform.result.interrupted, true);
-
-const idle = new IdleMicroBehavior({
-  lifeEngine,
-  macroSequencer: routerSequencer,
-  getPolicy: () => ({ localMotionArmed: false, allowAutonomousMovement: false }),
-  getContext: () => ({ lifeState: { ...lifeState, stopRespectUntil: Date.now() + 1000 } }),
-  logger: () => {}
-});
-assert.equal(idle.chooseIdleMicroBehavior(idle.getContext?.() ?? { lifeState }, {}).allowed, false);
-
-const attention = new AttentionMotorController({
-  lifeEngine,
-  macroSequencer: routerSequencer,
-  getPolicy: () => ({ localMotionArmed: false, allowAutonomousMovement: false }),
-  logger: () => {}
-});
-attention.start();
-const tracked = attention.onObservation({ userVisible: true, userPosition: "left" });
-assert.equal(tracked.moved, false);
-assert.equal(faceEvents.some((event) => event.direction === "left"), true);
+assert.equal(sequenceArmed.ok, true);
+assert.equal(motions.some((motion) => motion.label === "scenario_tiny_forward"), true);
 
 const wakeLock = new WakeLockManager({ logger: () => {} });
 assert.equal(wakeLock.getStatus().active, false);
@@ -356,7 +272,7 @@ assert.equal(perf.getStatus().running, false);
 
 console.log(JSON.stringify({
   ok: true,
-  macros: macros.length,
+  scenarios: MODEL_SCENARIO_NAMES.length,
   motions: motions.length,
   stops: stops.length,
   faceEvents: faceEvents.length

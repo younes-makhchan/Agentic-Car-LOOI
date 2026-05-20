@@ -8,15 +8,7 @@ const DEFAULT_ROOT_DIR = path.resolve(__dirname, "../../memory");
 const MAX_PHRASES = 200;
 
 const SAFE_LEARNED_ACTIONS = new Set([
-  "speak",
-  "express",
-  "stop",
-  "approach_user",
-  "retreat",
-  "curious_scan",
-  "excited_wiggle",
-  "observe_scene",
-  "remember"
+  "run_scenario"
 ]);
 
 export class LearnedPhraseStore {

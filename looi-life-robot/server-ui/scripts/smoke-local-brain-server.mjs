@@ -20,14 +20,13 @@ assert.equal(status.provider, "mock");
 assert.equal(status.available, true);
 
 const cases = [
-  ["come here", "move_forward_tiny"],
-  ["move forward", "move_forward_tiny"],
-  ["give me space", "move_backward_tiny"],
-  ["look around", "look_left"],
-  ["stop", "still"]
+  ["come here", "come_closer"],
+  ["move forward", "come_closer"],
+  ["give me space", "back_up"],
+  ["look around", "body_talking"]
 ];
 
-for (const [text, expectedAction] of cases) {
+for (const [text, expectedScenario] of cases) {
   const response = await localBrain.think({
     reason: "manual",
     triggerEvent: {
@@ -46,8 +45,8 @@ for (const [text, expectedAction] of cases) {
 
   assert.equal(response.ok, true);
   assert.equal(response.provider, "mock");
-  assert.equal(response.action.type, "perform");
-  assert.equal(response.action.args.movement.includes(expectedAction), true);
+  assert.equal(response.action.type, "run_scenario");
+  assert.equal(response.action.args.name, expectedScenario);
 }
 
 const pictureResponse = await localBrain.think({
@@ -66,8 +65,8 @@ const pictureResponse = await localBrain.think({
   }
 });
 assert.equal(pictureResponse.ok, true);
-assert.equal(pictureResponse.action.type, "perform");
-assert.equal(pictureResponse.action.args.scenario, "take_picture");
+assert.equal(pictureResponse.action.type, "run_scenario");
+assert.equal(pictureResponse.action.args.name, "take_picture");
 
 const fallbackServer = createLocalBrainServerFromEnv({
   LOCAL_BRAIN_ENABLED: "true",
@@ -102,60 +101,41 @@ assert.equal(fireworksStatus.available, false);
 assert.match(fireworksStatus.details.error, /FIREWORKS_API_KEY/);
 
 assert.equal(parseBrainResponse({ text: null, action: null }).action, null);
-assert.equal(parseBrainResponse('{"action":{"type":"perform","args":{"movement":["still"]}}}').action.type, "perform");
-const performResponse = normalizeBrainResponse(parseBrainResponse({
-  action: {
-    type: "perform",
-    args: {
-      speech: { text: "I can come closer.", tone: "happy" },
-      movement: ["look_left", "move_forward_tiny"],
-      iterateMovement: true,
-      timing: "parallel"
-    }
-  }
-}), { provider: "test", model: "test" });
-assert.equal(performResponse.ok, true);
-assert.equal(performResponse.action.type, "perform");
-assert.equal(performResponse.action.args.speech.text, "I can come closer.");
-assert.equal(performResponse.action.args.movement[0], "look_left");
+assert.equal(parseBrainResponse('{"action":{"type":"run_scenario","args":{"name":"still"}}}').action.type, "run_scenario");
 const scenarioResponse = normalizeBrainResponse(parseBrainResponse({
   action: {
-    type: "perform",
+    type: "run_scenario",
     args: {
-      speech: { text: "Okay, hold still.", tone: "happy" },
-      movement: ["move_forward_tiny"],
-      scenario: "take_picture",
-      timing: "parallel",
-      iterateMovement: false
+      name: "take_picture",
+      reason: "photo_request"
     }
   }
 }), { provider: "test", model: "test" });
 assert.equal(scenarioResponse.ok, true);
-assert.equal(scenarioResponse.action.args.scenario, "take_picture");
-const rejectedMovementResponse = normalizeBrainResponse(parseBrainResponse({
+assert.equal(scenarioResponse.action.type, "run_scenario");
+assert.equal(scenarioResponse.action.args.name, "take_picture");
+const rejectedPerformResponse = normalizeBrainResponse(parseBrainResponse({
   action: {
-    type: "movement",
+    type: "perform",
     args: {
-      movement: ["look_left", "move_forward_tiny"],
-      iterateMovement: false,
-      timing: "sequence"
+      movement: ["look_left"]
     }
   }
 }), { provider: "test", model: "test" });
-assert.equal(rejectedMovementResponse.ok, false);
-assert.equal(rejectedMovementResponse.action, null);
-assert.match(rejectedMovementResponse.reason, /Unknown action type/);
+assert.equal(rejectedPerformResponse.ok, false);
+assert.equal(rejectedPerformResponse.action, null);
+assert.match(rejectedPerformResponse.reason, /Unknown action type/);
 assert.equal(stripMarkdownCodeFence("```json\n{\"ok\":true}\n```"), '{"ok":true}');
-assert.equal(parseBrainResponse("```json\n{\"action\":{\"type\":\"perform\",\"args\":{\"movement\":[\"still\"]}}}\n```").action.type, "perform");
+assert.equal(parseBrainResponse("```json\n{\"action\":{\"type\":\"run_scenario\",\"args\":{\"name\":\"still\"}}}\n```").action.type, "run_scenario");
 const invalid = normalizeBrainResponse(parseBrainResponse("not json"), { provider: "test", model: "test" });
 assert.equal(invalid.ok, true);
 assert.equal(invalid.action, null);
 assert.equal(invalid.reason, "invalid_json_from_model");
 const unsafeAction = validateBrainAction({
-  type: "perform",
+  type: "run_scenario",
   args: {
-    left_motor: 1,
-    movement: ["move_forward_tiny"]
+    name: "come_closer",
+    left_motor: 1
   }
 });
 assert.equal(unsafeAction.ok, false);
@@ -239,8 +219,8 @@ try {
   const thinkPayload = await thinkResponse.json();
   assert.equal(thinkResponse.ok, true);
   assert.equal(thinkPayload.ok, true);
-  assert.equal(thinkPayload.action.type, "perform");
-  assert.equal(thinkPayload.action.args.movement.includes("move_forward_tiny"), true);
+  assert.equal(thinkPayload.action.type, "run_scenario");
+  assert.equal(thinkPayload.action.args.name, "come_closer");
 
   const chatResponse = await fetch(`${baseUrl}/api/local-brain/chat`, {
     method: "POST",
@@ -254,8 +234,8 @@ try {
   });
   const chatPayload = await chatResponse.json();
   assert.equal(chatResponse.ok, true);
-  assert.equal(chatPayload.action.type, "perform");
-  assert.equal(chatPayload.action.args.movement.includes("look_left"), true);
+  assert.equal(chatPayload.action.type, "run_scenario");
+  assert.equal(chatPayload.action.args.name, "body_talking");
 } finally {
   await new Promise((resolve) => server.close(resolve));
 }

@@ -13,16 +13,10 @@ import { MockBrainAdapter } from "../public/js/localBrain/mockBrainAdapter.js";
 import { RuleBrainFallback } from "../public/js/localBrain/ruleBrainFallback.js";
 
 const busEvents = [];
-const bus = new LocalEventBus({
-  logger: () => {}
-});
-const unsubscribe = bus.subscribe("user_text", (event) => {
-  busEvents.push(event);
-});
+const bus = new LocalEventBus({ logger: () => {} });
+const unsubscribe = bus.subscribe("user_text", (event) => busEvents.push(event));
 const allEvents = [];
-bus.subscribeAll((event) => {
-  allEvents.push(event);
-});
+bus.subscribeAll((event) => allEvents.push(event));
 
 const event = bus.publish("user_text", { text: "hello" }, { priority: 2 });
 assert.equal(event.type, "user_text");
@@ -37,38 +31,32 @@ assert.equal(bus.getRecentEvents().length, 0);
 
 const defaultPolicy = createDefaultBrainPolicy();
 assert.equal(defaultPolicy.localBrainEnabled, true);
-assert.equal(defaultPolicy.autonomousMode, false);
 assert.equal(defaultPolicy.localMotionArmed, false);
 assert.equal(defaultPolicy.localCameraAllowed, false);
-assert.equal(defaultPolicy.allowAutonomousMovement, false);
+assert.equal(defaultPolicy.maxThoughtsPerMinute, 12);
 const clampedPolicy = clampBrainPolicy({
   localMotionArmed: true,
-  maxThoughtsPerMinute: 999,
-  minAutonomousThoughtIntervalMs: -1
+  maxThoughtsPerMinute: 999
 });
 assert.equal(clampedPolicy.localMotionArmed, true);
 assert.equal(clampedPolicy.maxThoughtsPerMinute, 60);
-assert.equal(clampedPolicy.minAutonomousThoughtIntervalMs, 1000);
 
 const mock = new MockBrainAdapter();
-const comeHere = await mock.think(contextForText("come here", { localMotionArmed: true }));
-assert.equal(comeHere.action.type, "perform");
-assert.equal(comeHere.action.args.movement.includes("move_forward_tiny"), true);
-const giveSpace = await mock.think(contextForText("please give me space", { localMotionArmed: true }));
-assert.equal(giveSpace.action.type, "perform");
-assert.equal(giveSpace.action.args.movement.includes("move_backward_tiny"), true);
-const lookAround = await mock.think(contextForText("look around", { localMotionArmed: true }));
-assert.equal(lookAround.action.type, "perform");
-assert.equal(lookAround.action.args.movement.includes("look_left"), true);
+const comeHere = await mock.think(contextForText("come here"));
+assert.equal(comeHere.action.type, "run_scenario");
+assert.equal(comeHere.action.args.name, "come_closer");
+const giveSpace = await mock.think(contextForText("please give me space"));
+assert.equal(giveSpace.action.args.name, "back_up");
+const lookAround = await mock.think(contextForText("look around"));
+assert.equal(lookAround.action.args.name, "body_talking");
 const stop = await mock.think(contextForText("freeze"));
-assert.equal(stop.action.type, "perform");
-assert.equal(stop.action.args.movement.includes("still"), true);
+assert.equal(stop.action, null);
 
 const fallback = new RuleBrainFallback();
 assert.equal(fallback.classifyText("freeze"), "safety_stop");
-assert.equal(fallback.classifyText("come closer"), "direct_command_approach");
-assert.equal(fallback.classifyText("give me room"), "direct_command_retreat");
-assert.equal(fallback.classifyText("look around"), "direct_command_look");
+assert.equal(fallback.classifyText("come closer"), "scenario_come_closer");
+assert.equal(fallback.classifyText("give me room"), "scenario_back_up");
+assert.equal(fallback.classifyText("look around"), "scenario_body_talking");
 assert.equal(fallback.classifyText("hello looi"), "greeting");
 assert.equal(fallback.classifyText("why are you alive?"), "direct_question");
 
@@ -76,11 +64,11 @@ const unknownAction = validateBrainAction({ type: "raw_pwm", args: {} });
 assert.equal(unknownAction.ok, false);
 assert.match(unknownAction.error, /unknown/i);
 const rawMotorAction = validateBrainAction({
-  type: "perform",
-  args: { left_motor: 1, movement: ["move_forward_tiny"] }
+  type: "run_scenario",
+  args: { name: "come_closer", left_motor: 1 }
 });
 assert.equal(rawMotorAction.ok, false);
-assert.match(rawMotorAction.error, /motor|PWM/i);
+assert.match(rawMotorAction.error, /motor|unsafe|PWM/i);
 const invalidJson = parseBrainResponse("{not json");
 assert.equal(invalidJson.action.type, "none");
 assert.equal(invalidJson.ok, false);
@@ -105,7 +93,7 @@ const engine = new LocalBrainEngine({
         status: "completed",
         type: action.type,
         executed: true,
-        physical: ["drive", "approach_user", "retreat", "curious_scan", "excited_wiggle", "stop"].includes(action.type),
+        physical: action.type === "run_scenario",
         message: `${action.type} executed`
       };
     }
@@ -116,89 +104,29 @@ const engine = new LocalBrainEngine({
     simulatorMode: true,
     robotConnected: true
   }),
-  adapter: {
-    async isAvailable() {
-      return true;
-    },
-    async think() {
-      return {
-        ok: true,
-        source: "test",
-        action: {
-          type: "perform",
-          args: {
-            speech: { text: "", tone: "soft" },
-            movement: ["move_forward_tiny"],
-            timing: "parallel",
-            iterateMovement: false
-          }
-        },
-        reason: "test physical rejection"
-      };
-    }
-  },
+  adapter: scenarioAdapter("come_closer"),
   fallback,
   logger: () => {}
 });
 
-const disarmedThought = await engine.thinkNow("manual");
-assert.equal(disarmedThought.results[0].status, "completed");
-assert.equal(disarmedThought.results[0].type, "perform");
-assert.equal(executedActions[0].type, "perform");
+const firstThought = await engine.thinkNow("manual");
+assert.equal(firstThought.results[0].status, "completed");
+assert.equal(firstThought.results[0].type, "run_scenario");
+assert.equal(executedActions[0].args.name, "come_closer");
 
-engine.setAdapter({
-  async isAvailable() {
-    return true;
-  },
-  async think() {
-      return {
-        ok: true,
-        source: "test",
-        action: {
-          type: "perform",
-          args: {
-            speech: { text: "", tone: "soft" },
-            movement: ["still"],
-            timing: "parallel",
-            iterateMovement: false
-          }
-        },
-        reason: "test stop allowed"
-      };
-  }
-});
-const stopThought = await engine.thinkNow("manual");
-assert.equal(stopThought.results[0].status, "completed");
-assert.equal(executedActions.at(-1).type, "perform");
+engine.setAdapter(scenarioAdapter("still"));
+const stillThought = await engine.thinkNow("manual");
+assert.equal(stillThought.results[0].status, "completed");
+assert.equal(executedActions.at(-1).args.name, "still");
 
 policy = {
   ...policy,
   localMotionArmed: true
 };
-engine.setAdapter({
-  async isAvailable() {
-    return true;
-  },
-  async think() {
-      return {
-        ok: true,
-        source: "test",
-        action: {
-          type: "perform",
-          args: {
-            speech: { text: "", tone: "soft" },
-            movement: ["move_backward_tiny"],
-            timing: "parallel",
-            iterateMovement: false
-          }
-        },
-        reason: "test armed motion"
-      };
-  }
-});
+engine.setAdapter(scenarioAdapter("back_up"));
 const armedThought = await engine.thinkNow("manual");
 assert.equal(armedThought.results[0].status, "completed");
-assert.equal(executedActions.some((action) => action.type === "perform" && action.args.movement.includes("move_backward_tiny")), true);
+assert.equal(executedActions.some((action) => action.type === "run_scenario" && action.args.name === "back_up"), true);
 
 console.log(
   JSON.stringify({
@@ -208,6 +136,25 @@ console.log(
     executedActions: executedActions.length
   })
 );
+
+function scenarioAdapter(name) {
+  return {
+    async isAvailable() {
+      return true;
+    },
+    async think() {
+      return {
+        ok: true,
+        source: "test",
+        action: {
+          type: "run_scenario",
+          args: { name }
+        },
+        reason: `test_${name}`
+      };
+    }
+  };
+}
 
 function contextForText(text, policyPatch = {}) {
   return {

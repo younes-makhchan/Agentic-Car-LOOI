@@ -1,9 +1,7 @@
 import { PUBLIC_CONFIG } from "./config.js";
 import { LocalEventBus } from "./core/localEventBus.js";
-import { AttentionMotorController } from "./embodiment/attentionMotorController.js";
 import { EmbodiedActionRouter } from "./embodiment/embodiedActionRouter.js";
-import { IdleMicroBehavior } from "./embodiment/idleMicroBehavior.js";
-import { MotionMacroSequencer } from "./embodiment/motionMacroSequencer.js";
+import { ScenarioFrameSequencer } from "./embodiment/scenarioFrameSequencer.js";
 import { PriorityScheduler } from "./embodiment/priorityScheduler.js";
 import { GeminiLiveRuntime } from "./gemini/geminiLiveRuntime.js";
 import { LifeEngine } from "./life/lifeEngine.js";
@@ -12,7 +10,6 @@ import { LocalServerBrainAdapter } from "./localBrain/localServerBrainAdapter.js
 import { MockBrainAdapter } from "./localBrain/mockBrainAdapter.js";
 import { RuleBrainFallback } from "./localBrain/ruleBrainFallback.js";
 import { AttentionSystem } from "./localBrain/attentionSystem.js";
-import { AutonomousScheduler } from "./localBrain/autonomousScheduler.js";
 import { BrainLatencyBudget } from "./localBrain/brainLatencyBudget.js";
 import { clampBrainPolicy, createDefaultBrainPolicy } from "./localBrain/brainPolicy.js";
 import { CameraInput } from "./perception/camera.js";
@@ -156,8 +153,6 @@ const ui = {
   audioLevelMonitorToggle: document.getElementById("audioLevelMonitorToggle"),
   audioLevelDisplay: document.getElementById("audioLevelDisplay"),
   voiceActivityState: document.getElementById("voiceActivityState"),
-  autonomousSchedulerState: document.getElementById("autonomousSchedulerState"),
-  lastAutonomousReason: document.getElementById("lastAutonomousReason"),
   cameraSupportState: document.getElementById("cameraSupportState"),
   cameraSecureWarning: document.getElementById("cameraSecureWarning"),
   cameraRunningState: document.getElementById("cameraRunningState"),
@@ -227,12 +222,9 @@ const ui = {
   geminiLiveLatency: document.getElementById("geminiLiveLatency"),
   localBrainThoughtList: document.getElementById("localBrainThoughtList"),
   localBrainEnabledToggle: document.getElementById("localBrainEnabledToggle"),
-  autonomousModeToggle: document.getElementById("autonomousModeToggle"),
   localMotionArmedToggle: document.getElementById("localMotionArmedToggle"),
   localCameraAllowedToggle: document.getElementById("localCameraAllowedToggle"),
   localSpeechAllowedToggle: document.getElementById("localSpeechAllowedToggle"),
-  allowAutonomousMovementToggle: document.getElementById("allowAutonomousMovementToggle"),
-  allowAutonomousSpeechToggle: document.getElementById("allowAutonomousSpeechToggle"),
   startLocalBrainButton: document.getElementById("startLocalBrainButton"),
   stopLocalBrainButton: document.getElementById("stopLocalBrainButton"),
   thinkNowButton: document.getElementById("thinkNowButton"),
@@ -306,28 +298,18 @@ const ui = {
   scenarioComeHereButton: document.getElementById("scenarioComeHereButton"),
   scenarioGiveMeSpaceButton: document.getElementById("scenarioGiveMeSpaceButton"),
   scenarioLookAroundButton: document.getElementById("scenarioLookAroundButton"),
-  scenarioStopButton: document.getElementById("scenarioStopButton"),
+  scenarioRuntimeStopButton: document.getElementById("scenarioRuntimeStopButton"),
   scenarioBoredButton: document.getElementById("scenarioBoredButton"),
   scenarioLowEnergyButton: document.getElementById("scenarioLowEnergyButton"),
   scenarioObstacleButton: document.getElementById("scenarioObstacleButton"),
   scenarioClearObstacleButton: document.getElementById("scenarioClearObstacleButton"),
-  currentMacroState: document.getElementById("currentMacroState"),
-  macroHistoryList: document.getElementById("macroHistoryList"),
+  currentSequenceState: document.getElementById("currentSequenceState"),
+  sequenceHistoryList: document.getElementById("sequenceHistoryList"),
   schedulerState: document.getElementById("schedulerState"),
   currentPriorityTask: document.getElementById("currentPriorityTask"),
   looiModeToggle: document.getElementById("looiModeToggle"),
-  idleMicroBehaviorToggle: document.getElementById("idleMicroBehaviorToggle"),
-  attentionBodyTrackingToggle: document.getElementById("attentionBodyTrackingToggle"),
   keepRobotAwakeToggle: document.getElementById("keepRobotAwakeToggle"),
-  testMacroSoftListenButton: document.getElementById("testMacroSoftListenButton"),
-  testMacroThinkingPoseButton: document.getElementById("testMacroThinkingPoseButton"),
-  testMacroCuriousScanButton: document.getElementById("testMacroCuriousScanButton"),
-  testMacroHappyApproachButton: document.getElementById("testMacroHappyApproachButton"),
-  testMacroShyRetreatButton: document.getElementById("testMacroShyRetreatButton"),
-  testMacroExcitedWiggleButton: document.getElementById("testMacroExcitedWiggleButton"),
-  testMacroSleepyIdleButton: document.getElementById("testMacroSleepyIdleButton"),
-  testMacroUserReturnedButton: document.getElementById("testMacroUserReturnedButton"),
-  macroStopButton: document.getElementById("macroStopButton"),
+  scenarioStopButton: document.getElementById("scenarioStopButton"),
   runSimulatorLooiDemoButton: document.getElementById("runSimulatorLooiDemoButton"),
   runWheelsLiftedSafetyTestButton: document.getElementById("runWheelsLiftedSafetyTestButton"),
   fpsDisplay: document.getElementById("fpsDisplay"),
@@ -349,13 +331,10 @@ let localServerBrainAdapter = null;
 let speechGate = null;
 let attentionSystem = null;
 let audioLevelMonitor = null;
-let autonomousScheduler = null;
 let brainLatencyBudget = null;
-let macroSequencer = null;
+let scenarioFrameSequencer = null;
 let priorityScheduler = null;
 let embodiedActionRouter = null;
-let idleMicroBehavior = null;
-let attentionMotorController = null;
 let wakeLockManager = null;
 let performanceMonitor = null;
 let reliabilityManager = null;
@@ -398,12 +377,9 @@ let lastInterimDispatchedText = "";
 let lastInterimDispatchedAt = 0;
 let useFinalSpeechOnly = loadUseFinalSpeechOnly();
 let looiModeEnabled = false;
-let idleMicroBehaviorEnabled = true;
-let attentionBodyTrackingEnabled = false;
 let keepRobotAwakeEnabled = false;
 let localVisionWidgetSizePx = loadLocalVisionWidgetSize();
 let lastLogSignature = "";
-const QUIET_IDLE_MACROS = new Set(["soft_idle", "soft_recenter", "thinking_pose"]);
 
 face = createFaceController(ui.canvas);
 face.setExpression("neutral");
@@ -634,29 +610,19 @@ ui.calibrationTestRotateRightButton.addEventListener("click", () => {
 });
 
 ui.calibrationTestWiggleButton.addEventListener("click", () => {
-  runCalibrationLifeTest("excited_wiggle", { intensity: 0.45 });
+  runCalibrationScenarioTest("body_talking");
 });
 
 ui.calibrationTestApproachButton.addEventListener("click", () => {
-  runCalibrationLifeTest("approach_user", { style: "gentle", distance: "tiny" });
+  runCalibrationScenarioTest("come_closer");
 });
 
 ui.calibrationTestRetreatButton.addEventListener("click", () => {
-  runCalibrationLifeTest("retreat", { style: "gentle", distance: "tiny" });
+  runCalibrationScenarioTest("back_up");
 });
 
 ui.localBrainEnabledToggle.addEventListener("change", () => {
   patchBrainPolicy({ localBrainEnabled: ui.localBrainEnabledToggle.checked });
-});
-
-ui.autonomousModeToggle.addEventListener("change", () => {
-  patchBrainPolicy({ autonomousMode: ui.autonomousModeToggle.checked });
-  syncAutonomousScheduler();
-  log(
-    brainPolicy.autonomousMode
-      ? "Autonomous Mode enabled. Motion remains blocked unless Local Motion and Autonomous Movement are both armed."
-      : "Autonomous Mode disabled."
-  );
 });
 
 ui.localMotionArmedToggle.addEventListener("change", () => {
@@ -683,15 +649,6 @@ ui.localSpeechAllowedToggle.addEventListener("change", () => {
   patchBrainPolicy({ localSpeechAllowed: ui.localSpeechAllowedToggle.checked });
 });
 
-ui.allowAutonomousMovementToggle.addEventListener("change", () => {
-  patchBrainPolicy({ allowAutonomousMovement: ui.allowAutonomousMovementToggle.checked });
-  log(
-    brainPolicy.allowAutonomousMovement
-      ? "Autonomous Movement allowed, but only while Local Motion is armed."
-      : "Autonomous Movement disabled."
-  );
-});
-
 ui.followModeArmedToggle?.addEventListener("change", () => {
   patchBrainPolicy({ followModeArmed: ui.followModeArmedToggle.checked });
   log(
@@ -708,10 +665,6 @@ ui.allowFollowMovementToggle?.addEventListener("change", () => {
       ? "Follow Movement allowed while follow mode and local motion are armed."
       : "Follow Movement disabled."
   );
-});
-
-ui.allowAutonomousSpeechToggle.addEventListener("change", () => {
-  patchBrainPolicy({ allowAutonomousSpeech: ui.allowAutonomousSpeechToggle.checked });
 });
 
 ui.geminiVisionAssistToggle?.addEventListener("change", () => {
@@ -751,7 +704,6 @@ ui.stopLocalBrainButton.addEventListener("click", () => {
   stopGeminiVisionAssist("ui_stop_local_brain");
   geminiLiveRuntime?.stop?.("ui_stop_local_brain");
   localBrainEngine?.stop?.();
-  autonomousScheduler?.stop?.();
   updateLocalBrainUi();
   updateGeminiLiveUi();
 });
@@ -1005,15 +957,15 @@ ui.rotateRightButton.addEventListener("click", () => {
 });
 
 ui.happyButton.addEventListener("click", () => {
-  requestLifeBehavior("excited_wiggle", { intensity: 0.6 });
+  runScenarioFromUi("ack_yes").catch((error) => log(`Scenario ack_yes failed: ${error.message}`, "warn"));
 });
 
 ui.curiousButton.addEventListener("click", () => {
-  requestLifeBehavior("curious_scan", { direction: "both", intensity: 0.5 });
+  runScenarioFromUi("look_left").catch((error) => log(`Scenario look_left failed: ${error.message}`, "warn"));
 });
 
 ui.wiggleButton.addEventListener("click", () => {
-  requestLifeBehavior("excited_wiggle", { intensity: 0.8 });
+  runScenarioFromUi("body_talking").catch((error) => log(`Scenario body_talking failed: ${error.message}`, "warn"));
 });
 
 ui.lifeEngineToggle.addEventListener("click", () => {
@@ -1036,9 +988,8 @@ ui.simulateAttentionButton.addEventListener("click", () => {
     type: "user_text",
     text: "simulated attention"
   });
-  lifeEngine?.requestBehavior("listen_pose").catch((error) => {
-    log(`Attention simulation failed: ${error.message}`, "warn");
-  });
+  face?.setExpression?.("attentive", 1);
+  face?.setEyeDirection?.("center");
   log("Simulated user attention.");
 });
 
@@ -1056,11 +1007,15 @@ ui.simulateObstacleButton.addEventListener("click", () => {
 });
 
 ui.simulateBoredomButton.addEventListener("click", () => {
-  runBoredScenario("Simulated boredom and curiosity.");
+  lifeEngine?.patchState?.({ boredom: 0.9, curiosity: 0.85, mood: "curious" }, "ui_simulate_boredom");
+  face?.setExpression?.("curious", 0.9);
+  log("Simulated boredom state.");
 });
 
 ui.simulateLowEnergyButton.addEventListener("click", () => {
-  runLowEnergyScenario("Simulated low energy.");
+  lifeEngine?.patchState?.({ energy: 0.15, mood: "sleepy" }, "ui_simulate_low_energy");
+  face?.setExpression?.("sleepy", 0.9);
+  log("Simulated low energy state.");
 });
 
 ui.scenarioComeHereButton.addEventListener("click", () => {
@@ -1069,10 +1024,7 @@ ui.scenarioComeHereButton.addEventListener("click", () => {
     type: "user_text",
     text: "come here"
   });
-  requestLifeBehavior("approach_user", {
-    style: "happy",
-    distance: "short"
-  });
+  runScenarioFromUi("come_closer").catch((error) => log(`Scenario come_closer failed: ${error.message}`, "warn"));
 });
 
 ui.scenarioGiveMeSpaceButton.addEventListener("click", () => {
@@ -1081,10 +1033,7 @@ ui.scenarioGiveMeSpaceButton.addEventListener("click", () => {
     type: "user_text",
     text: "give me space"
   });
-  requestLifeBehavior("retreat", {
-    style: "gentle",
-    distance: "short"
-  });
+  runScenarioFromUi("back_up").catch((error) => log(`Scenario back_up failed: ${error.message}`, "warn"));
 });
 
 ui.scenarioLookAroundButton.addEventListener("click", () => {
@@ -1093,10 +1042,7 @@ ui.scenarioLookAroundButton.addEventListener("click", () => {
     type: "user_text",
     text: "look around"
   });
-  requestLifeBehavior("curious_scan", {
-    direction: "both",
-    intensity: 0.7
-  });
+  runScenarioFromUi("look_left").catch((error) => log(`Scenario look_left failed: ${error.message}`, "warn"));
 });
 
 ui.scenarioStopButton.addEventListener("click", async () => {
@@ -1106,12 +1052,14 @@ ui.scenarioStopButton.addEventListener("click", async () => {
 
 ui.scenarioBoredButton.addEventListener("click", () => {
   log("Scenario: Ignored / Bored");
-  runBoredScenario("Scenario boredom injected.");
+  lifeEngine?.patchState?.({ boredom: 0.9, curiosity: 0.85, mood: "curious" }, "ui_scenario_bored_state");
+  face?.setExpression?.("curious", 0.9);
 });
 
 ui.scenarioLowEnergyButton.addEventListener("click", () => {
   log("Scenario: Low Energy");
-  runLowEnergyScenario("Scenario low energy injected.");
+  lifeEngine?.patchState?.({ energy: 0.15, mood: "sleepy" }, "ui_scenario_low_energy_state");
+  face?.setExpression?.("sleepy", 0.9);
 });
 
 ui.scenarioObstacleButton.addEventListener("click", () => {
@@ -1133,37 +1081,12 @@ ui.scenarioClearObstacleButton.addEventListener("click", () => {
 ui.looiModeToggle?.addEventListener("change", () => {
   looiModeEnabled = ui.looiModeToggle.checked;
   if (looiModeEnabled) {
-    idleMicroBehaviorEnabled = ui.idleMicroBehaviorToggle?.checked ?? idleMicroBehaviorEnabled;
-    idleMicroBehaviorEnabled ? idleMicroBehavior?.start?.() : idleMicroBehavior?.stop?.();
-    attentionMotorController?.start?.();
     reliabilityManager?.start?.();
   } else {
-    idleMicroBehavior?.stop?.();
-    attentionMotorController?.stop?.();
+    reliabilityManager?.stop?.();
   }
   updateEmbodimentUi();
-  log(looiModeEnabled ? "LOOI Mode enabled. Motion safety gates are unchanged." : "LOOI Mode disabled.");
-});
-
-ui.idleMicroBehaviorToggle?.addEventListener("change", () => {
-  idleMicroBehaviorEnabled = ui.idleMicroBehaviorToggle.checked;
-  if (looiModeEnabled && idleMicroBehaviorEnabled) {
-    idleMicroBehavior?.start?.();
-  } else {
-    idleMicroBehavior?.stop?.();
-  }
-  updateEmbodimentUi();
-});
-
-ui.attentionBodyTrackingToggle?.addEventListener("change", () => {
-  attentionBodyTrackingEnabled = ui.attentionBodyTrackingToggle.checked;
-  attentionMotorController?.setBodyTrackingEnabled?.(attentionBodyTrackingEnabled);
-  updateEmbodimentUi();
-  log(
-    attentionBodyTrackingEnabled
-      ? "Attention body tracking enabled. It still requires Local Motion Armed and Autonomous Movement."
-      : "Attention body tracking disabled."
-  );
+  log(looiModeEnabled ? "Scenario runtime enabled. Motion safety gates are unchanged." : "Scenario runtime disabled.");
 });
 
 ui.keepRobotAwakeToggle?.addEventListener("change", () => {
@@ -1178,17 +1101,8 @@ ui.keepRobotAwakeToggle?.addEventListener("change", () => {
   updateEmbodimentUi();
 });
 
-bindMacroButton(ui.testMacroSoftListenButton, "soft_listen", { allowMotion: false });
-bindMacroButton(ui.testMacroThinkingPoseButton, "thinking_pose", { allowMotion: false });
-bindMacroButton(ui.testMacroCuriousScanButton, "curious_scan");
-bindMacroButton(ui.testMacroHappyApproachButton, "happy_approach");
-bindMacroButton(ui.testMacroShyRetreatButton, "shy_retreat");
-bindMacroButton(ui.testMacroExcitedWiggleButton, "excited_wiggle");
-bindMacroButton(ui.testMacroSleepyIdleButton, "sleepy_idle", { allowMotion: false });
-bindMacroButton(ui.testMacroUserReturnedButton, "user_returned_greeting");
-
-ui.macroStopButton?.addEventListener("click", async () => {
-  await emergencyStop("macro_panel_stop", "Macro stop sent.", "error");
+ui.scenarioRuntimeStopButton?.addEventListener("click", async () => {
+  await emergencyStop("scenario_panel_stop", "Scenario stop sent.", "error");
 });
 
 ui.runSimulatorLooiDemoButton?.addEventListener("click", () => {
@@ -1276,11 +1190,6 @@ async function init() {
   brainPolicy = clampBrainPolicy({
     ...createDefaultBrainPolicy(),
     localBrainEnabled: activeConfig.localBrainDefaultEnabled ?? true,
-    autonomousMode: activeConfig.localBrainAutonomousDefault ?? false,
-    minAutonomousThoughtIntervalMs:
-      activeConfig.localBrainThoughtIntervalMs ??
-      PUBLIC_CONFIG.localBrainThoughtIntervalMs ??
-      4000,
     maxThoughtsPerMinute:
       activeConfig.localBrainMaxThoughtsPerMinute ??
       PUBLIC_CONFIG.localBrainMaxThoughtsPerMinute ??
@@ -1316,12 +1225,8 @@ async function init() {
   ui.alwaysListeningToggle.checked = Boolean(activeConfig.alwaysListeningDefault);
   ui.audioLevelMonitorToggle.checked = Boolean(activeConfig.audioLevelMonitorDefault);
   looiModeEnabled = Boolean(activeConfig.looiModeDefault);
-  idleMicroBehaviorEnabled = activeConfig.idleMicroBehaviorDefault !== false;
-  attentionBodyTrackingEnabled = Boolean(activeConfig.attentionBodyTrackingDefault);
   keepRobotAwakeEnabled = Boolean(activeConfig.keepRobotAwakeDefault);
   if (ui.looiModeToggle) ui.looiModeToggle.checked = looiModeEnabled;
-  if (ui.idleMicroBehaviorToggle) ui.idleMicroBehaviorToggle.checked = idleMicroBehaviorEnabled;
-  if (ui.attentionBodyTrackingToggle) ui.attentionBodyTrackingToggle.checked = attentionBodyTrackingEnabled;
   if (ui.keepRobotAwakeToggle) ui.keepRobotAwakeToggle.checked = keepRobotAwakeEnabled;
   geminiVisionAssistEnabled = activeConfig.geminiVisionAssistDefault ?? PUBLIC_CONFIG.geminiVisionAssistDefault ?? true;
   geminiVisionAssistIntervalMs = clampNumber(
@@ -1355,10 +1260,7 @@ async function init() {
       performanceMonitor?.recordBrainLatency?.(latencyMs);
     }
   });
-  localEventBus.subscribe("autonomous_tick", () => {
-    updateAlwaysListeningUi();
-  });
-  ["macro_started", "macro_result", "macro_interrupted"].forEach((type) => {
+  ["sequence_started", "sequence_result", "sequence_interrupted"].forEach((type) => {
     localEventBus.subscribe(type, () => updateEmbodimentUi());
   });
   localEventBus.subscribe("brain_thought_result", (event) => {
@@ -1370,8 +1272,8 @@ async function init() {
     }
   });
   localEventBus.subscribe("brain_thought_result", traceBrainThoughtResult);
-  ["macro_started", "macro_result", "macro_interrupted"].forEach((type) => {
-    localEventBus.subscribe(type, traceMacroEvent);
+  ["sequence_started", "sequence_result", "sequence_interrupted"].forEach((type) => {
+    localEventBus.subscribe(type, traceSequenceEvent);
   });
 
   attentionSystem = new AttentionSystem({
@@ -1398,8 +1300,7 @@ async function init() {
     speechGate.conversationWindowMs;
 
   brainLatencyBudget = new BrainLatencyBudget({
-    eventThoughtTimeoutMs: activeConfig.localBrainEventTimeoutMs ?? 12000,
-    autonomousThoughtTimeoutMs: activeConfig.localBrainAutonomousTimeoutMs ?? 20000
+    eventThoughtTimeoutMs: activeConfig.localBrainEventTimeoutMs ?? 12000
   });
 
   bodyCalibration = new BodyCalibration({
@@ -1408,7 +1309,7 @@ async function init() {
   bodyCalibration.load();
   bodyCalibration.onChange((settings) => {
     lifeEngine?.setCalibration?.(bodyCalibration);
-    macroSequencer?.setCalibration?.(bodyCalibration);
+    scenarioFrameSequencer?.setCalibration?.(bodyCalibration);
     commandQueue?.setLimits?.({
       maxSpeed: settings.maxSpeed,
       maxDurationMs: activeConfig.maxDurationMs ?? PUBLIC_CONFIG.maxDurationMs
@@ -1476,7 +1377,7 @@ async function init() {
   priorityScheduler = new PriorityScheduler({
     logger: (message, level = "info") => log(message, level)
   });
-  macroSequencer = new MotionMacroSequencer({
+  scenarioFrameSequencer = new ScenarioFrameSequencer({
     face,
     voiceOutput,
     commandQueue,
@@ -1486,12 +1387,11 @@ async function init() {
     logger: (message, level = "info") => log(message, level)
   });
   embodiedActionRouter = new EmbodiedActionRouter({
-    macroSequencer,
+    frameSequencer: scenarioFrameSequencer,
     priorityScheduler,
     lifeEngine,
     logger: (message, level = "info") => log(message, level)
   });
-  lifeEngine.setMacroSequencer?.(macroSequencer);
   lifeEngine.setEmbodiedActionRouter?.(embodiedActionRouter);
 
   cameraInput = new CameraInput({
@@ -1596,7 +1496,6 @@ async function init() {
     objectTracker,
     lifeEngine,
     commandQueue,
-    macroSequencer,
     eventBus: localEventBus,
     voiceOutput,
     getPolicy: getExecutionPolicy,
@@ -1679,36 +1578,6 @@ async function init() {
     logger: (message, level = "info") => log(message, level)
   });
 
-  autonomousScheduler = new AutonomousScheduler({
-    eventBus: localEventBus,
-    lifeEngine,
-    getPolicy,
-    getContext: getRuntimeContext,
-    tickMs:
-      activeConfig.autonomousSchedulerTickMs ??
-      PUBLIC_CONFIG.autonomousSchedulerTickMs ??
-      1000,
-    logger: (message, level = "info") => log(message, level)
-  });
-
-  idleMicroBehavior = new IdleMicroBehavior({
-    eventBus: localEventBus,
-    lifeEngine,
-    macroSequencer,
-    getPolicy,
-    getContext: getRuntimeContext,
-    minMs: activeConfig.idleMicroMinMs ?? PUBLIC_CONFIG.idleMicroMinMs ?? 4000,
-    maxMs: activeConfig.idleMicroMaxMs ?? PUBLIC_CONFIG.idleMicroMaxMs ?? 12000,
-    logger: (message, level = "info") => log(message, level)
-  });
-  attentionMotorController = new AttentionMotorController({
-    lifeEngine,
-    macroSequencer,
-    eventBus: localEventBus,
-    getPolicy,
-    logger: (message, level = "info") => log(message, level)
-  });
-  attentionMotorController.setBodyTrackingEnabled(attentionBodyTrackingEnabled);
   wakeLockManager = new WakeLockManager({
     logger: (message, level = "info") => log(message, level)
   });
@@ -1722,8 +1591,6 @@ async function init() {
   reliabilityManager = new ReliabilityManager({
     performanceMonitor,
     cameraInput,
-    idleMicroBehavior,
-    autonomousScheduler,
     logger: (message, level = "info") => log(message, level)
   });
 
@@ -1743,8 +1610,6 @@ async function init() {
     performanceMonitor.start();
   }
   if (looiModeEnabled) {
-    idleMicroBehaviorEnabled ? idleMicroBehavior.start() : idleMicroBehavior.stop();
-    attentionMotorController.start();
     reliabilityManager.start();
   }
   if (keepRobotAwakeEnabled) {
@@ -1754,7 +1619,6 @@ async function init() {
       log(`Wake lock unavailable: ${error.message}`, "warn");
     });
   }
-  syncAutonomousScheduler();
   updateConnectionState(robotClient.getStatus());
   updateLifeEngineToggle();
   updateSimulatorUi();
@@ -1915,8 +1779,8 @@ function setActiveRobotClient(nextClient) {
     commandQueue,
     lifeEngine
   });
-  macroSequencer?.setCommandQueue?.(commandQueue);
-  macroSequencer?.setLifeEngine?.(lifeEngine);
+  scenarioFrameSequencer?.setCommandQueue?.(commandQueue);
+  scenarioFrameSequencer?.setLifeEngine?.(lifeEngine);
   renderCommandHistory(commandQueue?.getRecentCommands?.() ?? []);
   updateConnectionState(robotClient.getStatus());
   renderTelemetry(robotClient.getLatestTelemetry?.() ?? {});
@@ -2025,7 +1889,7 @@ async function emergencyStop(reason, message, level = "error") {
 
   geminiLiveRuntime?.interrupt?.(reason);
   voiceOutput?.cancel?.(reason);
-  macroSequencer?.interrupt?.(reason, 100);
+  scenarioFrameSequencer?.interrupt?.(reason, 100);
   priorityScheduler?.interruptBelow?.(100, reason);
   priorityScheduler?.clear?.();
 
@@ -2107,18 +1971,7 @@ async function handleGatedTranscript(transcript = {}) {
       classification: gateResult.classification,
       suggestedIntent: gateResult.suggestedIntent
     });
-    lifeEngine?.requestBehavior("listen_pose").catch((error) => {
-      log(`Attentive reaction failed: ${error.message}`, "warn");
-    });
-    if (looiModeEnabled) {
-      macroSequencer?.playMacro?.("soft_listen", {
-        source: "speech_gate",
-        priority: 80,
-        allowMotion: false,
-        allowSpeech: false,
-        reason: gateResult.classification
-      }).catch?.((error) => log(`Soft listen macro failed: ${error.message}`, "warn"));
-    }
+    face?.setExpression?.("attentive", 1);
   }
 
   if (gateResult.shouldOpenAttention) {
@@ -2173,13 +2026,8 @@ async function handleGatedTranscript(transcript = {}) {
   } else if (!gateResult.accepted) {
     log(`Ignored ${source}: ${text} (${gateResult.classification})`);
   } else if (gateResult.shouldTriggerBrain && looiModeEnabled) {
-    macroSequencer?.playMacro?.("thinking_pose", {
-      source: "speech_gate",
-      priority: 45,
-      allowMotion: false,
-      allowSpeech: false,
-      reason: "brain_thought_pending"
-    }).catch?.(() => {});
+    face.setExpression("curious", 0.85);
+    face.setEyeDirection("left");
   }
 
   updateAlwaysListeningUi();
@@ -2427,7 +2275,6 @@ function handleCameraSnapshot(snapshot) {
 
 function handleCameraObservation(observation) {
   lifeEngine?.receiveObservation?.(observation);
-  attentionMotorController?.onObservation?.(observation);
   updateCameraUi();
   postCameraObservationEvent(observation).catch((error) => {
     log(`Observation event failed: ${error.message}`, "warn");
@@ -2593,23 +2440,6 @@ function fallbackGateResult(text, source = "speech") {
     reason: "speech_gate_unavailable",
     suggestedIntent: null
   };
-}
-
-function requestLifeBehavior(name, args = {}) {
-  if (!lifeEngine) {
-    log("Life Engine is still initializing.", "warn");
-    return;
-  }
-
-  lifeEngine.receiveEvent({
-    type: "manual_test",
-    label: name,
-    value: args
-  });
-
-  lifeEngine.requestBehavior(name, args).catch((error) => {
-    log(`Life behavior ${name} failed: ${error.message}`, "warn");
-  });
 }
 
 function bindCalibrationInput(element, key) {
@@ -2811,9 +2641,9 @@ function runCalibrationMotionTest({ linear = 0, angular = 0, label }) {
   log(`Calibration test queued: ${label}`);
 }
 
-function runCalibrationLifeTest(name, args = {}) {
+function runCalibrationScenarioTest(name) {
   if (!calibrationTestArmed) {
-    log("Calibration Life test blocked: arm Calibration Test first.", "warn");
+    log("Calibration scenario test blocked: arm Calibration Test first.", "warn");
     return;
   }
 
@@ -2824,12 +2654,12 @@ function runCalibrationLifeTest(name, args = {}) {
   lifeEngine?.receiveEvent({
     type: "manual_test",
     label: `calibration_${name}`,
-    value: args
+    value: { scenario: name }
   });
-  lifeEngine?.requestBehavior(name, args).catch((error) => {
-    log(`Calibration Life test failed: ${error.message}`, "warn");
+  runScenarioFromUi(name).catch((error) => {
+    log(`Calibration scenario test failed: ${error.message}`, "warn");
   });
-  log(`Calibration Life test requested: ${name}`);
+  log(`Calibration scenario test requested: ${name}`);
 }
 
 async function startProductionRuntime() {
@@ -2869,12 +2699,9 @@ async function startLocalBrainProductionMode() {
 
   patchBrainPolicy({
     localBrainEnabled: true,
-    autonomousMode: true,
     localMotionArmed: true,
     localCameraAllowed: true,
-    localSpeechAllowed: true,
-    allowAutonomousMovement: true,
-    allowAutonomousSpeech: true
+    localSpeechAllowed: true
   });
 
   lifeEventsEnabled = true;
@@ -2884,18 +2711,11 @@ async function startLocalBrainProductionMode() {
   voiceOutput?.setMuted?.(false);
 
   looiModeEnabled = true;
-  idleMicroBehaviorEnabled = true;
-  attentionBodyTrackingEnabled = true;
   keepRobotAwakeEnabled = true;
   if (ui.looiModeToggle) ui.looiModeToggle.checked = true;
-  if (ui.idleMicroBehaviorToggle) ui.idleMicroBehaviorToggle.checked = true;
-  if (ui.attentionBodyTrackingToggle) ui.attentionBodyTrackingToggle.checked = true;
   if (ui.keepRobotAwakeToggle) ui.keepRobotAwakeToggle.checked = true;
 
   performanceMonitor?.start?.();
-  idleMicroBehavior?.start?.();
-  attentionMotorController?.setBodyTrackingEnabled?.(true);
-  attentionMotorController?.start?.();
   reliabilityManager?.start?.();
   wakeLockManager?.request?.().catch((error) => {
     keepRobotAwakeEnabled = false;
@@ -2907,7 +2727,6 @@ async function startLocalBrainProductionMode() {
   updateCameraUi();
 
   localBrainEngine?.start?.();
-  syncAutonomousScheduler();
 
   if (!lifeEventEmitter?.getStatus?.().running) {
     lifeEventEmitter?.start?.();
@@ -2955,8 +2774,8 @@ async function startLocalBrainProductionMode() {
   face.setExpression("happy");
   log(
     useGeminiLive
-      ? "Gemini Live started: speech-to-speech ears, Gemini audio, camera, LOOI mode, movement permissions, and autonomous mode are enabled."
-      : "Local Brain Live started: brain, ears, speech, camera, LOOI mode, movement permissions, and autonomous mode are enabled.",
+      ? "Gemini Live started: speech-to-speech ears, Gemini audio, camera, LOOI mode, and scenario movement permissions are enabled."
+      : "Local Brain Live started: brain, ears, speech, camera, LOOI mode, and scenario movement permissions are enabled.",
     "warn"
   );
   updateAlwaysListeningUi();
@@ -3099,60 +2918,6 @@ function updateProductionChrome() {
   document.body.classList.toggle("local-brain-running", liveRunning);
   document.body.classList.toggle("local-motion-armed", brainPolicy.localMotionArmed);
   document.body.classList.toggle("looi-mode-active", looiModeEnabled);
-}
-
-function runBoredScenario(message) {
-  if (!lifeEngine) {
-    return;
-  }
-
-  lifeEngine.receiveEvent({
-    type: "system",
-    value: {
-      kind: "simulate_boredom",
-      boredom: 0.9,
-      curiosity: 0.85
-    }
-  });
-  lifeEngine.patchState?.(
-    {
-      boredom: 0.9,
-      curiosity: 0.85,
-      mood: "curious"
-    },
-    "scenario_bored"
-  );
-  lifeEngine.requestBehavior("curious_scan", { direction: "both", intensity: 0.45 }).catch(
-    (error) => {
-      log(`Bored scenario failed: ${error.message}`, "warn");
-    }
-  );
-  log(message);
-}
-
-function runLowEnergyScenario(message) {
-  if (!lifeEngine) {
-    return;
-  }
-
-  lifeEngine.receiveEvent({
-    type: "system",
-    value: {
-      kind: "simulate_low_energy",
-      energy: 0.15
-    }
-  });
-  lifeEngine.patchState?.(
-    {
-      energy: 0.15,
-      mood: "sleepy"
-    },
-    "scenario_low_energy"
-  );
-  lifeEngine.requestBehavior("sleepy_idle").catch((error) => {
-    log(`Low energy scenario failed: ${error.message}`, "warn");
-  });
-  log(message);
 }
 
 function updateConnectionState(status) {
@@ -3380,12 +3145,9 @@ function updateLocalBrainUi() {
   const geminiPrimaryActive = Boolean(geminiStatus.running || geminiStatus.connecting || geminiStatus.connected);
 
   ui.localBrainEnabledToggle.checked = Boolean(brainPolicy.localBrainEnabled);
-  ui.autonomousModeToggle.checked = Boolean(brainPolicy.autonomousMode);
   ui.localMotionArmedToggle.checked = Boolean(brainPolicy.localMotionArmed);
   ui.localCameraAllowedToggle.checked = Boolean(brainPolicy.localCameraAllowed);
   ui.localSpeechAllowedToggle.checked = Boolean(brainPolicy.localSpeechAllowed);
-  ui.allowAutonomousMovementToggle.checked = Boolean(brainPolicy.allowAutonomousMovement);
-  ui.allowAutonomousSpeechToggle.checked = Boolean(brainPolicy.allowAutonomousSpeech);
   if (ui.followModeArmedToggle) {
     ui.followModeArmedToggle.checked = Boolean(brainPolicy.followModeArmed);
   }
@@ -3432,7 +3194,6 @@ function updateLocalBrainUi() {
     : "--";
 
   document.body.classList.toggle("local-motion-armed", Boolean(brainPolicy.localMotionArmed));
-  document.body.classList.toggle("local-autonomous-mode", Boolean(brainPolicy.autonomousMode));
   renderLocalBrainThoughts();
   updateAlwaysListeningUi();
   updateProductionChrome();
@@ -3629,7 +3390,6 @@ function patchBrainPolicy(partial = {}) {
     ...brainPolicy,
     ...partial
   });
-  syncAutonomousScheduler();
   updateLocalBrainUi();
 }
 
@@ -3637,49 +3397,23 @@ function getPolicy() {
   return clampBrainPolicy(brainPolicy);
 }
 
-function syncAutonomousScheduler() {
-  if (!autonomousScheduler) {
-    return;
-  }
-
-  if (brainPolicy.localBrainEnabled && brainPolicy.autonomousMode && localBrainEngine?.isRunning?.()) {
-    autonomousScheduler.start();
-  } else {
-    autonomousScheduler.stop();
-  }
-
-  updateAlwaysListeningUi();
-}
-
-function bindMacroButton(button, macroName, options = {}) {
-  button?.addEventListener?.("click", () => {
-    playTestMacro(macroName, options).catch((error) => {
-      log(`Macro ${macroName} failed: ${error.message}`, "warn");
-    });
-  });
-}
-
-async function playTestMacro(macroName, options = {}) {
-  if (!macroSequencer) {
-    log("Macro sequencer is still initializing.", "warn");
+async function runScenarioFromUi(name, args = {}) {
+  if (!toolExecutor?.executeBridgeAction) {
+    log("Scenario runtime is still initializing.", "warn");
     return null;
   }
 
-  const allowMotion = options.allowMotion === false
-    ? false
-    : Boolean(brainPolicy.localMotionArmed);
-  const result = await macroSequencer.playMacro(macroName, {
-    source: "manual",
-    priority: options.priority ?? 60,
-    allowMotion,
-    allowSpeech: brainPolicy.localSpeechAllowed,
-    reason: `test_${macroName}`
+  const result = await toolExecutor.executeBridgeAction({
+    id: `ui_scenario_${name}_${Date.now()}`,
+    source: "local",
+    type: "run_scenario",
+    args: {
+      name,
+      ...args
+    },
+    reason: `ui_scenario:${name}`
   });
   updateEmbodimentUi();
-  log(
-    `Macro ${macroName}: ${result.reason}${result.partial ? " (partial)" : ""}`,
-    result.ok ? "info" : "warn"
-  );
   return result;
 }
 
@@ -3693,26 +3427,15 @@ async function simulatorDemoRoutine() {
     localMotionArmed: true
   });
 
-  const sequence = [
-    ["soft_listen", { allowMotion: false }],
-    ["thinking_pose", { allowMotion: false }],
-    ["curious_scan", { allowMotion: true }],
-    ["happy_approach", { allowMotion: true }],
-    ["shy_retreat", { allowMotion: true }],
-    ["excited_wiggle", { allowMotion: true }],
-    ["sleepy_idle", { allowMotion: false }]
-  ];
+  const sequence = ["ack_yes", "look_left", "look_right", "come_closer", "back_up", "body_talking"];
 
-  for (const [name, options] of sequence) {
-    await playTestMacro(name, {
-      ...options,
-      priority: 65
-    });
+  for (const name of sequence) {
+    await runScenarioFromUi(name);
     await waitMs(220);
   }
 
   patchBrainPolicy({ localMotionArmed: previousMotionArmed });
-  log("Simulator LOOI demo complete.");
+  log("Simulator scenario demo complete.");
 }
 
 async function wheelsLiftedSafetyRoutine() {
@@ -3740,39 +3463,18 @@ async function wheelsLiftedSafetyRoutine() {
   log("Wheels-lifted safety routine complete.", "warn");
 }
 
-async function deskGentleDemoRoutine() {
-  if (!brainPolicy.localMotionArmed) {
-    throw new Error("Arm Local Motion first. Use only on a safe flat surface.");
-  }
-
-  if (!globalThis.confirm?.("Use only on a safe flat surface with Emergency Stop ready.")) {
-    return;
-  }
-
-  const sequence = ["soft_listen", "curious_scan", "gentle_approach", "shy_retreat", "soft_recenter"];
-  for (const macroName of sequence) {
-    await playTestMacro(macroName, { allowMotion: macroName !== "soft_listen" });
-    await waitMs(250);
-  }
-  log("Desk gentle demo complete.", "warn");
-}
-
 function updateEmbodimentUi(statusOverride = null) {
-  const macro = macroSequencer?.getCurrentMacro?.();
+  const sequence = scenarioFrameSequencer?.getCurrentSequence?.();
   const schedulerTask = priorityScheduler?.getCurrentTask?.();
   const performance = statusOverride ?? performanceMonitor?.getStatus?.() ?? {};
   const reliability = reliabilityManager?.getStatus?.() ?? {};
   const wakeLock = wakeLockManager?.getStatus?.() ?? {};
-  const idle = idleMicroBehavior?.getStatus?.() ?? {};
-  const attentionMotor = attentionMotorController?.getStatus?.() ?? {};
 
   if (ui.looiModeToggle) ui.looiModeToggle.checked = looiModeEnabled;
-  if (ui.idleMicroBehaviorToggle) ui.idleMicroBehaviorToggle.checked = idleMicroBehaviorEnabled;
-  if (ui.attentionBodyTrackingToggle) ui.attentionBodyTrackingToggle.checked = attentionBodyTrackingEnabled;
   if (ui.keepRobotAwakeToggle) ui.keepRobotAwakeToggle.checked = keepRobotAwakeEnabled && wakeLock.requested !== false;
 
-  if (ui.currentMacroState) {
-    ui.currentMacroState.textContent = macro ? `${macro.name} · ${macro.source}` : "idle";
+  if (ui.currentSequenceState) {
+    ui.currentSequenceState.textContent = sequence ? `${sequence.name} · ${sequence.source}` : "idle";
   }
 
   if (ui.schedulerState) {
@@ -3799,46 +3501,44 @@ function updateEmbodimentUi(statusOverride = null) {
     ui.reliabilityModeDisplay.textContent = reliability.mode ?? "normal";
   }
 
-  renderMacroHistory();
+  renderSequenceHistory();
   renderRuntimeWarnings(performance.warnings ?? []);
   document.body.classList.toggle("looi-mode-active", looiModeEnabled);
-  document.body.classList.toggle("macro-running", Boolean(macro));
+  document.body.classList.toggle("sequence-running", Boolean(sequence));
   document.body.classList.toggle("wake-lock-active", Boolean(wakeLock.active));
 
   return {
-    macro,
+    sequence,
     schedulerTask,
     performance,
     reliability,
-    wakeLock,
-    idle,
-    attentionMotor
+    wakeLock
   };
 }
 
-function renderMacroHistory(history = macroSequencer?.getHistory?.({ limit: 8 }) ?? []) {
-  if (!ui.macroHistoryList) {
+function renderSequenceHistory(history = scenarioFrameSequencer?.getHistory?.({ limit: 8 }) ?? []) {
+  if (!ui.sequenceHistoryList) {
     return;
   }
 
-  ui.macroHistoryList.replaceChildren();
+  ui.sequenceHistoryList.replaceChildren();
   if (!history.length) {
     const empty = document.createElement("div");
-    empty.className = "macro-history-item";
-    empty.innerHTML = "<strong>No macros yet</strong><span>Run a test macro or trigger a Local Brain action.</span>";
-    ui.macroHistoryList.append(empty);
+    empty.className = "sequence-history-item";
+    empty.innerHTML = "<strong>No sequences yet</strong><span>Run a scenario to see local frame execution.</span>";
+    ui.sequenceHistoryList.append(empty);
     return;
   }
 
   history.forEach((entry) => {
     const item = document.createElement("div");
-    item.className = `macro-history-item${entry.partial ? " macro-history-item--partial" : ""}`;
+    item.className = `sequence-history-item${entry.partial ? " sequence-history-item--partial" : ""}`;
     const title = document.createElement("strong");
-    title.textContent = `${entry.macro} · ${entry.reason}`;
+    title.textContent = `${entry.sequence} · ${entry.reason}`;
     const detail = document.createElement("span");
     detail.textContent = `${new Date(entry.timestamp).toLocaleTimeString()} · frames=${entry.executedFrames ?? 0} · skipped=${entry.skippedFrames?.join(",") || "none"}`;
     item.append(title, detail);
-    ui.macroHistoryList.append(item);
+    ui.sequenceHistoryList.append(item);
   });
 }
 
@@ -3960,10 +3660,6 @@ function updateAlwaysListeningUi() {
     level: 0,
     lastActivityAt: 0
   };
-  const schedulerStatus = autonomousScheduler?.getStatus?.() ?? {
-    running: false,
-    lastReason: null
-  };
   const transcripts = speechGate?.getRecentTranscripts?.({ limit: 20 }) ?? [];
   const lastAccepted = transcripts.find((entry) => entry.accepted);
   const lastIgnored = transcripts.find((entry) => !entry.accepted);
@@ -4052,15 +3748,6 @@ function updateAlwaysListeningUi() {
         : "quiet"
       : "off";
     ui.voiceActivityState.classList.toggle("voice-state--active", active);
-  }
-
-  if (ui.autonomousSchedulerState) {
-    ui.autonomousSchedulerState.textContent = schedulerStatus.running ? "running" : "stopped";
-    ui.autonomousSchedulerState.classList.toggle("voice-state--active", Boolean(schedulerStatus.running));
-  }
-
-  if (ui.lastAutonomousReason) {
-    ui.lastAutonomousReason.textContent = schedulerStatus.lastReason ?? "--";
   }
 
   updateGeminiLiveUi(geminiStatus);
@@ -4528,9 +4215,6 @@ function getExecutionPolicy() {
     localMotionArmed: brainPolicy.localMotionArmed,
     localCameraAllowed: brainPolicy.localCameraAllowed,
     localSpeechAllowed: brainPolicy.localSpeechAllowed,
-    autonomousMode: brainPolicy.autonomousMode,
-    allowAutonomousMovement: brainPolicy.allowAutonomousMovement,
-    allowAutonomousSpeech: brainPolicy.allowAutonomousSpeech,
     localVisionEnabled: brainPolicy.localVisionEnabled,
     followModeArmed: brainPolicy.followModeArmed,
     allowFollowMovement: brainPolicy.allowFollowMovement,
@@ -4553,14 +4237,13 @@ function getStatusSnapshot() {
     localPolicy: getPolicy(),
     attention: attentionSystem?.getStatus?.() ?? null,
     speechGate: speechGate?.getStatus?.() ?? null,
-    autonomousScheduler: autonomousScheduler?.getStatus?.() ?? null,
     simulatorMode,
     localBrainRunning: Boolean(localBrainEngine?.isRunning?.()),
     geminiLive: geminiLiveRuntime?.getStatus?.() ?? null,
     looiModeEnabled,
-    macroStatus: {
-      current: macroSequencer?.getCurrentMacro?.() ?? null,
-      running: Boolean(macroSequencer?.isRunning?.())
+    sequenceStatus: {
+      current: scenarioFrameSequencer?.getCurrentSequence?.() ?? null,
+      running: Boolean(scenarioFrameSequencer?.isRunning?.())
     },
     performanceStatus: performanceMonitor?.getStatus?.() ?? null,
     robotConnected: Boolean(robotClient?.isConnected?.()),
@@ -4631,10 +4314,9 @@ function getRuntimeContext() {
     localPolicy: getPolicy(),
     attention: attentionSystem?.getStatus?.() ?? null,
     speechGate: speechGate?.getStatus?.() ?? null,
-    autonomousScheduler: autonomousScheduler?.getStatus?.() ?? null,
-    macroStatus: {
-      current: macroSequencer?.getCurrentMacro?.() ?? null,
-      history: macroSequencer?.getHistory?.({ limit: 5 }) ?? []
+    sequenceStatus: {
+      current: scenarioFrameSequencer?.getCurrentSequence?.() ?? null,
+      history: scenarioFrameSequencer?.getHistory?.({ limit: 5 }) ?? []
     },
     performanceStatus: performanceMonitor?.getStatus?.() ?? null,
     reliabilityStatus: reliabilityManager?.getStatus?.() ?? null,
@@ -4920,30 +4602,13 @@ function traceBrainThoughtResult(event = {}) {
   }, payload.error ? "warn" : "info");
 }
 
-function traceMacroEvent(event = {}) {
+function traceSequenceEvent(event = {}) {
   const payload = event.payload ?? {};
-  const macroName = payload.macro ?? payload.name;
+  const sequenceName = payload.sequence ?? payload.name;
   const reason = payload.reason ?? payload.result?.reason;
 
-  if (
-    event.type === "macro_result" &&
-    QUIET_IDLE_MACROS.has(macroName) &&
-    ["macro_cooldown_active", "cooldown", "idle_micro_behavior"].includes(reason)
-  ) {
-    return;
-  }
-
-  if (
-    event.type === "macro_result" &&
-    QUIET_IDLE_MACROS.has(macroName) &&
-    payload.result == null &&
-    String(reason ?? "").includes("cooldown")
-  ) {
-    return;
-  }
-
-  traceLive(`STEP 4 MACRO ${event.type ?? "event"}`, {
-    macro: macroName,
+  traceLive(`STEP 4 SEQUENCE ${event.type ?? "event"}`, {
+    sequence: sequenceName,
     reason,
     source: payload.source,
     result: payload.result
@@ -4963,13 +4628,7 @@ function shouldSuppressLogMessage(message, level = "info") {
     return false;
   }
 
-  const text = String(message ?? "");
-
-  return (
-    /^Macro (soft_idle|soft_recenter|thinking_pose): (macro_cooldown_active|cooldown|idle_micro_behavior)$/.test(text) ||
-    /^\[TRACE\] Macro macro_result: .*"macro":"(soft_idle|soft_recenter|thinking_pose)".*"reason":"(macro_cooldown_active|cooldown|idle_micro_behavior)"/.test(text) ||
-    /^\[TRACE\] Macro macro_result: .*"macro":"(soft_idle|soft_recenter|thinking_pose)".*"result":null/.test(text)
-  );
+  return false;
 }
 
 function summarizeActions(actions = []) {

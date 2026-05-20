@@ -1,9 +1,8 @@
 import {
-  normalizeRunScenarioName,
-  normalizeScenarioName
+  normalizeRunScenarioName
 } from "../../public/js/embodiment/scenarioCatalog.js";
 
-export const LOCAL_BRAIN_ALLOWED_ACTIONS = new Set(["perform", "run_scenario"]);
+export const LOCAL_BRAIN_ALLOWED_ACTIONS = new Set(["run_scenario"]);
 
 const UNSAFE_ARG_KEYS = new Set([
   "pwm",
@@ -174,11 +173,8 @@ export function validateBrainAction(action) {
   }
 
   return {
-    ok: true,
-    action: {
-      type: "perform",
-      args: sanitizePerformArgs(args)
-    }
+    ok: false,
+    error: `Unknown action type: ${type || "missing"}`
   };
 }
 
@@ -189,60 +185,6 @@ function sanitizeRunScenarioArgs(args = {}, scenario) {
     mode: ["gentle", "curious", "cautious"].includes(args.mode) ? args.mode : "gentle",
     reason: typeof args.reason === "string" ? args.reason.slice(0, 120) : ""
   };
-}
-
-function sanitizePerformArgs(args = {}) {
-  const speech = args.speech && typeof args.speech === "object" && !Array.isArray(args.speech)
-    ? sanitizeArgs(args.speech)
-    : {};
-  const movement = Array.isArray(args.movement)
-    ? args.movement
-        .slice(0, 6)
-        .filter((item) => typeof item === "string")
-        .map((item) => item.slice(0, 80))
-    : [];
-  const timing = args.timing === "sequence" ? "sequence" : "parallel";
-  const scenario = normalizeScenarioName(args.scenario);
-
-  return {
-    speech: {
-      text: typeof speech.text === "string" ? speech.text.slice(0, 240) : "",
-      tone: typeof speech.tone === "string" ? speech.tone.slice(0, 40) : "soft"
-    },
-    movement,
-    scenario,
-    timing,
-    iterateMovement: args.iterateMovement === true
-  };
-}
-
-function sanitizeArgs(args) {
-  const result = {};
-
-  Object.entries(args).forEach(([key, value]) => {
-    if (UNSAFE_ARG_KEYS.has(key)) {
-      return;
-    }
-
-    if (value === null || ["string", "number", "boolean"].includes(typeof value)) {
-      result[key] = typeof value === "string" ? value.slice(0, 500) : value;
-      return;
-    }
-
-    if (Array.isArray(value)) {
-      result[key] = value
-        .slice(0, 20)
-        .filter((item) => item === null || ["string", "number", "boolean"].includes(typeof item))
-        .map((item) => (typeof item === "string" ? item.slice(0, 300) : item));
-      return;
-    }
-
-    if (value && typeof value === "object") {
-      result[key] = sanitizeArgs(value);
-    }
-  });
-
-  return result;
 }
 
 function findUnsafeKey(value) {

@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { BodyCalibration } from "../public/js/robot/bodyCalibration.js";
 import { CommandQueue } from "../public/js/robot/commandQueue.js";
 import { LifeEngine } from "../public/js/life/lifeEngine.js";
-import { curiousScan, excitedWiggle } from "../public/js/life/motionStyles.js";
 import { SimulatedESP32Client } from "../public/js/robot/simulatedEsp32Client.js";
 
 const logs = [];
@@ -87,30 +86,15 @@ const lifeEngine = new LifeEngine({
 });
 lifeEngine.setConnectionState("simulated_connected");
 
-const context = {
-  state: lifeEngine.getState(),
-  face: lifeEngine.face,
-  robotClient: simulator,
-  commandQueue: queue,
-  calibration,
-  limits: {
-    maxSpeed: calibration.getSettings().maxSpeed
-  },
-  logger: (message, level = "info") => logs.push({ level, message })
-};
-
-const scan = await curiousScan(context, { direction: "center", intensity: 0.4 });
-assert.equal(scan.behavior, "curious_scan");
-
-const wiggle = await excitedWiggle(context, { intensity: 0.25 });
-assert.equal(wiggle.behavior, "excited_wiggle");
-assert.ok(wiggle.labels.length >= 1);
-
-const lifeResult = await lifeEngine.requestBehavior("approach_user", {
-  style: "gentle",
-  distance: "tiny"
+lifeEngine.receiveObservation({
+  timestamp: new Date().toISOString(),
+  cameraRunning: true,
+  userVisible: true,
+  userPosition: "center",
+  userDistance: "near",
+  detector: "mock"
 });
-assert.equal(lifeResult.allowed, true);
+assert.equal(lifeEngine.getState().userVisible, true);
 
 await queue.emergencyStop("smoke_done");
 simulator.disconnect();

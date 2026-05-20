@@ -2,27 +2,13 @@ import { parseBrainResponse } from "./actionParser.js";
 import { BrainLatencyBudget } from "./brainLatencyBudget.js";
 import { clampBrainPolicy, createDefaultBrainPolicy } from "./brainPolicy.js";
 
-const PHYSICAL_ACTIONS = new Set([
-  "drive",
-  "approach_user",
-  "retreat",
-  "curious_scan",
-  "excited_wiggle"
-]);
-
-const CAMERA_ACTIONS = new Set([
-  "open_front_camera",
-  "open_back_camera",
-  "switch_camera",
-  "close_camera",
-  "capture_snapshot"
-]);
+const PHYSICAL_ACTIONS = new Set();
+const CAMERA_ACTIONS = new Set();
 
 const THOUGHT_EVENTS = new Set([
   "user_speech",
   "user_text",
   "camera_observation",
-  "autonomous_tick",
   "system"
 ]);
 
@@ -63,7 +49,6 @@ export class LocalBrainEngine {
     this.lastError = null;
     this.lastFallbackUsed = false;
     this.running = false;
-    this.autonomousTimer = null;
     this.processing = false;
     this.lastThoughtAt = 0;
     this.lastEventThoughtAt = 0;
@@ -85,8 +70,6 @@ export class LocalBrainEngine {
 
   stop() {
     this.running = false;
-    clearTimeout(this.autonomousTimer);
-    this.autonomousTimer = null;
     this.unsubscribers.forEach((unsubscribe) => unsubscribe());
     this.unsubscribers = [];
     this.log("Local Brain stopped.");
@@ -232,10 +215,6 @@ export class LocalBrainEngine {
       return null;
     }
 
-    if (event.type === "autonomous_tick") {
-      return null;
-    }
-
     const policy = this.policy();
 
     if (!policy.localBrainEnabled) {
@@ -312,17 +291,9 @@ export class LocalBrainEngine {
     return this.thinkNow(reason, event);
   }
 
-  async requestAutonomousThought(reason = "autonomous_tick", triggerEvent = null) {
-    return null;
-  }
-
   shouldThinkAboutEvent(event) {
     if (event?.type === "local_stop_phrase") {
       return true;
-    }
-
-    if (event?.type === "autonomous_tick") {
-      return false;
     }
 
     const payload = event?.payload ?? {};
@@ -436,40 +407,11 @@ export class LocalBrainEngine {
       return;
     }
 
-    ["user_speech", "user_text", "camera_observation", "local_stop_phrase", "autonomous_tick", "system"].forEach(
+    ["user_speech", "user_text", "camera_observation", "local_stop_phrase", "system"].forEach(
       (type) => {
         this.unsubscribers.push(this.eventBus.subscribe(type, (event) => this.handleEvent(event)));
       }
     );
-  }
-
-  scheduleAutonomousLoop() {
-    clearTimeout(this.autonomousTimer);
-
-    if (!this.running) {
-      return;
-    }
-
-    const policy = this.policy();
-    const delay = Math.max(1000, Number(policy.minAutonomousThoughtIntervalMs || 3000));
-
-    this.autonomousTimer = globalThis.setTimeout(async () => {
-      try {
-        const nextPolicy = this.policy();
-
-        if (
-          this.running &&
-          nextPolicy.localBrainEnabled &&
-          nextPolicy.autonomousMode &&
-          !this.processing &&
-          Date.now() - this.lastThoughtAt >= nextPolicy.minAutonomousThoughtIntervalMs
-        ) {
-          this.eventBus?.publish?.("autonomous_tick", {}, { source: "local_brain" });
-        }
-      } finally {
-        this.scheduleAutonomousLoop();
-      }
-    }, delay);
   }
 
   async thinkWithAvailableAdapter(context) {
@@ -503,9 +445,7 @@ export class LocalBrainEngine {
         }
 
         const startedAt = Date.now();
-        const timeoutMs = context.reason === "autonomous_tick"
-          ? this.latencyBudget.autonomousThoughtTimeoutMs
-          : this.latencyBudget.eventThoughtTimeoutMs;
+        const timeoutMs = this.latencyBudget.eventThoughtTimeoutMs;
         const thinkPromise = candidate.adapter.think(context);
         const rawResponse = candidate.fallbackUsed
           ? await thinkPromise
@@ -619,8 +559,7 @@ export class LocalBrainEngine {
       id: action.id ?? `local_brain_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       source: "local_brain",
       args: action.args ?? {},
-      reason: action.reason ?? response?.reason ?? context.reason,
-      autonomous: context.reason === "autonomous_tick"
+      reason: action.reason ?? response?.reason ?? context.reason
     };
 
     this.log(
@@ -648,8 +587,6 @@ export class LocalBrainEngine {
   }
 
   checkPolicy(action, context, policy) {
-    const autonomous = context.reason === "autonomous_tick";
-
     if (action.type === "stop") {
       return null;
     }
@@ -657,10 +594,6 @@ export class LocalBrainEngine {
     if (PHYSICAL_ACTIONS.has(action.type)) {
       if (!policy.localMotionArmed) {
         return rejected(action, "Local Motion is disarmed.", true);
-      }
-
-      if (autonomous && !policy.allowAutonomousMovement) {
-        return rejected(action, "Autonomous movement is disabled.", true);
       }
 
       const stopRespectUntil = Number(
@@ -676,16 +609,6 @@ export class LocalBrainEngine {
 
     if (CAMERA_ACTIONS.has(action.type) && !policy.localCameraAllowed) {
       return rejected(action, "Local Camera is not allowed for the Local Brain.", false);
-    }
-
-    if (action.type === "speak") {
-      if (!policy.localSpeechAllowed) {
-        return rejected(action, "Local Speech is disabled.", false);
-      }
-
-      if (autonomous && !policy.allowAutonomousSpeech) {
-        return rejected(action, "Autonomous speech is disabled.", false);
-      }
     }
 
     return null;

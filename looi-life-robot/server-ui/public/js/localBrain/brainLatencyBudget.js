@@ -1,12 +1,10 @@
 export class BrainLatencyBudget {
   constructor({
     eventThoughtTimeoutMs = 2500,
-    autonomousThoughtTimeoutMs = 5000,
     fallbackOnTimeout = true,
     maxConcurrentThoughts = 1
   } = {}) {
     this.eventThoughtTimeoutMs = eventThoughtTimeoutMs;
-    this.autonomousThoughtTimeoutMs = autonomousThoughtTimeoutMs;
     this.fallbackOnTimeout = fallbackOnTimeout;
     this.maxConcurrentThoughts = maxConcurrentThoughts;
     this.latencies = [];
@@ -36,11 +34,8 @@ export class BrainLatencyBudget {
     }
   }
 
-  shouldUseFallback(latencyMs, reason = "event") {
-    const budget = reason === "autonomous_tick" || reason === "autonomous"
-      ? this.autonomousThoughtTimeoutMs
-      : this.eventThoughtTimeoutMs;
-    return Number(latencyMs) > budget;
+  shouldUseFallback(latencyMs) {
+    return Number(latencyMs) > this.eventThoughtTimeoutMs;
   }
 
   recordLatency(source, latencyMs) {
@@ -61,7 +56,6 @@ export class BrainLatencyBudget {
       : 0;
     return {
       eventThoughtTimeoutMs: this.eventThoughtTimeoutMs,
-      autonomousThoughtTimeoutMs: this.autonomousThoughtTimeoutMs,
       fallbackOnTimeout: this.fallbackOnTimeout,
       maxConcurrentThoughts: this.maxConcurrentThoughts,
       count: values.length,

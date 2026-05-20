@@ -1,11 +1,9 @@
 import {
-  normalizeRunScenarioName,
-  normalizeScenarioName
+  normalizeRunScenarioName
 } from "../embodiment/scenarioCatalog.js";
 
 export const LOCAL_BRAIN_ALLOWED_ACTIONS = new Set([
-  "run_scenario",
-  "perform"
+  "run_scenario"
 ]);
 
 const RAW_MOTOR_KEYS = new Set([
@@ -168,33 +166,7 @@ function sanitizeAllowedAction(action, type, args) {
 
   return {
     ...base,
-    type: "perform",
-    args: sanitizePerformArgs(args)
-  };
-}
-
-function sanitizePerformArgs(args = {}) {
-  const speech = args.speech && typeof args.speech === "object" && !Array.isArray(args.speech)
-    ? sanitizeArgs(args.speech)
-    : {};
-  const movement = Array.isArray(args.movement)
-    ? args.movement
-        .slice(0, 6)
-        .filter((item) => typeof item === "string")
-        .map((item) => item.slice(0, 80))
-    : [];
-  const timing = args.timing === "sequence" ? "sequence" : "parallel";
-  const scenario = normalizeScenarioName(args.scenario);
-
-  return {
-    speech: {
-      text: typeof speech.text === "string" ? speech.text.slice(0, 240) : "",
-      tone: typeof speech.tone === "string" ? speech.tone.slice(0, 40) : "soft"
-    },
-    movement,
-    scenario,
-    timing,
-    iterateMovement: args.iterateMovement === true
+    args: {}
   };
 }
 
@@ -214,34 +186,6 @@ function safeNoneResponse(error) {
     errors: [error],
     raw: null
   };
-}
-
-function sanitizeArgs(args) {
-  const result = {};
-
-  Object.entries(args).forEach(([key, value]) => {
-    if (typeof key !== "string" || RAW_MOTOR_KEYS.has(key)) {
-      return;
-    }
-
-    if (value === null || ["string", "number", "boolean"].includes(typeof value)) {
-      result[key] = value;
-      return;
-    }
-
-    if (Array.isArray(value)) {
-      result[key] = value
-        .slice(0, 20)
-        .filter((item) => item === null || ["string", "number", "boolean"].includes(typeof item));
-      return;
-    }
-
-    if (typeof value === "object") {
-      result[key] = sanitizeArgs(value);
-    }
-  });
-
-  return result;
 }
 
 function findUnsafeMotorKey(value) {

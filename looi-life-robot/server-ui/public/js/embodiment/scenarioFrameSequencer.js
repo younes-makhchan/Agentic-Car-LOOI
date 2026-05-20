@@ -1,7 +1,11 @@
-import { getMacro, normalizeMacroFrame, validateMacro } from "./motionMacroLibrary.js";
 import { validateMotionCommand } from "../life/safetyGate.js";
 
-export class MotionMacroSequencer {
+const SAFE_LINEAR = 0.22;
+const SAFE_ANGULAR = 0.22;
+const SAFE_DURATION_MS = 700;
+const DEFAULT_RAMP_MS = 160;
+
+export class ScenarioFrameSequencer {
   constructor({
     face,
     voiceOutput,
@@ -20,98 +24,78 @@ export class MotionMacroSequencer {
     this.calibration = calibration;
     this.eventBus = eventBus;
     this.logger = logger;
-    this.currentMacro = null;
+    this.currentSequence = null;
     this.running = false;
-    this.paused = false;
-    this.queue = [];
     this.history = [];
     this.activeFrame = null;
     this.interruptedBy = null;
-    this.lastMacroTimes = new Map();
+    this.lastSequenceTimes = new Map();
     this.maxHistory = 50;
     this.playToken = 0;
   }
 
-  async playMacro(name, options = {}) {
-    const macro = getMacro(name, {
-      calibration: this.calibration,
-      personality: this.lifeEngine?.getPersonalityProfile?.(),
-      allowMotion: options.allowMotion !== false
-    });
-
-    if (!macro) {
-      return this.recordResult({
-        ok: false,
-        macro: name,
-        executed: false,
-        reason: "unknown_macro"
-      });
-    }
-
-    return this.playMacroObject(macro, options);
-  }
-
-  async playMacroObject(macro, options = {}) {
-    const validation = validateMacro(macro);
+  async playFrameSequence(sequence, options = {}) {
+    const validation = validateFrameSequence(sequence);
     if (!validation.ok) {
       return this.recordResult({
         ok: false,
-        macro: macro?.name ?? "unknown",
+        sequence: sequence?.name ?? "unknown",
         executed: false,
         reason: validation.error
       });
     }
 
-    const priority = Number(options.priority ?? macro.priority ?? 0);
-    if (this.running && priority > Number(this.currentMacro?.priority ?? 0)) {
-      this.interrupt(options.reason ?? "higher_priority_macro", priority);
+    const priority = Number(options.priority ?? sequence.priority ?? 0);
+    if (this.running && priority > Number(this.currentSequence?.priority ?? 0)) {
+      this.interrupt(options.reason ?? "higher_priority_sequence", priority);
     } else if (this.running) {
       return this.recordResult({
         ok: false,
-        macro: macro.name,
+        sequence: sequence.name,
         executed: false,
-        reason: "macro_busy"
+        reason: "sequence_busy"
       });
     }
 
-    const canPlay = this.canPlayMacro(macro, options);
+    const canPlay = this.canPlaySequence(sequence, options);
     if (!canPlay.allowed) {
       return this.recordResult({
         ok: false,
-        macro: macro.name,
+        sequence: sequence.name,
         executed: false,
         reason: canPlay.reason
       });
     }
 
     const token = ++this.playToken;
-    const context = this.buildContext(macro, options, token);
+    const context = this.buildContext(sequence, options, token);
     const skippedFrames = [];
     let executedFrames = 0;
     let partial = false;
+
     this.running = true;
     this.interruptedBy = null;
-    this.currentMacro = {
-      name: macro.name,
+    this.currentSequence = {
+      name: sequence.name,
       priority,
-      source: options.source ?? "life_engine",
-      interruptible: macro.interruptible !== false,
+      source: options.source ?? "scenario_runtime",
+      interruptible: sequence.interruptible !== false,
       startedAt: new Date().toISOString()
     };
-    this.eventBus?.publish?.("macro_started", {
-      macro: macro.name,
+    this.eventBus?.publish?.("sequence_started", {
+      sequence: sequence.name,
       source: context.source,
       priority
-    }, { source: "macro_sequencer", priority: Math.min(10, Math.max(0, Math.round(priority / 10))) });
+    }, { source: "scenario_frame_sequencer", priority: Math.min(10, Math.max(0, Math.round(priority / 10))) });
 
     try {
-      for (const rawFrame of macro.frames) {
+      for (const rawFrame of sequence.frames) {
         if (token !== this.playToken) {
           partial = true;
           break;
         }
 
-        const frameResult = normalizeMacroFrame(rawFrame);
+        const frameResult = normalizeFrame(rawFrame);
         if (!frameResult.ok) {
           skippedFrames.push(`invalid:${frameResult.error}`);
           partial = true;
@@ -145,7 +129,7 @@ export class MotionMacroSequencer {
 
       return this.recordResult({
         ok: true,
-        macro: macro.name,
+        sequence: sequence.name,
         executed: executedFrames > 0,
         partial,
         skippedFrames,
@@ -156,13 +140,13 @@ export class MotionMacroSequencer {
     } finally {
       if (token === this.playToken) {
         this.running = false;
-        this.currentMacro = null;
+        this.currentSequence = null;
         this.activeFrame = null;
       }
     }
   }
 
-  stop(reason = "macro_stop") {
+  stop(reason = "sequence_stop") {
     this.interrupt(reason, 100);
     return this.commandQueue?.emergencyStop?.(reason);
   }
@@ -171,18 +155,18 @@ export class MotionMacroSequencer {
     this.interruptedBy = reason;
     this.playToken += 1;
     this.running = false;
-    this.currentMacro = null;
+    this.currentSequence = null;
     this.activeFrame = null;
     this.voiceOutput?.cancel?.(reason);
-    this.eventBus?.publish?.("macro_interrupted", { reason }, { source: "macro_sequencer", priority: 9 });
+    this.eventBus?.publish?.("sequence_interrupted", { reason }, { source: "scenario_frame_sequencer", priority: 9 });
   }
 
   isRunning() {
     return this.running;
   }
 
-  getCurrentMacro() {
-    return this.currentMacro ? { ...this.currentMacro } : null;
+  getCurrentSequence() {
+    return this.currentSequence ? { ...this.currentSequence } : null;
   }
 
   getHistory({ limit = 20 } = {}) {
@@ -190,19 +174,19 @@ export class MotionMacroSequencer {
     return this.history.slice(0, max).map((entry) => ({ ...entry, skippedFrames: [...(entry.skippedFrames ?? [])] }));
   }
 
-  canPlayMacro(macro, context = {}) {
+  canPlaySequence(sequence, context = {}) {
     const now = Date.now();
-    const lastAt = Number(this.lastMacroTimes.get(macro.name) || 0);
+    const lastAt = Number(this.lastSequenceTimes.get(sequence.name) || 0);
 
-    if (Number(this.lifeEngine?.getState?.().stopRespectUntil || 0) > now && macro.name !== "scared_stop") {
+    if (Number(this.lifeEngine?.getState?.().stopRespectUntil || 0) > now && sequence.name !== "safety_stop") {
       return { allowed: false, reason: "stop_cooldown_active" };
     }
 
-    if (macro.cooldownMs && now - lastAt < macro.cooldownMs) {
-      return { allowed: false, reason: "macro_cooldown_active" };
+    if (sequence.cooldownMs && now - lastAt < sequence.cooldownMs) {
+      return { allowed: false, reason: "sequence_cooldown_active" };
     }
 
-    if (macro.requiresMotion && context.allowMotion === false) {
+    if (sequence.requiresMotion && context.allowMotion === false) {
       return { allowed: true, partial: true, reason: "motion_not_allowed" };
     }
 
@@ -234,7 +218,7 @@ export class MotionMacroSequencer {
   async applyFaceFrame(frame) {
     if (frame.expression) {
       this.face?.setExpression?.(frame.expression, frame.intensity ?? 0.8);
-      this.lifeEngine?.patchState?.({ mood: frame.expression === "sad" ? "shy" : frame.expression }, "macro_face");
+      this.lifeEngine?.patchState?.({ mood: frame.expression === "sad" ? "shy" : frame.expression }, "sequence_face");
     }
 
     if (frame.eyeDirection) {
@@ -319,7 +303,7 @@ export class MotionMacroSequencer {
     }
 
     const runChild = async (child) => {
-      const normalized = normalizeMacroFrame(child);
+      const normalized = normalizeFrame(child);
       if (!normalized.ok) {
         return { ok: true, skipped: true, type: "composite_child", reason: normalized.error };
       }
@@ -383,7 +367,7 @@ export class MotionMacroSequencer {
     }
 
     if (frame.eventType === "emergency_stop") {
-      const reason = frame.payload?.reason ?? "macro_emergency_stop";
+      const reason = frame.payload?.reason ?? "sequence_emergency_stop";
       this.voiceOutput?.cancel?.(reason);
       await this.commandQueue?.emergencyStop?.(reason);
       this.lifeEngine?.receiveEvent?.({ type: "stop", reason });
@@ -392,7 +376,7 @@ export class MotionMacroSequencer {
     }
 
     this.eventBus?.publish?.(frame.eventType, frame.payload ?? {}, {
-      source: "macro_sequencer",
+      source: "scenario_frame_sequencer",
       priority: 1
     });
     await wait(frame.durationMs);
@@ -415,14 +399,14 @@ export class MotionMacroSequencer {
     this.safetyGate = safetyGate;
   }
 
-  buildContext(macro, options, token) {
+  buildContext(sequence, options, token) {
     return {
-      source: options.source ?? "life_engine",
-      priority: Number(options.priority ?? macro.priority ?? 0),
+      source: options.source ?? "scenario_runtime",
+      priority: Number(options.priority ?? sequence.priority ?? 0),
       allowMotion: options.allowMotion !== false,
       allowSpeech: options.allowSpeech !== false,
       allowCamera: options.allowCamera === true,
-      reason: options.reason ?? macro.name,
+      reason: options.reason ?? sequence.name,
       runtimeContext: options.context ?? {},
       token
     };
@@ -437,14 +421,14 @@ export class MotionMacroSequencer {
       timestamp: new Date().toISOString(),
       ...result
     };
-    this.lastMacroTimes.set(entry.macro, Date.now());
+    this.lastSequenceTimes.set(entry.sequence, Date.now());
     this.history.unshift(entry);
     this.history.length = Math.min(this.history.length, this.maxHistory);
-    this.eventBus?.publish?.("macro_result", entry, {
-      source: "macro_sequencer",
+    this.eventBus?.publish?.("sequence_result", entry, {
+      source: "scenario_frame_sequencer",
       priority: entry.ok ? 1 : 3
     });
-    this.log(`Macro ${entry.macro}: ${entry.reason}`, entry.ok ? "info" : "warn");
+    this.log(`Sequence ${entry.sequence}: ${entry.reason}`, entry.ok ? "info" : "warn");
     return entry;
   }
 
@@ -455,7 +439,141 @@ export class MotionMacroSequencer {
   }
 }
 
+export function validateFrameSequence(sequence) {
+  if (!sequence || typeof sequence !== "object" || Array.isArray(sequence)) {
+    return { ok: false, error: "sequence_must_be_object" };
+  }
+
+  if (typeof sequence.name !== "string" || !sequence.name.trim()) {
+    return { ok: false, error: "sequence_name_required" };
+  }
+
+  if (!Array.isArray(sequence.frames) || sequence.frames.length === 0) {
+    return { ok: false, error: "sequence_frames_required" };
+  }
+
+  const errors = [];
+  sequence.frames.forEach((frame, index) => {
+    const normalized = normalizeFrame(frame);
+    if (!normalized.ok) {
+      errors.push(`frame[${index}]: ${normalized.error}`);
+    }
+  });
+
+  return errors.length ? { ok: false, error: errors.join("; ") } : { ok: true };
+}
+
 function wait(ms) {
   const delay = Math.max(0, Math.min(5000, Number(ms) || 0));
   return delay > 0 ? new Promise((resolve) => globalThis.setTimeout(resolve, delay)) : Promise.resolve();
+}
+
+function normalizeFrame(frame = {}) {
+  if (!frame || typeof frame !== "object" || Array.isArray(frame)) {
+    return { ok: false, error: "frame_must_be_object" };
+  }
+
+  const type = ["face", "motion", "speech", "pause", "event", "composite"].includes(frame.type)
+    ? frame.type
+    : inferFrameType(frame);
+  const normalized = {
+    ...frame,
+    type,
+    durationMs: clampRound(frame.durationMs, 0, type === "motion" ? SAFE_DURATION_MS : 3000, type === "pause" ? 100 : 0),
+    allowSkip: frame.allowSkip === true
+  };
+
+  if (type === "motion") {
+    normalized.linear = clampNumber(frame.linear, -SAFE_LINEAR, SAFE_LINEAR, 0);
+    normalized.angular = clampNumber(frame.angular, -SAFE_ANGULAR, SAFE_ANGULAR, 0);
+    normalized.rampMs = clampRound(frame.rampMs, 0, 500, DEFAULT_RAMP_MS);
+    normalized.label = sanitizeLabel(frame.label ?? "sequence_motion");
+    if (Math.abs(normalized.linear) < 0.001 && Math.abs(normalized.angular) < 0.001) {
+      return { ok: false, error: "motion_frame_requires_motion" };
+    }
+  }
+
+  if (type === "face") {
+    normalized.expression = normalizeExpression(frame.expression);
+    normalized.intensity = clampNumber(frame.intensity, 0, 1.5, 0.8);
+    normalized.eyeDirection = normalizeEyeDirection(frame.eyeDirection);
+  }
+
+  if (type === "speech") {
+    normalized.text = typeof frame.text === "string" ? frame.text.trim().slice(0, 240) : "";
+    normalized.tone = normalizeTone(frame.tone);
+    normalized.expression = frame.expression ? normalizeExpression(frame.expression) : undefined;
+  }
+
+  if (type === "event") {
+    normalized.eventType = typeof frame.eventType === "string" ? frame.eventType : "sequence_event";
+    normalized.payload = frame.payload && typeof frame.payload === "object" ? { ...frame.payload } : {};
+  }
+
+  if (type === "composite") {
+    normalized.mode = frame.mode === "parallel" ? "parallel" : "sequence";
+    normalized.frames = Array.isArray(frame.frames)
+      ? frame.frames
+          .slice(0, 12)
+          .map((child) => normalizeFrame(child))
+          .filter((child) => child.ok)
+          .map((child) => child.frame)
+      : [];
+
+    if (normalized.frames.length === 0) {
+      return { ok: false, error: "composite_frame_requires_children" };
+    }
+  }
+
+  return { ok: true, frame: normalized };
+}
+
+function inferFrameType(frame) {
+  if (typeof frame.text === "string") {
+    return "speech";
+  }
+
+  if (Number.isFinite(Number(frame.linear)) || Number.isFinite(Number(frame.angular))) {
+    return "motion";
+  }
+
+  if (frame.eventType) {
+    return "event";
+  }
+
+  if (frame.expression || frame.eyeDirection) {
+    return "face";
+  }
+
+  return "pause";
+}
+
+function normalizeExpression(expression) {
+  return ["neutral", "happy", "curious", "attentive", "sleepy", "scared", "shy", "sad"].includes(expression)
+    ? expression
+    : "neutral";
+}
+
+function normalizeEyeDirection(direction) {
+  return ["left", "right", "center", "up", "down"].includes(direction) ? direction : "center";
+}
+
+function normalizeTone(tone) {
+  return ["soft", "happy", "curious", "serious", "shy", "playful"].includes(tone) ? tone : "soft";
+}
+
+function clampNumber(value, min, max, fallback) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return fallback;
+  }
+  return Math.min(max, Math.max(min, numeric));
+}
+
+function clampRound(value, min, max, fallback) {
+  return Math.round(clampNumber(value, min, max, fallback));
+}
+
+function sanitizeLabel(value) {
+  return String(value || "sequence_motion").replace(/[^\w.-]/g, "_").slice(0, 80);
 }

@@ -939,7 +939,7 @@ body {
     0 0 40px rgba(126, 224, 186, 0.1);
 }
 
-.macro-running .looi-mode-card {
+.sequence-running .looi-mode-card {
   border-color: rgba(97, 211, 255, 0.56);
 }
 
@@ -948,12 +948,6 @@ body {
   box-shadow:
     var(--shadow),
     0 0 38px rgba(255, 209, 102, 0.1);
-}
-
-.local-autonomous-mode .local-brain-card {
-  box-shadow:
-    var(--shadow),
-    0 0 42px rgba(97, 211, 255, 0.1);
 }
 
 .simulator-active .simulator-card {
@@ -1596,7 +1590,7 @@ button:active {
 
 .local-brain-list,
 .local-event-list,
-.macro-history-list,
+.sequence-history-list,
 .runtime-warning-list,
 .speech-debug-log {
   margin-top: 0.85rem;
@@ -1608,7 +1602,7 @@ button:active {
 
 .local-brain-item,
 .local-event-item,
-.macro-history-item,
+.sequence-history-item,
 .runtime-warning-item,
 .speech-debug-entry {
   padding: 0.75rem;
@@ -1618,7 +1612,7 @@ button:active {
 }
 
 .local-brain-item--skipped,
-.macro-history-item--partial {
+.sequence-history-item--partial {
   opacity: 0.75;
 }
 
@@ -1650,7 +1644,7 @@ button:active {
 
 .local-brain-item strong,
 .local-event-item strong,
-.macro-history-item strong,
+.sequence-history-item strong,
 .speech-debug-entry strong {
   display: block;
   color: var(--glow-strong);
@@ -1658,7 +1652,7 @@ button:active {
 
 .local-brain-item span,
 .local-event-item span,
-.macro-history-item span,
+.sequence-history-item span,
 .speech-debug-entry span {
   display: block;
   margin-top: 0.25rem;

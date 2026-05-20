@@ -1,39 +1,25 @@
 const SAFE_LEARNED_ACTIONS = new Set([
-  "speak",
-  "express",
-  "stop",
-  "approach_user",
-  "retreat",
-  "curious_scan",
-  "excited_wiggle",
-  "observe_scene",
-  "remember"
+  "run_scenario"
 ]);
 
 const DEFAULT_PHRASE_MAPPINGS = [
   {
     phrases: ["come here", "come closer", "come vibe with me", "come to me"],
     meaning: "move closer to the user",
-    action: "approach_user",
-    args: { style: "happy", distance: "short" }
+    action: "run_scenario",
+    args: { name: "come_closer" }
   },
   {
     phrases: ["go back", "back up", "give me space", "not too close", "move away"],
     meaning: "increase distance from the user",
-    action: "retreat",
-    args: { style: "gentle", distance: "short" }
+    action: "run_scenario",
+    args: { name: "back_up" }
   },
   {
-    phrases: ["look around", "check the room", "what do you see"],
+    phrases: ["look around", "check the room"],
     meaning: "look around or observe the scene",
-    action: "curious_scan",
-    args: { direction: "both", intensity: 0.55 }
-  },
-  {
-    phrases: ["stop", "freeze", "don't move", "do not move", "halt"],
-    meaning: "stop immediately",
-    action: "stop",
-    args: { reason: "user_stop_phrase" }
+    action: "run_scenario",
+    args: { name: "body_talking" }
   }
 ];
 

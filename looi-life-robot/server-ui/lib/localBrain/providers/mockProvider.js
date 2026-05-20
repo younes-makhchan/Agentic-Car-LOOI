@@ -20,127 +20,108 @@ export class MockProvider {
   }
 
   async think({ context } = {}) {
-    const text = latestText(context).toLowerCase();
-    const policy = context?.policy ?? {};
+    const text = normalizeText(latestText(context));
+    const scenario = inferScenario(text, context);
 
-    if (/\b(stop|freeze|halt)\b/.test(text) || /\bdon'?t move\b/.test(text)) {
-      return performResponse({
-        policy,
-        text: "Stopping.",
-        movement: ["still"],
-        reason: "stop phrase",
-        confidence: 0.98
+    if (!scenario) {
+      return response({
+        text: text && /\b(hello|hi|hey|looi|louie|lui|robot)\b/.test(text) ? "Hi." : null,
+        reason: text ? "mock_no_scenario" : "mock_quiet",
+        confidence: 0.45
       });
     }
 
-    if (/\b(take|snap|shoot|capture)\b.*\b(picture|photo|selfie)\b|\b(picture|photo|selfie)\b.*\b(me|my)\b/.test(text)) {
-      return performResponse({
-        policy,
-        text: "Okay, hold still.",
-        tone: "happy",
-        movement: ["still"],
-        scenario: "take_picture",
-        reason: "take picture scenario",
-        confidence: 0.9
-      });
-    }
-
-    if (/\bcome here\b|\bcome closer\b|\bcome to me\b/.test(text)) {
-      return performResponse({
-        policy,
-        text: policy.localMotionArmed ? "Coming a little closer." : "My body is not armed yet.",
-        tone: policy.localMotionArmed ? "happy" : "soft",
-        movement: policy.localMotionArmed ? ["move_forward_tiny"] : ["still"],
-        reason: "approach request",
-        confidence: 0.86
-      });
-    }
-
-    if (/\b(move|go|drive|roll)\s+(forward|forwards|ahead|straight)\b|\bforward a little\b/.test(text)) {
-      return movementResponse({
-        policy,
-        text: "Moving forward a little.",
-        movement: ["move_forward_tiny"],
-        reason: "drive forward request"
-      });
-    }
-
-    if (/\b(move|drive|roll)\s+(back|backward|backwards|reverse)\b|\breverse a little\b/.test(text)) {
-      return movementResponse({
-        policy,
-        text: "Moving back a little.",
-        movement: ["move_backward_tiny"],
-        reason: "drive backward request"
-      });
-    }
-
-    if (/\b(turn|rotate)\s+left\b/.test(text)) {
-      return movementResponse({
-        policy,
-        text: "Turning left a little.",
-        movement: ["look_left"],
-        reason: "turn left request"
-      });
-    }
-
-    if (/\b(turn|rotate)\s+right\b/.test(text)) {
-      return movementResponse({
-        policy,
-        text: "Turning right a little.",
-        movement: ["look_right"],
-        reason: "turn right request"
-      });
-    }
-
-    if (/\bgive me (space|room)\b|\bgo back\b|\bback up\b|\bnot too close\b/.test(text)) {
-      return performResponse({
-        policy,
-        text: policy.localMotionArmed ? "I'll give you room." : null,
-        tone: "soft",
-        movement: policy.localMotionArmed ? ["move_backward_tiny"] : ["still"],
-        reason: "personal space request",
-        confidence: 0.88
-      });
-    }
-
-    if (/\blook around\b|\bcheck the room\b|\bscan\b/.test(text)) {
-      return performResponse({
-        policy,
-        movement: ["look_left", "look_right"],
-        reason: "look around request",
-        confidence: 0.82
-      });
-    }
-
-    if (Number(context?.lifeState?.boredom) > 0.82 && policy.autonomousMode) {
-      return performResponse({
-        policy,
-        movement: policy.localMotionArmed && policy.allowAutonomousMovement
-          ? ["look_left", "look_right"]
-          : ["still"],
-        reason: "boredom high",
-        confidence: 0.56
-      });
-    }
-
-    if (/\b(hello|hi|hey|looi)\b/.test(text)) {
-      return performResponse({
-        policy,
-        text: "Hi.",
-        tone: "happy",
-        movement: ["look_left", "look_right"],
-        reason: "greeting",
-        confidence: 0.74
-      });
-    }
-
-    return performResponse({
-      policy,
-      movement: ["still"],
-      reason: text ? "attentive fallback" : "quiet fallback",
-      confidence: 0.45
+    return response({
+      text: scenario.text,
+      action: {
+        type: "run_scenario",
+        args: scenario.args
+      },
+      reason: scenario.reason,
+      confidence: scenario.confidence
     });
   }
+}
+
+function inferScenario(text, context = {}) {
+  if (!text) {
+    return null;
+  }
+
+  if (/\b(stop following|stop tracking|cancel follow|cancel tracking|forget the target|never mind|nevermind)\b/.test(text)) {
+    return {
+      args: { name: "stop_following", reason: "mock_follow_stop" },
+      text: "I'll stop following.",
+      reason: "stop_following_request",
+      confidence: 0.9
+    };
+  }
+
+  const followLabel = extractFollowLabel(text, context);
+  if (followLabel) {
+    return {
+      args: { name: "follow_target", label: followLabel, mode: "gentle" },
+      text: `I'll follow the ${followLabel}.`,
+      reason: "follow_target_request",
+      confidence: 0.86
+    };
+  }
+
+  if (/\b(take|snap|shoot|capture)\b.*\b(picture|photo|selfie)\b|\b(picture|photo|selfie)\b.*\b(me|my)\b/.test(text)) {
+    return {
+      args: { name: "take_picture" },
+      text: "Okay, hold still.",
+      reason: "take_picture_request",
+      confidence: 0.9
+    };
+  }
+
+  if (/\bcome here\b|\bcome closer\b|\bcome to me\b|\b(move|go|drive|roll)\s+(forward|forwards|ahead|straight)\b|\bforward a little\b/.test(text)) {
+    return {
+      args: { name: "come_closer" },
+      text: "Coming a little closer.",
+      reason: "come_closer_request",
+      confidence: 0.86
+    };
+  }
+
+  if (/\bgive me (space|room)\b|\bgo back\b|\bback up\b|\bnot too close\b|\b(move|drive|roll)\s+(back|backward|backwards|reverse)\b|\breverse a little\b/.test(text)) {
+    return {
+      args: { name: "back_up" },
+      text: "I'll give you room.",
+      reason: "back_up_request",
+      confidence: 0.86
+    };
+  }
+
+  if (/\b(turn|rotate|look)\s+left\b/.test(text)) {
+    return {
+      args: { name: "look_left" },
+      text: "Looking left.",
+      reason: "look_left_request",
+      confidence: 0.82
+    };
+  }
+
+  if (/\b(turn|rotate|look)\s+right\b/.test(text)) {
+    return {
+      args: { name: "look_right" },
+      text: "Looking right.",
+      reason: "look_right_request",
+      confidence: 0.82
+    };
+  }
+
+  if (/\blook around\b|\bcheck the room\b|\bscan\b/.test(text)) {
+    return {
+      args: { name: "body_talking" },
+      text: null,
+      reason: "body_language_request",
+      confidence: 0.72
+    };
+  }
+
+  return null;
 }
 
 function response({ text = null, action = null, reason = "mock", confidence = 0.8 } = {}) {
@@ -153,49 +134,23 @@ function response({ text = null, action = null, reason = "mock", confidence = 0.
   };
 }
 
-function performResponse({ policy = {}, text = "", tone = "soft", movement = ["still"], scenario = null, reason = "mock", confidence = 0.8 } = {}) {
-  const speechText = policy.localSpeechAllowed === false ? "" : String(text ?? "").slice(0, 240);
-
-  return response({
-    text: speechText || null,
-    action: {
-      type: "perform",
-      args: {
-        speech: {
-          text: speechText,
-          tone
-        },
-        movement: Array.isArray(movement) && movement.length ? movement : ["still"],
-        scenario,
-        timing: "parallel",
-        iterateMovement: false
-      }
-    },
-    reason,
-    confidence
-  });
-}
-
-function movementResponse({ policy, text, movement, reason }) {
-  if (!policy.localMotionArmed) {
-    return performResponse({
-      policy,
-      text: "My body is not armed yet.",
-      tone: "soft",
-      movement: ["still"],
-      reason: `${reason} blocked by policy`,
-      confidence: 0.84
-    });
+function extractFollowLabel(text, context = {}) {
+  if (!/\b(follow|track)\b/.test(text)) {
+    return "";
   }
 
-  return performResponse({
-    policy,
-    text,
-    tone: "soft",
-    movement,
-    reason,
-    confidence: 0.88
-  });
+  const explicit = text.match(/\b(?:follow|track)\s+(?:the\s+|this\s+|that\s+)?([a-z][a-z -]{1,40})\b/);
+  const label = explicit?.[1]?.replace(/\b(please|now|for me)\b/g, "").trim();
+  if (label && !["it", "this", "that", "me"].includes(label)) {
+    return label;
+  }
+
+  return String(
+    context?.recentObjectReference?.label ??
+      context?.vision?.activeTarget?.label ??
+      context?.vision?.objects?.find?.((object) => object?.visible)?.label ??
+      ""
+  ).trim();
 }
 
 function latestText(context = {}) {
@@ -205,4 +160,13 @@ function latestText(context = {}) {
       context.recentEvents?.[0]?.text ??
       ""
   );
+}
+
+function normalizeText(value) {
+  return String(value ?? "")
+    .toLowerCase()
+    .replace(/[’`]/g, "'")
+    .replace(/[^\w\s'?-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }

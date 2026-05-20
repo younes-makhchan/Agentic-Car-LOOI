@@ -5,32 +5,29 @@ export const MOVEMENTS = Object.freeze({
   still: Object.freeze([]),
   move_forward: Object.freeze([
     face("attentive", 0.76, "center", 50),
-    motion(0.05, 0, 300, "perform_forward")
+    motion(0.05, 0, 300, "scenario_forward")
   ]),
   move_backward: Object.freeze([
     face("shy", 0.7, "down", 60),
-    motion(-0.05, 0, 300, "perform_back")
+    motion(-0.05, 0, 300, "scenario_back")
   ]),
   move_forward_tiny: Object.freeze([
     face("attentive", 0.76, "center", 50),
-    motion(0.05, 0, 130, "perform_tiny_forward")
+    motion(0.05, 0, 130, "scenario_tiny_forward")
   ]),
   move_backward_tiny: Object.freeze([
     face("shy", 0.7, "down", 60),
-    motion(-0.05, 0, 130, "perform_tiny_back")
+    motion(-0.05, 0, 130, "scenario_tiny_back")
   ]),
   look_left: Object.freeze([
     face("attentive", 0.74, "left", 90),
-    motion(0, -0.055, 170, "perform_tiny_turn_left")
+    motion(0, -0.055, 170, "scenario_tiny_turn_left")
   ]),
   look_right: Object.freeze([
     face("attentive", 0.74, "right", 90),
-    motion(0, 0.055, 170, "perform_tiny_turn_right")
+    motion(0, 0.055, 170, "scenario_tiny_turn_right")
   ]),
 });
-
-export const MOVEMENT_ACTION_NAMES = Object.freeze(Object.keys(MOVEMENTS));
-export const MOVEMENT_PROMPT_LIST = MOVEMENT_ACTION_NAMES.join(", ");
 
 const MOVEMENT_BY_FRAMES = new Map(
   Object.entries(MOVEMENTS).map(([name, frames]) => [frames, name])

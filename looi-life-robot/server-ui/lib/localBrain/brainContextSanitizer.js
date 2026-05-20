@@ -180,12 +180,9 @@ function compactPolicy(policy) {
   const value = isPlainObject(policy) ? policy : {};
   return {
     localBrainEnabled: Boolean(value.localBrainEnabled),
-    autonomousMode: Boolean(value.autonomousMode),
     localMotionArmed: Boolean(value.localMotionArmed),
     localCameraAllowed: Boolean(value.localCameraAllowed),
-    localSpeechAllowed: value.localSpeechAllowed !== false,
-    allowAutonomousMovement: Boolean(value.allowAutonomousMovement),
-    allowAutonomousSpeech: value.allowAutonomousSpeech !== false
+    localSpeechAllowed: value.localSpeechAllowed !== false
   };
 }
 

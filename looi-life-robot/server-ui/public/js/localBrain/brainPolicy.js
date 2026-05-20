@@ -1,12 +1,9 @@
 export function createDefaultBrainPolicy() {
   return {
     localBrainEnabled: true,
-    autonomousMode: false,
     localMotionArmed: false,
     localCameraAllowed: false,
     localSpeechAllowed: true,
-    allowAutonomousSpeech: true,
-    allowAutonomousMovement: false,
     localVisionEnabled: true,
     objectDetectionEnabledDefault: false,
     objectDetectionIntervalMs: 1000,
@@ -15,7 +12,6 @@ export function createDefaultBrainPolicy() {
     followLostTimeoutMs: 2000,
     maxObjectFollowSpeed: 0.18,
     maxThoughtsPerMinute: 12,
-    minAutonomousThoughtIntervalMs: 3000,
     eventThoughtCooldownMs: 800,
     stopRespectCooldownMs: 8000
   };
@@ -27,18 +23,9 @@ export function clampBrainPolicy(policy = {}) {
 
   return {
     localBrainEnabled: toBoolean(value.localBrainEnabled, defaults.localBrainEnabled),
-    autonomousMode: toBoolean(value.autonomousMode, defaults.autonomousMode),
     localMotionArmed: toBoolean(value.localMotionArmed, defaults.localMotionArmed),
     localCameraAllowed: toBoolean(value.localCameraAllowed, defaults.localCameraAllowed),
     localSpeechAllowed: toBoolean(value.localSpeechAllowed, defaults.localSpeechAllowed),
-    allowAutonomousSpeech: toBoolean(
-      value.allowAutonomousSpeech,
-      defaults.allowAutonomousSpeech
-    ),
-    allowAutonomousMovement: toBoolean(
-      value.allowAutonomousMovement,
-      defaults.allowAutonomousMovement
-    ),
     localVisionEnabled: toBoolean(value.localVisionEnabled, defaults.localVisionEnabled),
     objectDetectionEnabledDefault: toBoolean(
       value.objectDetectionEnabledDefault,
@@ -69,12 +56,6 @@ export function clampBrainPolicy(policy = {}) {
       1,
       60,
       defaults.maxThoughtsPerMinute
-    ),
-    minAutonomousThoughtIntervalMs: clampInteger(
-      value.minAutonomousThoughtIntervalMs,
-      1000,
-      60000,
-      defaults.minAutonomousThoughtIntervalMs
     ),
     eventThoughtCooldownMs: clampInteger(
       value.eventThoughtCooldownMs,

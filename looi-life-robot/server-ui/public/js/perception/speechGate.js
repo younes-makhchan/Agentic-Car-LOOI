@@ -1,39 +1,39 @@
 const DEFAULT_ROBOT_NAMES = ["looi", "louie", "lui", "robot"];
 const DIRECT_COMMAND_PATTERNS = [
   {
-    action: "drive",
+    action: "run_scenario",
     regex: /\b(move|go|drive|roll)\s+(forward|forwards|ahead|straight)\b|\bforward a little\b/,
-    args: { linear: 0.12, angular: 0, durationMs: 350 }
+    args: { name: "come_closer" }
   },
   {
-    action: "drive",
+    action: "run_scenario",
     regex: /\b(move|drive|roll)\s+(back|backward|backwards|reverse)\b|\breverse a little\b/,
-    args: { linear: -0.12, angular: 0, durationMs: 350 }
+    args: { name: "back_up" }
   },
   {
-    action: "drive",
+    action: "run_scenario",
     regex: /\b(turn|rotate)\s+left\b/,
-    args: { linear: 0, angular: -0.12, durationMs: 320 }
+    args: { name: "look_left" }
   },
   {
-    action: "drive",
+    action: "run_scenario",
     regex: /\b(turn|rotate)\s+right\b/,
-    args: { linear: 0, angular: 0.12, durationMs: 320 }
+    args: { name: "look_right" }
   },
   {
-    action: "approach_user",
+    action: "run_scenario",
     regex: /\b(come here|come closer|come to me)\b/,
-    args: { style: "gentle", distance: "short" }
+    args: { name: "come_closer" }
   },
   {
-    action: "retreat",
+    action: "run_scenario",
     regex: /\b(give me (space|room)|go back|back up|not too close)\b/,
-    args: { style: "gentle", distance: "short" }
+    args: { name: "back_up" }
   },
   {
-    action: "curious_scan",
+    action: "run_scenario",
     regex: /\b(look around|check the room|scan)\b/,
-    args: { direction: "both", intensity: 0.55 }
+    args: { name: "body_talking" }
   }
 ];
 

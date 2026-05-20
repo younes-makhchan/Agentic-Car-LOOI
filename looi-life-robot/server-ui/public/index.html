@@ -274,17 +274,10 @@
             <input id="learnedMeaningInput" type="text" maxlength="240" placeholder="increase distance from user" />
             <label class="field-label" for="learnedActionSelect">Action</label>
             <select id="learnedActionSelect">
-              <option value="retreat">retreat</option>
-              <option value="approach_user">approach_user</option>
-              <option value="curious_scan">curious_scan</option>
-              <option value="excited_wiggle">excited_wiggle</option>
-              <option value="stop">stop</option>
-              <option value="speak">speak</option>
-              <option value="express">express</option>
-              <option value="observe_scene">observe_scene</option>
+              <option value="run_scenario">run_scenario</option>
             </select>
             <label class="field-label" for="learnedArgsInput">Args JSON</label>
-            <textarea id="learnedArgsInput" rows="3">{"style":"gentle","distance":"short"}</textarea>
+            <textarea id="learnedArgsInput" rows="3">{"name":"back_up"}</textarea>
             <label class="field-label" for="learnedConfidenceSelect">Confidence</label>
             <select id="learnedConfidenceSelect">
               <option value="medium">medium</option>
@@ -557,14 +550,6 @@
             <div class="status-row">
               <span>Last classification</span>
               <strong id="lastSpeechClassification">--</strong>
-            </div>
-            <div class="status-row">
-              <span>Autonomous scheduler</span>
-              <strong id="autonomousSchedulerState">stopped</strong>
-            </div>
-            <div class="status-row">
-              <span>Last autonomous reason</span>
-              <strong id="lastAutonomousReason">--</strong>
             </div>
           </div>
           <div class="brain-policy-grid">
@@ -879,7 +864,7 @@
           <p class="panel-note">
             The older Local Brain text endpoint remains available for typed/manual
             fallback. All movement still executes through ToolExecutor and the safe
-            macro/command queue path.
+            scenario-frame/command queue path.
           </p>
           <div class="status-grid">
             <div class="status-row">
@@ -958,10 +943,6 @@
               <input id="localBrainEnabledToggle" type="checkbox" checked />
               <span>Local Brain Enabled</span>
             </label>
-            <label class="checkbox-field">
-              <input id="autonomousModeToggle" type="checkbox" />
-              <span>Autonomous Mode</span>
-            </label>
             <label class="checkbox-field local-motion-arm-field">
               <input id="localMotionArmedToggle" type="checkbox" />
               <span>Local Motion Armed</span>
@@ -975,20 +956,12 @@
               <span>Local Speech Allowed</span>
             </label>
             <label class="checkbox-field">
-              <input id="allowAutonomousMovementToggle" type="checkbox" />
-              <span>Allow Autonomous Movement</span>
-            </label>
-            <label class="checkbox-field">
               <input id="followModeArmedToggle" type="checkbox" />
               <span>Follow Mode Armed</span>
             </label>
             <label class="checkbox-field">
               <input id="allowFollowMovementToggle" type="checkbox" />
               <span>Allow Follow Movement</span>
-            </label>
-            <label class="checkbox-field">
-              <input id="allowAutonomousSpeechToggle" type="checkbox" checked />
-              <span>Allow Autonomous Speech</span>
             </label>
           </div>
           <div class="button-grid">
@@ -1017,16 +990,15 @@
         </section>
 
         <section id="settingsLooiMode" class="panel-card looi-mode-card">
-          <h2>Embodiment / LOOI Mode</h2>
+          <h2>Scenario Runtime</h2>
           <p class="panel-note">
-            LOOI Mode uses expressive motion macros, face/body synchronization,
-            and local priority scheduling. Physical movement still requires Local
-            Motion Armed.
+            Gemini chooses approved scenarios only. The browser expands scenarios
+            into safe local face/body frames and routes movement through the command queue.
           </p>
           <div class="status-grid">
             <div class="status-row">
-              <span>Current macro</span>
-              <strong id="currentMacroState">idle</strong>
+              <span>Current sequence</span>
+              <strong id="currentSequenceState">idle</strong>
             </div>
             <div class="status-row">
               <span>Scheduler</span>
@@ -1054,21 +1026,13 @@
             </div>
           </div>
           <p class="safety-note">
-            Emergency Stop interrupts macros, speech, scheduler tasks, and motors.
-            LOOI Mode does not arm physical movement by itself.
+            Emergency Stop interrupts scenario frames, speech, scheduler tasks, and motors.
+            The scenario runtime does not arm physical movement by itself.
           </p>
           <div class="brain-policy-grid">
             <label class="checkbox-field looi-mode-toggle-field">
               <input id="looiModeToggle" type="checkbox" />
-              <span>Enable LOOI Mode</span>
-            </label>
-            <label class="checkbox-field">
-              <input id="idleMicroBehaviorToggle" type="checkbox" checked />
-              <span>Enable Idle Micro Behaviors</span>
-            </label>
-            <label class="checkbox-field">
-              <input id="attentionBodyTrackingToggle" type="checkbox" />
-              <span>Enable Attention Body Tracking</span>
+              <span>Enable Scenario Runtime</span>
             </label>
             <label class="checkbox-field">
               <input id="keepRobotAwakeToggle" type="checkbox" />
@@ -1076,30 +1040,20 @@
             </label>
           </div>
           <div class="button-grid">
-            <button id="testMacroSoftListenButton" type="button">Test Soft Listen</button>
-            <button id="testMacroThinkingPoseButton" type="button">Test Thinking Pose</button>
-            <button id="testMacroCuriousScanButton" type="button">Test Curious Scan</button>
-            <button id="testMacroHappyApproachButton" type="button">Test Happy Approach</button>
-            <button id="testMacroShyRetreatButton" type="button">Test Shy Retreat</button>
-            <button id="testMacroExcitedWiggleButton" type="button">Test Excited Wiggle</button>
-            <button id="testMacroSleepyIdleButton" type="button">Test Sleepy Idle</button>
-            <button id="testMacroUserReturnedButton" type="button">Test User Returned</button>
-          </div>
-          <div class="button-grid">
             <button id="runSimulatorLooiDemoButton" class="primary-button" type="button">
-              Run Simulator LOOI Demo
+              Run Simulator Scenario Demo
             </button>
             <button id="runWheelsLiftedSafetyTestButton" type="button">
               Run Wheels-Lifted Safety Test
             </button>
           </div>
           <div class="button-grid button-grid--single">
-            <button id="macroStopButton" class="danger-button" type="button">
-              Macro Stop
+            <button id="scenarioRuntimeStopButton" class="danger-button" type="button">
+              Scenario Stop
             </button>
           </div>
-          <h3>Macro History</h3>
-          <div id="macroHistoryList" class="macro-history-list" aria-live="polite"></div>
+          <h3>Sequence History</h3>
+          <div id="sequenceHistoryList" class="sequence-history-list" aria-live="polite"></div>
           <h3>Runtime Warnings</h3>
           <div id="runtimeWarningsList" class="runtime-warning-list" aria-live="polite"></div>
         </section>

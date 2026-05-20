@@ -1185,7 +1185,7 @@ function compactToolResult(result = null) {
     executed: Boolean(result.executed),
     physical: Boolean(result.physical),
     routeStatus: route?.status ?? null,
-    macro: route?.macro ?? result.detail?.macro ?? null,
+    sequence: route?.sequence ?? result.detail?.sequence ?? null,
     partial: Boolean(routeResult?.partial ?? result.detail?.partial),
     skippedFrames: Array.isArray(routeResult?.skippedFrames)
       ? routeResult.skippedFrames.slice(0, 8)

@@ -2,14 +2,10 @@ export class ReliabilityManager {
   constructor({
     performanceMonitor,
     cameraInput,
-    idleMicroBehavior,
-    autonomousScheduler,
     logger
   } = {}) {
     this.performanceMonitor = performanceMonitor;
     this.cameraInput = cameraInput;
-    this.idleMicroBehavior = idleMicroBehavior;
-    this.autonomousScheduler = autonomousScheduler;
     this.logger = logger;
     this.running = false;
     this.mode = "normal";
@@ -48,14 +44,6 @@ export class ReliabilityManager {
     }
 
     this.mode = next;
-    if (next === "normal") {
-      this.idleMicroBehavior?.setIntervalScale?.(1);
-    } else if (next === "reduced") {
-      this.idleMicroBehavior?.setIntervalScale?.(1.8);
-    } else {
-      this.idleMicroBehavior?.setIntervalScale?.(3);
-    }
-
     this.log(`Reliability mode: ${next}`, next === "normal" ? "info" : "warn");
     return this.getStatus();
   }
@@ -64,8 +52,6 @@ export class ReliabilityManager {
     return {
       running: this.running,
       mode: this.mode,
-      idleMicroBehaviorRunning: Boolean(this.idleMicroBehavior?.getStatus?.().running),
-      autonomousSchedulerRunning: Boolean(this.autonomousScheduler?.getStatus?.().running),
       cameraRunning: Boolean(this.cameraInput?.getCameraStatus?.().running)
     };
   }

@@ -94,16 +94,7 @@ export class AttentionSystem {
     }
 
     const classification = event?.payload?.classification;
-    return this.shouldAttendToSpeech(classification) || event?.type === "autonomous_tick";
-  }
-
-  canAutonomouslyAct(policy = {}) {
-    this.update();
-    return Boolean(
-      policy.autonomousMode &&
-      this.mode !== "stop_cooldown" &&
-      Date.now() >= Number(this.stopRespectUntil || 0)
-    );
+    return this.shouldAttendToSpeech(classification);
   }
 
   getStatus(now = Date.now()) {

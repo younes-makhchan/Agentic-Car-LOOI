@@ -1,29 +1,16 @@
 import { PRIORITY_LEVELS } from "./priorityScheduler.js";
 import { compileMovementFrames } from "./movementCatalog.js";
 
-const ROUTED_ACTIONS = new Set([
-  "perform",
-  "movement",
-  "express",
-  "speak",
-  "drive",
-  "stop",
-  "approach_user",
-  "retreat",
-  "curious_scan",
-  "excited_wiggle",
-  "observe_scene",
-  "remember"
-]);
+const ROUTED_ACTIONS = new Set(["run_sequence", "stop"]);
 
 export class EmbodiedActionRouter {
   constructor({
-    macroSequencer,
+    frameSequencer,
     priorityScheduler,
     lifeEngine,
     logger
   } = {}) {
-    this.macroSequencer = macroSequencer;
+    this.frameSequencer = frameSequencer;
     this.priorityScheduler = priorityScheduler;
     this.lifeEngine = lifeEngine;
     this.logger = logger;
@@ -35,7 +22,7 @@ export class EmbodiedActionRouter {
     return this.execute(action, context);
   }
 
-  mapActionToMacro(action = {}, context = {}) {
+  mapActionToSequence(action = {}, context = {}) {
     const type = action.type;
     const args = action.args ?? {};
 
@@ -43,115 +30,25 @@ export class EmbodiedActionRouter {
       return { ok: false, reason: "unsupported_embodied_action" };
     }
 
-    switch (type) {
-      case "perform":
-        return {
-          ok: true,
-          macroObject: buildPerformMacro(args, context, (message, level) => this.log(message, level))
-        };
-      case "movement":
-        return {
-          ok: true,
-          macroObject: buildMovementMacro(args, context, (message, level) => this.log(message, level))
-        };
-      case "express":
-        return {
-          ok: true,
-          macroObject: {
-            name: `express_${args.emotion ?? "neutral"}`,
-            description: "Single expressive face frame.",
-            priority: context.priority ?? PRIORITY_LEVELS.decorative_face_only,
-            interruptible: true,
-            requiresMotion: false,
-            cooldownMs: 0,
-            tags: ["express"],
-            frames: [
-              {
-                type: "face",
-                expression: args.emotion ?? "neutral",
-                intensity: args.intensity ?? 0.8,
-                eyeDirection: args.eyeDirection ?? "center",
-                durationMs: args.durationMs ?? 100
-              }
-            ]
-          }
-        };
-      case "speak":
-        return {
-          ok: true,
-          macroObject: {
-            name: "speak_synced",
-            description: "Speech with synchronized face state.",
-            priority: context.priority ?? PRIORITY_LEVELS.local_brain_action,
-            interruptible: true,
-            requiresMotion: false,
-            cooldownMs: 0,
-            tags: ["speech"],
-            frames: [
-              {
-                type: "speech",
-                text: args.text,
-                tone: args.tone ?? "soft",
-                expression: toneToExpression(args.tone),
-                durationMs: 100
-              }
-            ]
-          }
-        };
-      case "approach_user":
-        return { ok: true, macroName: args.style === "happy" || context.classification === "greeting" ? "happy_approach" : "gentle_approach" };
-      case "retreat":
-        return { ok: true, macroName: "shy_retreat" };
-      case "curious_scan":
-        return { ok: true, macroName: context.allowMotion === false ? "look_around_only" : "curious_scan" };
-      case "excited_wiggle":
-        return { ok: true, macroName: "excited_wiggle" };
-      case "stop":
-        return {
-          ok: true,
-          macroObject: {
-            name: "scared_stop",
-            description: "Immediate stop with scared expression.",
-            priority: 100,
-            interruptible: false,
-            requiresMotion: false,
-            cooldownMs: 0,
-            tags: ["stop", "safety"],
-            frames: [
-              { type: "face", expression: "scared", intensity: 1.08, eyeDirection: "center", durationMs: 40 },
-              {
-                type: "event",
-                eventType: "emergency_stop",
-                payload: { reason: args.reason ?? "embodied_stop" },
-                durationMs: 30
-              },
-              { type: "face", expression: "attentive", intensity: 0.9, eyeDirection: "center", durationMs: 120 }
-            ]
-          }
-        };
-      case "observe_scene":
-        return { ok: true, macroName: "thinking_pose" };
-      case "remember":
-        return { ok: true, macroName: "tiny_yes" };
-      case "drive":
-        if (args.style && ["happy", "curious", "shy", "gentle"].includes(args.style)) {
-          return {
-            ok: true,
-            macroObject: buildDriveMacro(action)
-          };
-        }
-        return { ok: false, reason: "direct_drive_prefers_tool_executor" };
-      default:
-        return { ok: false, reason: "unknown_action" };
+    if (type === "stop") {
+      return {
+        ok: true,
+        sequence: buildStopSequence(args)
+      };
     }
+
+    return {
+      ok: true,
+      sequence: buildRunSequence(args, context, (message, level) => this.log(message, level))
+    };
   }
 
   async execute(action, context = {}) {
-    if (!this.macroSequencer) {
-      return { ok: false, reason: "macro_sequencer_unavailable" };
+    if (!this.frameSequencer) {
+      return { ok: false, reason: "frame_sequencer_unavailable" };
     }
 
-    const mapped = this.mapActionToMacro(action, context);
+    const mapped = this.mapActionToSequence(action, context);
     if (!mapped.ok) {
       return this.record(action, {
         ok: false,
@@ -162,7 +59,7 @@ export class EmbodiedActionRouter {
 
     const priority = priorityForAction(action, context);
     const options = {
-      source: action.source ?? context.source ?? "local_brain",
+      source: action.source ?? context.source ?? "scenario_runtime",
       priority,
       allowMotion: context.allowMotion !== false,
       allowSpeech: context.allowSpeech !== false,
@@ -170,18 +67,16 @@ export class EmbodiedActionRouter {
       reason: action.reason ?? context.reason ?? action.type,
       context
     };
-    const run = () => mapped.macroObject
-      ? this.macroSequencer.playMacroObject(mapped.macroObject, options)
-      : this.macroSequencer.playMacro(mapped.macroName, options);
+    const run = () => this.frameSequencer.playFrameSequence(mapped.sequence, options);
 
     const task = {
-      type: `macro:${mapped.macroName ?? mapped.macroObject?.name ?? action.type}`,
+      type: `sequence:${mapped.sequence?.name ?? action.type}`,
       priority,
       source: options.source,
       interruptible: action.type !== "stop",
-      physical: context.allowMotion !== false && isPhysicalAction(action.type),
+      physical: context.allowMotion !== false && action.type === "run_sequence",
       reason: options.reason ?? action.reason ?? action.type,
-      interrupt: (reason) => this.macroSequencer.interrupt(reason, priority),
+      interrupt: (reason) => this.frameSequencer.interrupt(reason, priority),
       run
     };
     const scheduled = this.priorityScheduler
@@ -192,7 +87,7 @@ export class EmbodiedActionRouter {
     return this.record(action, {
       ok: result?.ok !== false,
       status: result?.ok === false ? "rejected" : "completed",
-      macro: result?.macro ?? mapped.macroName ?? mapped.macroObject?.name,
+      sequence: result?.sequence ?? mapped.sequence?.name,
       result,
       reason: result?.reason ?? "completed"
     });
@@ -234,18 +129,10 @@ function priorityForAction(action, context) {
     return PRIORITY_LEVELS.emergency_stop;
   }
 
-  if (context.autonomous) {
-    return PRIORITY_LEVELS.autonomous_life_event;
-  }
-
   return context.priority ?? PRIORITY_LEVELS.local_brain_action;
 }
 
-function isPhysicalAction(type) {
-  return ["perform", "movement", "drive", "approach_user", "retreat", "curious_scan", "excited_wiggle"].includes(type);
-}
-
-function buildPerformMacro(args = {}, context = {}, log = () => {}) {
+function buildRunSequence(args = {}, context = {}, log = () => {}) {
   const speech = normalizeSpeech({
     ...args,
     ...(args.speech && typeof args.speech === "object" && !Array.isArray(args.speech) ? args.speech : {})
@@ -258,7 +145,7 @@ function buildPerformMacro(args = {}, context = {}, log = () => {}) {
     iterate: args.iterateMovement === true
   });
   const movementFrames = movement.frames.slice(0, 16);
-  const timing = args.timing === "sequence" ? "sequence" : "parallel";
+  const timing = args.timing === "parallel" ? "parallel" : "sequence";
   const frames = [
     {
       type: "face",
@@ -270,7 +157,7 @@ function buildPerformMacro(args = {}, context = {}, log = () => {}) {
   ];
 
   if (movement.ignored.length) {
-    log(`Perform ignored unknown movement: ${movement.ignored.join(", ")}`, "warn");
+    log(`Scenario ignored unknown movement frame group: ${movement.ignored.join(", ")}`, "warn");
   }
 
   if (speech.text && timing === "parallel") {
@@ -327,13 +214,13 @@ function buildPerformMacro(args = {}, context = {}, log = () => {}) {
   });
 
   return {
-    name: "perform_embodied",
-    description: "LLM-selected speech, expression, and safe movement choreography.",
+    name: args.scenario ? `scenario_${args.scenario}` : "scenario_sequence",
+    description: "Private scenario-expanded face/body frame sequence.",
     priority: context.priority ?? PRIORITY_LEVELS.local_brain_action,
     interruptible: true,
-    requiresMotion: false,
+    requiresMotion: movement.requestedMotion,
     cooldownMs: 0,
-    tags: ["perform", "speech", "movement"],
+    tags: ["scenario", "private"],
     frames,
     metadata: {
       ignoredMovement: movement.ignored,
@@ -342,36 +229,25 @@ function buildPerformMacro(args = {}, context = {}, log = () => {}) {
   };
 }
 
-function buildMovementMacro(args = {}, context = {}, log = () => {}) {
-  const movement = compileMovementFrames(args.movement, {
-    iterate: args.iterateMovement === true || args.iterate === true
-  });
-  const frames = movement.frames.length
-    ? [{
-        type: "composite",
-        mode: "sequence",
-        durationMs: 0,
-        frames: movement.frames
-      }]
-    : [{ type: "pause", durationMs: 40, allowSkip: true }];
-
-  if (movement.ignored.length) {
-    log(`Movement ignored unknown entries: ${movement.ignored.join(", ")}`, "warn");
-  }
-
+function buildStopSequence(args = {}) {
   return {
-    name: "movement_embodied",
-    description: "LLM-selected safe movement.",
-    priority: context.priority ?? PRIORITY_LEVELS.local_brain_action,
-    interruptible: true,
-    requiresMotion: movement.requestedMotion,
+    name: "safety_stop",
+    description: "Immediate stop with safe expression.",
+    priority: PRIORITY_LEVELS.emergency_stop,
+    interruptible: false,
+    requiresMotion: false,
     cooldownMs: 0,
-    tags: ["movement"],
-    frames,
-    metadata: {
-      ignoredMovement: movement.ignored,
-      movement: movement.names
-    }
+    tags: ["stop", "safety"],
+    frames: [
+      { type: "face", expression: "scared", intensity: 1.08, eyeDirection: "center", durationMs: 40 },
+      {
+        type: "event",
+        eventType: "emergency_stop",
+        payload: { reason: args.reason ?? "scenario_stop" },
+        durationMs: 30
+      },
+      { type: "face", expression: "attentive", intensity: 0.9, eyeDirection: "center", durationMs: 120 }
+    ]
   };
 }
 
@@ -413,34 +289,4 @@ function toneToExpression(tone) {
     serious: "attentive",
     soft: "attentive"
   }[tone] ?? "attentive";
-}
-
-function buildDriveMacro(action) {
-  const args = action.args ?? {};
-  return {
-    name: `styled_drive_${args.style}`,
-    description: "Strictly bounded styled drive frame.",
-    priority: PRIORITY_LEVELS.local_brain_action,
-    interruptible: true,
-    requiresMotion: true,
-    cooldownMs: 800,
-    tags: ["drive", args.style],
-    frames: [
-      {
-        type: "face",
-        expression: args.style === "shy" ? "shy" : args.style === "happy" ? "happy" : "attentive",
-        intensity: 0.72,
-        eyeDirection: "center",
-        durationMs: 80
-      },
-      {
-        type: "motion",
-        linear: args.linear,
-        angular: args.angular,
-        durationMs: args.duration_ms ?? args.durationMs,
-        rampMs: args.ramp_ms ?? args.rampMs ?? 160,
-        label: `macro_styled_drive_${args.style}`
-      }
-    ]
-  };
 }

@@ -56,19 +56,20 @@ assert.equal(normalizePhrase("Don’t move, please!"), "don't move please");
 const learned = createLearnedPhrase({
   phrase: "give me room",
   meaning: "increase distance from user",
-  action: "retreat",
+  action: "run_scenario",
   args: {
-    style: "gentle",
-    distance: "short"
+    name: "back_up"
   },
   confidence: "high",
   source: "manual"
 });
 const inferred = inferKnownIntent("please give me room", [learned]);
-assert.equal(inferred.action, "retreat");
+assert.equal(inferred.action, "run_scenario");
+assert.equal(inferred.args.name, "back_up");
 assert.equal(inferred.source, "learned_phrase");
-assert.equal(inferKnownIntent("come here").action, "approach_user");
-assert.equal(inferKnownIntent("freeze").action, "stop");
+assert.equal(inferKnownIntent("come here").action, "run_scenario");
+assert.equal(inferKnownIntent("come here").args.name, "come_closer");
+assert.equal(inferKnownIntent("freeze"), null);
 
 const memoryStore = new MemoryStore({ rootDir: tempRoot });
 const longTerm = await memoryStore.appendLongTermMemory("The user prefers gentle motion.", {
@@ -91,7 +92,7 @@ const phraseStore = new LearnedPhraseStore({ rootDir: tempRoot });
 const storedPhrase = await phraseStore.addPhrase(learned);
 assert.equal(storedPhrase.normalizedPhrase, "give me room");
 assert.equal((await phraseStore.listPhrases()).length, 1);
-assert.equal((await phraseStore.findMatches("hey give me room"))[0].action, "retreat");
+assert.equal((await phraseStore.findMatches("hey give me room"))[0].action, "run_scenario");
 await phraseStore.recordUse(storedPhrase.id);
 assert.equal((await phraseStore.listPhrases())[0].useCount, 1);
 await phraseStore.removePhrase(storedPhrase.id);

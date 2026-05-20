@@ -93,7 +93,7 @@ const toolExecutor = {
           status: "completed",
           type: action.type,
           executed: true,
-          physical: action.type === "perform" || action.type === "run_scenario",
+          physical: action.type === "run_scenario",
           message: "mock accepted"
         });
       });
@@ -103,7 +103,7 @@ const toolExecutor = {
       status: "completed",
       type: action.type,
       executed: true,
-      physical: action.type === "perform" || action.type === "run_scenario",
+      physical: action.type === "run_scenario",
       message: "mock accepted"
     });
   },
