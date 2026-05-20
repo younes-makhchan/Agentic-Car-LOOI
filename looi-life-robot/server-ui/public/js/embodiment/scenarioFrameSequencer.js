@@ -10,6 +10,7 @@ export class ScenarioFrameSequencer {
     face,
     voiceOutput,
     commandQueue,
+    cameraInput,
     lifeEngine,
     safetyGate,
     calibration,
@@ -19,6 +20,7 @@ export class ScenarioFrameSequencer {
     this.face = face;
     this.voiceOutput = voiceOutput;
     this.commandQueue = commandQueue;
+    this.cameraInput = cameraInput;
     this.lifeEngine = lifeEngine;
     this.safetyGate = safetyGate;
     this.calibration = calibration;
@@ -70,8 +72,10 @@ export class ScenarioFrameSequencer {
     const token = ++this.playToken;
     const context = this.buildContext(sequence, options, token);
     const skippedFrames = [];
+    const details = [];
     let executedFrames = 0;
     let partial = false;
+    let failedReason = "";
 
     this.running = true;
     this.interruptedBy = null;
@@ -105,6 +109,20 @@ export class ScenarioFrameSequencer {
         this.activeFrame = frameResult.frame;
         const result = await this.applyFrame(frameResult.frame, context);
 
+        if (result.detail) {
+          details.push({
+            type: result.type ?? frameResult.frame.type,
+            action: result.action ?? frameResult.frame.action?.name ?? null,
+            detail: result.detail
+          });
+        }
+
+        if (result.ok === false || result.failed) {
+          failedReason = result.reason ?? result.type ?? frameResult.frame.type;
+          partial = true;
+          break;
+        }
+
         if (Array.isArray(result.skippedFrames) && result.skippedFrames.length) {
           skippedFrames.push(...result.skippedFrames);
           partial = true;
@@ -128,14 +146,15 @@ export class ScenarioFrameSequencer {
       }
 
       return this.recordResult({
-        ok: true,
+        ok: !failedReason,
         sequence: sequence.name,
         executed: executedFrames > 0,
         partial,
         skippedFrames,
+        details,
         executedFrames,
         interrupted: Boolean(this.interruptedBy),
-        reason: this.interruptedBy ? `interrupted:${this.interruptedBy}` : partial ? "partial" : "completed"
+        reason: failedReason || (this.interruptedBy ? `interrupted:${this.interruptedBy}` : partial ? "partial" : "completed")
       });
     } finally {
       if (token === this.playToken) {
@@ -206,6 +225,8 @@ export class ScenarioFrameSequencer {
         return this.applyMotionFrame(frame, context);
       case "speech":
         return this.applySpeechFrame(frame, context);
+      case "action":
+        return this.applyActionFrame(frame, context);
       case "composite":
         return this.applyCompositeFrame(frame, context);
       case "event":
@@ -274,10 +295,6 @@ export class ScenarioFrameSequencer {
       return { ok: true, skipped: true, type: "speech", reason: "speech_not_allowed" };
     }
 
-    if (frame.expression) {
-      this.face?.setExpression?.(frame.expression, frame.intensity ?? 0.8);
-    }
-
     if (!this.voiceOutput?.speak) {
       await wait(frame.durationMs);
       return { ok: true, skipped: true, type: "speech", reason: "voice_output_unavailable" };
@@ -295,6 +312,38 @@ export class ScenarioFrameSequencer {
     }
 
     return { ok: true, type: "speech", detail: result };
+  }
+
+  async applyActionFrame(frame, context) {
+    if (typeof frame.action !== "function") {
+      return { ok: false, type: "action", reason: "action_function_required" };
+    }
+
+    const actionName = frame.action.name || "anonymousScenarioAction";
+    try {
+      const result = await frame.action(this.buildActionContext(context), frame.args ?? {});
+      if (result && typeof result === "object") {
+        return {
+          ok: result.ok !== false,
+          failed: result.failed === true,
+          skipped: result.skipped === true,
+          type: "action",
+          action: actionName,
+          reason: result.reason,
+          executedFrames: Number.isFinite(Number(result.executedFrames)) ? Number(result.executedFrames) : 1,
+          detail: result.detail ?? null
+        };
+      }
+
+      return { ok: true, type: "action", action: actionName };
+    } catch (error) {
+      return {
+        ok: false,
+        type: "action",
+        action: actionName,
+        reason: error.message
+      };
+    }
   }
 
   async applyCompositeFrame(frame, context) {
@@ -392,6 +441,10 @@ export class ScenarioFrameSequencer {
     this.commandQueue = commandQueue;
   }
 
+  setCameraInput(cameraInput) {
+    this.cameraInput = cameraInput;
+  }
+
   setLifeEngine(lifeEngine) {
     this.lifeEngine = lifeEngine;
   }
@@ -413,10 +466,67 @@ export class ScenarioFrameSequencer {
     };
   }
 
+  buildActionContext(context) {
+    return {
+      face: this.face,
+      voiceOutput: this.voiceOutput,
+      commandQueue: this.commandQueue,
+      cameraInput: this.cameraInput,
+      lifeEngine: this.lifeEngine,
+      safetyGate: this.safetyGate,
+      calibration: this.calibration,
+      eventBus: this.eventBus,
+      source: context.source,
+      priority: context.priority,
+      allowMotion: context.allowMotion,
+      allowSpeech: context.allowSpeech,
+      allowCamera: context.allowCamera,
+      reason: context.reason,
+      runtimeContext: context.runtimeContext,
+      isInterrupted: () => context.token !== this.playToken,
+      wait,
+      log: (message, level = "info") => this.log(message, level),
+      playFrames: (frames, overrides = {}) => this.playInlineFrames(frames, {
+        ...context,
+        ...overrides,
+        token: context.token
+      })
+    };
+  }
+
+  async playInlineFrames(frames = [], context) {
+    const results = [];
+    for (const rawFrame of Array.isArray(frames) ? frames : []) {
+      if (context.token !== this.playToken) {
+        return { ok: false, interrupted: true, results, reason: "interrupted" };
+      }
+
+      const normalized = normalizeFrame(rawFrame);
+      if (!normalized.ok) {
+        results.push({ ok: false, skipped: true, reason: normalized.error });
+        continue;
+      }
+
+      const result = await this.applyFrame(normalized.frame, context);
+      results.push(result);
+      if (result.interrupted || result.ok === false || context.token !== this.playToken) {
+        break;
+      }
+    }
+
+    return {
+      ok: results.every((result) => result.ok !== false),
+      partial: results.some((result) => result.partial || result.skipped),
+      interrupted: results.some((result) => result.interrupted),
+      results
+    };
+  }
+
   recordResult(result) {
     const entry = {
       partial: false,
       skippedFrames: [],
+      details: [],
       executedFrames: 0,
       interrupted: false,
       timestamp: new Date().toISOString(),
@@ -482,7 +592,7 @@ function normalizeFrame(frame = {}) {
     return { ok: false, error: "frame_must_be_object" };
   }
 
-  const type = ["face", "motion", "speech", "pause", "event", "composite"].includes(frame.type)
+  const type = ["face", "motion", "speech", "pause", "event", "composite", "action"].includes(frame.type)
     ? frame.type
     : inferFrameType(frame);
   const normalized = {
@@ -511,7 +621,16 @@ function normalizeFrame(frame = {}) {
   if (type === "speech") {
     normalized.text = typeof frame.text === "string" ? frame.text.trim().slice(0, 240) : "";
     normalized.tone = normalizeTone(frame.tone);
-    normalized.expression = frame.expression ? normalizeExpression(frame.expression) : undefined;
+  }
+
+  if (type === "action") {
+    normalized.action = frame.action;
+    normalized.args = frame.args && typeof frame.args === "object" && !Array.isArray(frame.args)
+      ? { ...frame.args }
+      : {};
+    if (typeof normalized.action !== "function") {
+      return { ok: false, error: "action_frame_requires_function" };
+    }
   }
 
   if (type === "event") {
@@ -548,6 +667,10 @@ function inferFrameType(frame) {
 
   if (frame.eventType) {
     return "event";
+  }
+
+  if (typeof frame.action === "function") {
+    return "action";
   }
 
   if (frame.expression || frame.eyeDirection) {

@@ -266,32 +266,6 @@ export function dismissPhoto() {
   openEyes();
 }
 
-export function updateFaceState(partialState = {}) {
-  if (partialState.expression) {
-    setExpression(partialState.expression, partialState.intensity ?? FACE_STATE.intensity);
-  }
-
-  if (partialState.eyeDirection) {
-    setEyeDirection(partialState.eyeDirection);
-  }
-
-  if (typeof partialState.intensity === "number" && !partialState.expression) {
-    FACE_STATE.intensity = clamp(partialState.intensity, 0, 1.5);
-    applyExpression();
-  }
-
-  if (typeof partialState.speaking === "boolean") {
-    setSpeaking(partialState.speaking);
-  }
-
-  if (partialState.visionIndicator) {
-    setVisionIndicator(
-      partialState.visionIndicator.active,
-      partialState.visionIndicator.mode
-    );
-  }
-}
-
 export function setVisionIndicator(active, mode = "detecting") {
   FACE_STATE.visionIndicator = {
     active: Boolean(active),
@@ -329,8 +303,7 @@ export function createFaceController(element) {
     takePicture,
     showPhoto,
     dismissPhoto,
-    setVisionIndicator,
-    updateFaceState
+    setVisionIndicator
   };
 }
 

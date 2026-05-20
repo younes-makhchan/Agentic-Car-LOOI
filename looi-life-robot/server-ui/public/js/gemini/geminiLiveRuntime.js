@@ -189,7 +189,6 @@ export class GeminiLiveRuntime {
         connected: true
       });
       this.lifeEngine?.setListening?.(true);
-      this.face?.setExpression?.("attentive", 0.9);
       return this.getStatus();
     } catch (error) {
       this.patchStatus({
@@ -1190,8 +1189,7 @@ function compactToolResult(result = null) {
     skippedFrames: Array.isArray(routeResult?.skippedFrames)
       ? routeResult.skippedFrames.slice(0, 8)
       : undefined,
-    scenario: result.detail?.scenario ?? null,
-    scenarioMovement: result.detail?.scenarioMovement ?? undefined
+    scenario: result.detail?.scenario ?? null
   };
 }
 

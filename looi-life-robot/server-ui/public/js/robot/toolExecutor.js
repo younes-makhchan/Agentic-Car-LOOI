@@ -1,6 +1,6 @@
-import { movementNamesFor } from "../embodiment/movementCatalog.js";
 import {
   getScenarioDefinition,
+  normalizeScenarioName,
   normalizeRunScenarioName
 } from "../embodiment/scenarioCatalog.js";
 import { PRIORITY_LEVELS } from "../embodiment/priorityScheduler.js";
@@ -175,7 +175,9 @@ export class ToolExecutor {
   }
 
   async executeRunScenario(args = {}, action = {}) {
-    const normalizedArgs = normalizeRunScenarioArgs(args);
+    const normalizedArgs = normalizeRunScenarioArgs(args, {
+      allowInternalScenario: action.source === "local"
+    });
 
     if (!normalizedArgs.name) {
       return this.buildResult("rejected", {
@@ -214,8 +216,19 @@ export class ToolExecutor {
       });
     }
 
-    const motionPermission = this.scenarioMotionPermission(action, Boolean(scenario.requiresMotion));
-    if (scenario.requiresMotion && !scenario.requiresCamera && motionPermission.allowed !== true) {
+    const requiresCamera = scenarioRequiresCamera(scenario);
+    const motionMode = scenarioMotionMode(scenario);
+    const motionRequired = motionMode === true;
+    const motionPermission = this.scenarioMotionPermission(action, motionMode !== false);
+
+    if (requiresCamera) {
+      const cameraGate = this.ensureCameraAllowed(action);
+      if (cameraGate) {
+        return cameraGate;
+      }
+    }
+
+    if (motionRequired && motionPermission.allowed !== true) {
       return this.buildResult(motionPermission.reason === "robot_not_connected" ? "failed" : "rejected", {
         action,
         executed: false,
@@ -223,42 +236,40 @@ export class ToolExecutor {
         message: `Scenario ${scenario.name} did not move: ${motionPermission.reason}`,
         detail: {
           scenario: scenario.name,
-          motionPermission,
-          scenarioMovement: movementNamesFor(scenario.movement)
+          motionPermission
         }
       });
     }
 
     return this.executeScenario(scenario, action, {
       motionPermission,
-      allowSpeech: true
+      allowSpeech: scenarioAllowsSpeech(scenario)
     });
   }
 
   async executeScenario(scenario, action, { motionPermission, allowSpeech } = {}) {
+    const usesMotion = scenarioUsesMotion(scenario);
+    const requiresMotion = scenarioRequiresMotion(scenario);
+    const requiresCamera = scenarioRequiresCamera(scenario);
+    const frames = Array.isArray(scenario.sequence) ? [...scenario.sequence] : [];
+
     if (this.activeScenario) {
       return this.buildResult("rejected", {
         action,
         executed: false,
-        physical: Boolean(scenario.requiresMotion),
+        physical: usesMotion,
         message: `Scenario already running: ${this.activeScenario}`
       });
     }
 
-    if (scenario.requiresCamera) {
-      const cameraGate = this.ensureCameraAllowed(action);
-      if (cameraGate) {
-        return cameraGate;
-      }
-
-      if (!this.cameraInput?.captureSnapshot) {
-        return this.buildResult("failed", {
-          action,
-          executed: false,
-          physical: false,
-          message: "Camera input is not available."
-        });
-      }
+    if (!frames.length) {
+      return this.buildResult("rejected", {
+        action,
+        executed: false,
+        physical: usesMotion,
+        message: `Scenario has no executable sequence: ${scenario.name}`,
+        detail: { scenario: scenario.name }
+      });
     }
 
     const token = ++this.scenarioToken;
@@ -266,33 +277,16 @@ export class ToolExecutor {
     this.log(`STEP 4 SCENARIO_START ${scenario.name}`);
 
     try {
-      if (scenario.requiresCamera) {
-        const status = this.cameraInput?.getCameraStatus?.() ?? {};
-
-        if (!status.running) {
-          const startResult = await this.cameraInput.startCamera?.({ facingMode: "user" });
-
-          if (!startResult?.ok) {
-            return this.buildResult("failed", {
-              action,
-              executed: false,
-              physical: false,
-              message: startResult?.error ?? "Camera could not start for scenario.",
-              detail: {
-                scenario: scenario.name,
-                cameraStatus: sanitizeCameraStatus(startResult?.status)
-              }
-            });
-          }
-        }
-      }
-
       const scenarioArgs = {
-        speech: { text: "", tone: "soft" },
-        movement: [...scenario.movement],
+        name: `scenario_${scenario.name}`,
+        frames,
         scenario: scenario.name,
-        timing: scenario.timing ?? "sequence",
-        iterateMovement: Boolean(scenario.iterateMovement)
+        requiresMotion: usesMotion,
+        cooldownMs: scenario.cooldownMs,
+        interruptible: scenario.interruptible,
+        metadata: {
+          scenario: scenario.name
+        }
       };
       const routeAction = {
         ...action,
@@ -302,10 +296,10 @@ export class ToolExecutor {
       };
 
       const routeResult = await this.executeEmbodiedRoute(routeAction, {
-        physical: Boolean(scenario.requiresMotion),
+        physical: usesMotion,
         allowMotion: motionPermission?.allowed === true,
         allowSpeech,
-        allowCamera: Boolean(scenario.requiresCamera),
+        allowCamera: requiresCamera,
         args: scenarioArgs
       });
       const routeMotion = inspectRouteMotion(routeResult);
@@ -314,14 +308,13 @@ export class ToolExecutor {
         return this.buildResult("rejected", {
           action,
           executed: false,
-          physical: Boolean(scenario.requiresMotion),
+          physical: usesMotion,
           message: `Scenario interrupted: ${scenario.name}`
         });
       }
 
       if (
-        scenario.requiresMotion &&
-        !scenario.requiresCamera &&
+        requiresMotion &&
         (!routeResult || routeMotion.motionSkipped || routeResult.executed === false)
       ) {
         const permissionReason = motionPermission?.allowed === false ? motionPermission.reason : "";
@@ -338,76 +331,35 @@ export class ToolExecutor {
           detail: {
             scenario: scenario.name,
             route: routeResult ?? null,
-            motionPermission,
-            scenarioMovement: movementNamesFor(scenario.movement)
+            motionPermission
           }
         });
       }
 
-      if (!scenario.requiresCamera) {
-        return this.buildResult("completed", {
-          action,
-          executed: routeResult?.executed !== false,
-          physical: Boolean(scenario.requiresMotion),
-          message: `Scenario completed: ${scenario.name}`,
-          detail: {
-            scenario: scenario.name,
-            route: routeResult ?? null,
-            scenarioMovement: movementNamesFor(scenario.movement)
-          }
-        });
-      }
-
-      this.face?.takePicture?.();
-      await wait(Number(scenario.captureDelayMs) || 0);
-
-      if (token !== this.scenarioToken) {
+      if (!routeResult || routeResult.status !== "completed") {
+        const reason = routeFailureReason(routeResult) || "route_not_executed";
         return this.buildResult("rejected", {
           action,
           executed: false,
-          physical: Boolean(scenario.requiresMotion),
-          message: `Scenario interrupted before capture: ${scenario.name}`
-        });
-      }
-
-      const snapshotResult = await this.cameraInput.captureSnapshot({
-        includeDataUrl: true,
-        maxWidth: 640,
-        quality: 0.72
-      });
-
-      if (!snapshotResult.ok) {
-        this.face?.dismissPhoto?.();
-        return this.buildResult("failed", {
-          action,
-          executed: false,
-          physical: Boolean(scenario.requiresMotion),
-          message: snapshotResult.error ?? "Scenario snapshot capture failed.",
+          physical: usesMotion,
+          message: `Scenario ${scenario.name} did not execute: ${reason}`,
           detail: {
             scenario: scenario.name,
             route: routeResult ?? null,
-            cameraStatus: sanitizeCameraStatus(snapshotResult.status)
+            motionPermission
           }
         });
       }
 
-      this.face?.showPhoto?.(snapshotResult.snapshot?.dataUrl, {
-        dismissMs: scenario.previewDismissMs
-      });
-
-      await wait(Math.max(0, Number(scenario.animationMs || 0) - Number(scenario.captureDelayMs || 0)));
-
       return this.buildResult("completed", {
         action,
-        executed: true,
-        physical: Boolean(scenario.requiresMotion),
+        executed: routeResult.executed !== false,
+        physical: usesMotion,
         message: `Scenario completed: ${scenario.name}`,
         detail: {
           scenario: scenario.name,
           route: routeResult ?? null,
-          scenarioMovement: movementNamesFor(scenario.movement),
-          cameraStatus: sanitizeCameraStatus(snapshotResult.status),
-          snapshot: sanitizeSnapshotMetadata(snapshotResult.snapshot)
+          actionDetails: extractRouteActionDetails(routeResult)
         }
       });
     } finally {
@@ -441,7 +393,6 @@ export class ToolExecutor {
       this.voiceOutput?.cancel?.(reason);
       await stopCommandQueueMotion(this.commandQueue, reason);
       this.lifeEngine?.receiveEvent?.({ type: "motion_stop", reason });
-      this.face?.setExpression?.("attentive", 1);
 
       return this.buildResult("completed", {
         action,
@@ -557,16 +508,18 @@ export class ToolExecutor {
         reason: routedAction.reason ?? routedAction.type
       });
 
-      if (!routed || routed.ok === false || routed.status === "rejected") {
+      if (!routed) {
         return null;
       }
 
       const executed = routeResultExecuted(routed);
-      return this.buildResult(executed ? "completed" : "rejected", {
+      const rejected = routed.ok === false || routed.status === "rejected";
+      const completed = !rejected && executed;
+      return this.buildResult(completed ? "completed" : "rejected", {
         action: routedAction,
         executed,
         physical,
-        message: executed
+        message: completed
           ? `Embodied sequence ${routed.sequence ?? routedAction.type} completed.`
           : `Embodied sequence ${routed.sequence ?? routedAction.type} did not execute.`,
         detail: {
@@ -814,6 +767,10 @@ function priorityForRoutedAction(action = {}, { physical = false } = {}) {
 function routeResultExecuted(routed = {}) {
   const result = routed?.result ?? {};
 
+  if (routed?.ok === false || routed?.status === "rejected" || result?.ok === false) {
+    return false;
+  }
+
   if (result.skipped === true || result.interrupted === true) {
     return false;
   }
@@ -823,6 +780,40 @@ function routeResultExecuted(routed = {}) {
   }
 
   return Number(result.executedFrames || 0) > 0;
+}
+
+function scenarioPermissions(scenario = {}) {
+  const permissions = scenario.permissions && typeof scenario.permissions === "object"
+    ? scenario.permissions
+    : {};
+
+  return {
+    motion: permissions.motion === true || permissions.motion === "optional"
+      ? permissions.motion
+      : false,
+    camera: permissions.camera === true,
+    speech: permissions.speech === true
+  };
+}
+
+function scenarioMotionMode(scenario = {}) {
+  return scenarioPermissions(scenario).motion;
+}
+
+function scenarioUsesMotion(scenario = {}) {
+  return scenarioMotionMode(scenario) !== false;
+}
+
+function scenarioRequiresMotion(scenario = {}) {
+  return scenarioMotionMode(scenario) === true;
+}
+
+function scenarioRequiresCamera(scenario = {}) {
+  return scenarioPermissions(scenario).camera === true;
+}
+
+function scenarioAllowsSpeech(scenario = {}) {
+  return scenarioPermissions(scenario).speech === true;
 }
 
 function inspectRouteMotion(routeResult = null) {
@@ -843,70 +834,22 @@ function inspectRouteMotion(routeResult = null) {
   };
 }
 
-function wait(ms) {
-  return new Promise((resolve) => {
-    setTimeout(resolve, Math.max(0, Number(ms) || 0));
-  });
+function routeFailureReason(routeResult = null) {
+  const route = routeResult?.detail?.route ?? routeResult?.detail ?? routeResult;
+  return route?.reason
+    ?? route?.result?.reason
+    ?? route?.result?.skippedFrames?.[0]
+    ?? routeResult?.message
+    ?? "";
 }
 
-function sanitizeCameraStatus(status = {}) {
-  if (!status || typeof status !== "object") {
-    return {
-      supported: false,
-      running: false,
-      facingMode: "unknown",
-      observation: null
-    };
-  }
+function extractRouteActionDetails(routeResult = null) {
+  const details = routeResult?.detail?.route?.result?.details
+    ?? routeResult?.detail?.details
+    ?? routeResult?.result?.details
+    ?? [];
 
-  return {
-    supported: Boolean(status.supported),
-    secureContext: Boolean(status.secureContext),
-    running: Boolean(status.running),
-    facingMode: status.facingMode ?? "unknown",
-    hasStream: Boolean(status.hasStream),
-    lastError: status.lastError ?? null,
-    lastFrameAt: status.lastFrameAt ?? null,
-    lastSnapshotAt: status.lastSnapshotAt ?? null,
-    visionSupported: {
-      faceDetector: Boolean(status.visionSupported?.faceDetector)
-    },
-    observation: status.observation
-      ? {
-          timestamp: status.observation.timestamp ?? null,
-          cameraRunning: Boolean(status.observation.cameraRunning),
-          facingMode: status.observation.facingMode ?? "unknown",
-          detector: status.observation.detector ?? "none",
-          userVisible: Boolean(status.observation.userVisible),
-          faceCount: Number.isFinite(Number(status.observation.faceCount))
-            ? Number(status.observation.faceCount)
-            : null,
-          userPosition: status.observation.userPosition ?? "unknown",
-          userDistance: status.observation.userDistance ?? "unknown",
-          brightness: Number.isFinite(Number(status.observation.brightness))
-            ? Number(status.observation.brightness)
-            : null,
-          motion: status.observation.motion ?? null,
-          note: status.observation.note ?? ""
-        }
-      : null
-  };
-}
-
-function sanitizeSnapshotMetadata(snapshot = null) {
-  if (!snapshot || typeof snapshot !== "object") {
-    return null;
-  }
-
-  return {
-    timestamp: snapshot.timestamp ?? null,
-    facingMode: snapshot.facingMode ?? "unknown",
-    width: Number.isFinite(Number(snapshot.width)) ? Number(snapshot.width) : null,
-    height: Number.isFinite(Number(snapshot.height)) ? Number(snapshot.height) : null,
-    bytesApprox: Number.isFinite(Number(snapshot.bytesApprox)) ? Number(snapshot.bytesApprox) : null,
-    note: snapshot.note ?? "",
-    hasDataUrl: typeof snapshot.dataUrl === "string" && snapshot.dataUrl.startsWith("data:image/")
-  };
+  return Array.isArray(details) ? details.slice(0, 8) : [];
 }
 
 function normalizeShortText(value, maxLength) {
@@ -925,13 +868,14 @@ function stopCommandQueueMotion(commandQueue, reason) {
   return commandQueue?.cancelMotion?.(reason);
 }
 
-function normalizeRunScenarioArgs(args = {}) {
+function normalizeRunScenarioArgs(args = {}, { allowInternalScenario = false } = {}) {
   const nested = args.args && typeof args.args === "object" && !Array.isArray(args.args)
     ? args.args
     : {};
-  const name = normalizeRunScenarioName(
-    args.name ?? args.scenario ?? nested.name ?? nested.scenario
-  );
+  const rawName = args.name ?? args.scenario ?? nested.name ?? nested.scenario;
+  const name = allowInternalScenario
+    ? normalizeScenarioName(rawName) ?? normalizeRunScenarioName(rawName)
+    : normalizeRunScenarioName(rawName);
   const mode = args.mode ?? nested.mode;
 
   return {

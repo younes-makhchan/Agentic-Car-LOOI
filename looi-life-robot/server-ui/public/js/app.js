@@ -371,6 +371,7 @@ let lifeEventsEnabled = false;
 let settingsOpen = false;
 let audioActivityClearTimer = null;
 let interimSpeechTimer = null;
+let poseScenarioLastRun = new Map();
 let latestInterimSpeech = null;
 let bestInterimSpeech = null;
 let lastInterimDispatchedText = "";
@@ -382,8 +383,6 @@ let localVisionWidgetSizePx = loadLocalVisionWidgetSize();
 let lastLogSignature = "";
 
 face = createFaceController(ui.canvas);
-face.setExpression("neutral");
-face.setEyeDirection("center");
 applyLocalVisionWidgetSize(localVisionWidgetSizePx, { persist: false });
 if (ui.useFinalSpeechOnlyToggle) {
   ui.useFinalSpeechOnlyToggle.checked = useFinalSpeechOnly;
@@ -404,14 +403,14 @@ updateProductionChrome();
 ui.productionStartButton.addEventListener("click", () => {
   startProductionRuntime().catch((error) => {
     log(`Local runtime start failed: ${error.message}`, "error");
-    face.setExpression("scared");
+    requestPoseScenario("pose_scared");
   });
 });
 
 ui.localBrainQuickButton.addEventListener("click", () => {
   startLocalBrainProductionMode().catch((error) => {
     log(`Local Brain start failed: ${error.message}`, "error");
-    face.setExpression("scared");
+    requestPoseScenario("pose_scared");
   });
 });
 
@@ -696,7 +695,7 @@ ui.startLocalBrainButton.addEventListener("click", () => {
   primeLiveInputsFromUserGesture();
   startLocalBrainProductionMode().catch((error) => {
     log(`Local Brain live startup failed: ${error.message}`, "error");
-    face.setExpression("scared");
+    requestPoseScenario("pose_scared");
   });
 });
 
@@ -877,7 +876,7 @@ ui.connectEsp32Button.addEventListener("click", async () => {
     }
   } catch (error) {
     log(`Robot connection failed: ${error.message}`, "error");
-    face.setExpression("scared");
+    requestPoseScenario("pose_scared");
   }
 });
 
@@ -925,35 +924,19 @@ ui.manualStopButton.addEventListener("click", async () => {
 });
 
 ui.moveForwardButton.addEventListener("click", () => {
-  queueManualMotion({
-    linear: getSpeedSetting(),
-    angular: 0,
-    label: "manual_forward"
-  });
+  runScenarioFromUi("come_closer").catch((error) => log(`Scenario come_closer failed: ${error.message}`, "warn"));
 });
 
 ui.moveBackwardButton.addEventListener("click", () => {
-  queueManualMotion({
-    linear: -getSpeedSetting(),
-    angular: 0,
-    label: "manual_backward"
-  });
+  runScenarioFromUi("back_up").catch((error) => log(`Scenario back_up failed: ${error.message}`, "warn"));
 });
 
 ui.rotateLeftButton.addEventListener("click", () => {
-  queueManualMotion({
-    linear: 0,
-    angular: -getSpeedSetting(),
-    label: "manual_rotate_left"
-  });
+  runScenarioFromUi("look_left").catch((error) => log(`Scenario look_left failed: ${error.message}`, "warn"));
 });
 
 ui.rotateRightButton.addEventListener("click", () => {
-  queueManualMotion({
-    linear: 0,
-    angular: getSpeedSetting(),
-    label: "manual_rotate_right"
-  });
+  runScenarioFromUi("look_right").catch((error) => log(`Scenario look_right failed: ${error.message}`, "warn"));
 });
 
 ui.happyButton.addEventListener("click", () => {
@@ -988,8 +971,7 @@ ui.simulateAttentionButton.addEventListener("click", () => {
     type: "user_text",
     text: "simulated attention"
   });
-  face?.setExpression?.("attentive", 1);
-  face?.setEyeDirection?.("center");
+  requestPoseScenario("pose_attentive");
   log("Simulated user attention.");
 });
 
@@ -1008,13 +990,13 @@ ui.simulateObstacleButton.addEventListener("click", () => {
 
 ui.simulateBoredomButton.addEventListener("click", () => {
   lifeEngine?.patchState?.({ boredom: 0.9, curiosity: 0.85, mood: "curious" }, "ui_simulate_boredom");
-  face?.setExpression?.("curious", 0.9);
+  requestPoseScenario("pose_curious");
   log("Simulated boredom state.");
 });
 
 ui.simulateLowEnergyButton.addEventListener("click", () => {
   lifeEngine?.patchState?.({ energy: 0.15, mood: "sleepy" }, "ui_simulate_low_energy");
-  face?.setExpression?.("sleepy", 0.9);
+  requestPoseScenario("pose_sleepy");
   log("Simulated low energy state.");
 });
 
@@ -1053,13 +1035,13 @@ ui.scenarioStopButton.addEventListener("click", async () => {
 ui.scenarioBoredButton.addEventListener("click", () => {
   log("Scenario: Ignored / Bored");
   lifeEngine?.patchState?.({ boredom: 0.9, curiosity: 0.85, mood: "curious" }, "ui_scenario_bored_state");
-  face?.setExpression?.("curious", 0.9);
+  requestPoseScenario("pose_curious");
 });
 
 ui.scenarioLowEnergyButton.addEventListener("click", () => {
   log("Scenario: Low Energy");
   lifeEngine?.patchState?.({ energy: 0.15, mood: "sleepy" }, "ui_scenario_low_energy_state");
-  face?.setExpression?.("sleepy", 0.9);
+  requestPoseScenario("pose_sleepy");
 });
 
 ui.scenarioObstacleButton.addEventListener("click", () => {
@@ -1400,6 +1382,7 @@ async function init() {
     analysisIntervalMs: 500,
     logger: (message, level = "info") => log(message, level)
   });
+  scenarioFrameSequencer.setCameraInput?.(cameraInput);
   cameraInput.onStatus(updateCameraUi);
   cameraInput.onObservation(handleCameraObservation);
   cameraInput.onSnapshot(handleCameraSnapshot);
@@ -1743,7 +1726,7 @@ function registerRobotClientCallbacks(client) {
       return;
     }
 
-    face.setExpression("scared");
+    requestPoseScenario("pose_scared");
     log(`${simulatorMode ? "Simulator" : "ESP32"} error: ${message.message ?? "unknown"}`, "error");
   });
 }
@@ -1842,36 +1825,6 @@ async function disableSimulatorMode() {
   log("Simulator mode disabled.");
 }
 
-function queueManualMotion({ linear, angular, label }) {
-  const calibrationSettings = bodyCalibration?.getSettings?.() ?? {};
-  lifeEngine?.receiveEvent({
-    type: "manual_test",
-    label,
-    value: { linear, angular, durationMs: getDurationSetting(), rampMs: calibrationSettings.rampMs }
-  });
-
-  if (lifeEngine?.getState?.().obstacle && linear > 0) {
-    log(`${label} rejected because obstacle is active. Clear obstacle first.`, "warn");
-    return;
-  }
-
-  if (!ensureConnected("Movement skipped because no robot client is connected.")) {
-    return;
-  }
-
-  commandQueue
-    .enqueueMotion({
-      linear,
-      angular,
-      durationMs: getDurationSetting(),
-      rampMs: calibrationSettings.rampMs,
-      label
-    })
-    .catch((error) => {
-      log(`${label} failed: ${error.message}`, "warn");
-    });
-}
-
 function ensureConnected(message) {
   if (!robotClient?.isConnected()) {
     log(message, "warn");
@@ -1900,7 +1853,7 @@ async function immediateStop(reason, message, level = "warn") {
     lifeEngine?.receiveEvent({ type: "motion_stop", reason });
   }
 
-  face.setExpression("attentive");
+  requestPoseScenario("pose_attentive");
   log(message, level);
 }
 
@@ -1971,12 +1924,12 @@ async function handleGatedTranscript(transcript = {}) {
       classification: gateResult.classification,
       suggestedIntent: gateResult.suggestedIntent
     });
-    face?.setExpression?.("attentive", 1);
+    requestPoseScenario("pose_attentive");
   }
 
   if (gateResult.shouldOpenAttention) {
     attentionSystem?.wake?.(gateResult.reason, activeConfig.attentionWindowMs ?? 20000);
-    face.setExpression("attentive", 1);
+    requestPoseScenario("pose_attentive");
   }
 
   if (
@@ -2022,8 +1975,7 @@ async function handleGatedTranscript(transcript = {}) {
   } else if (!gateResult.accepted) {
     log(`Ignored ${source}: ${text} (${gateResult.classification})`);
   } else if (gateResult.shouldTriggerBrain && looiModeEnabled) {
-    face.setExpression("curious", 0.85);
-    face.setEyeDirection("left");
+    requestPoseScenario("pose_curious");
   }
 
   updateAlwaysListeningUi();
@@ -2395,8 +2347,7 @@ async function setAudioLevelMonitorEnabled(enabled) {
 
 function handleVoiceActivity(payload = {}) {
   lifeEngine?.setListening?.(true);
-  face.setExpression("attentive", 0.9);
-  face.setEyeDirection("center");
+  requestPoseScenario("pose_attentive", { minIntervalMs: 1200 });
   if (ui.voiceActivityState) {
     ui.voiceActivityState.textContent = "voice activity";
   }
@@ -2675,7 +2626,7 @@ async function startProductionRuntime() {
 
   ui.runtimeGate.classList.add("runtime-gate--hidden");
   document.body.classList.add("production-ready");
-  face.setExpression("curious");
+  requestPoseScenario("pose_curious");
   log("Local runtime ready. LOOI face is live.");
   updateProductionChrome();
 }
@@ -2767,7 +2718,7 @@ async function startLocalBrainProductionMode() {
     });
   }
 
-  face.setExpression("happy");
+  requestPoseScenario("pose_happy");
   log(
     useGeminiLive
       ? "Gemini Live started: speech-to-speech ears, Gemini audio, camera, LOOI mode, and scenario movement permissions are enabled."
@@ -3411,6 +3362,24 @@ async function runScenarioFromUi(name, args = {}) {
   });
   updateEmbodimentUi();
   return result;
+}
+
+function requestPoseScenario(name, { minIntervalMs = 650 } = {}) {
+  if (!toolExecutor?.executeBridgeAction) {
+    return null;
+  }
+
+  const now = Date.now();
+  const lastAt = Number(poseScenarioLastRun.get(name) || 0);
+  if (now - lastAt < minIntervalMs) {
+    return null;
+  }
+  poseScenarioLastRun.set(name, now);
+
+  return runScenarioFromUi(name).catch((error) => {
+    log(`Pose scenario ${name} failed: ${error.message}`, "warn");
+    return null;
+  });
 }
 
 async function simulatorDemoRoutine() {

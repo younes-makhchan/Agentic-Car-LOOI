@@ -47,10 +47,10 @@ const DRIVE_KEYS = new Set([
   "comfort"
 ]);
 
-// Local instinct layer. It owns fast mood, attention, body language, and safety.
+// Local instinct layer. It owns fast state, attention, drives, and safety.
+// Face/body expression choices live in scenarios, not here.
 export class LifeEngine {
   constructor({
-    face,
     robotClient,
     commandQueue,
     calibration,
@@ -59,7 +59,6 @@ export class LifeEngine {
     logger,
     statusCallback
   } = {}) {
-    this.face = face;
     this.robotClient = robotClient;
     this.commandQueue = commandQueue;
     this.calibration = calibration;
@@ -89,8 +88,6 @@ export class LifeEngine {
     this.reflexTimer = globalThis.setInterval(() => this.tickReflex(), 100);
     this.driveTimer = globalThis.setInterval(() => this.tickDrives(), 500);
 
-    this.face?.setExpression?.(this.state.mood, 0.85);
-    this.face?.setEyeDirection?.("center");
     this.emitStatus();
     this.log("Life Engine started.");
 
@@ -193,7 +190,6 @@ export class LifeEngine {
     this.state.fear = updateDriveValue(this.state.fear, 0.08);
     this.state.comfort = updateDriveValue(this.state.comfort, -0.08);
     setMood(this.state, "shy");
-    this.face?.setExpression?.("shy", 0.9);
     this.emitStatus();
     return until;
   }
@@ -296,8 +292,6 @@ export class LifeEngine {
         this.state.affection = updateDriveValue(this.state.affection, 0.02);
         this.state.curiosity = updateDriveValue(this.state.curiosity, 0.05);
         setMood(this.state, "attentive");
-        this.face?.setExpression?.("attentive", 1);
-        this.face?.setEyeDirection?.("center");
         break;
       case "manual_test":
         this.state.lastInteractionAt = now;
@@ -314,7 +308,6 @@ export class LifeEngine {
         this.state.robotMotorState = "stopped";
         this.state.currentBehavior = "soft_idle";
         setMood(this.state, "attentive");
-        this.face?.setExpression?.("attentive", 1);
         break;
       case "obstacle":
         this.setObstacle(Boolean(nextEvent.value));
@@ -326,7 +319,7 @@ export class LifeEngine {
         this.state.affection = updateDriveValue(this.state.affection, 0.04);
         this.state.comfort = updateDriveValue(this.state.comfort, 0.05);
         this.state.loneliness = updateDriveValue(this.state.loneliness, -0.08);
-        this.face?.setExpression?.("happy", 0.75);
+        setMood(this.state, "happy");
         break;
       case "observation":
         this.applyObservation(
@@ -370,7 +363,6 @@ export class LifeEngine {
       this.state.fear = updateDriveValue(this.state.fear, 0.18);
       this.state.currentBehavior = "scared_stop";
       setMood(this.state, "scared");
-      this.face?.setExpression?.("scared", 1.1);
       this.lastObstacleStopAt = Date.now();
       stopCommandQueueMotion(this.commandQueue, "life_obstacle")?.catch?.((error) => {
         this.log(`Obstacle stop failed: ${error.message}`, "error");
@@ -389,9 +381,6 @@ export class LifeEngine {
       this.state.lastUserSeenAt = Date.now();
       this.state.loneliness = updateDriveValue(this.state.loneliness, -0.08);
       this.state.comfort = updateDriveValue(this.state.comfort, wasVisible ? 0.01 : 0.04);
-    }
-    if (userVisible && ["left", "center", "right"].includes(position)) {
-      this.face?.setEyeDirection?.(position);
     }
     this.emitStatus();
   }
@@ -437,11 +426,6 @@ export class LifeEngine {
 
       if (this.state.mood === "neutral" || this.state.mood === "curious") {
         setMood(this.state, "attentive");
-        this.face?.setExpression?.("attentive", 0.85);
-      }
-
-      if (["left", "center", "right"].includes(userPosition)) {
-        this.face?.setEyeDirection?.(userPosition);
       }
       return;
     }
@@ -467,15 +451,12 @@ export class LifeEngine {
       this.state.curiosity = Math.max(this.state.curiosity, clamp01(value.curiosity ?? 0.82));
       this.state.lastInteractionAt = Date.now() - 20000;
       setMood(this.state, "curious");
-      this.face?.setExpression?.("curious", 0.9);
     }
 
     if (value.kind === "simulate_low_energy") {
       this.state.energy = clamp01(value.energy ?? 0.12);
       this.state.boredom = Math.min(this.state.boredom, 0.25);
       setMood(this.state, "sleepy");
-      this.face?.setExpression?.("sleepy", 0.9);
-      this.face?.setEyeDirection?.("down");
     }
 
     if (typeof value.boredom === "number" && value.kind !== "simulate_boredom") {
@@ -496,8 +477,6 @@ export class LifeEngine {
 
     if (this.state.obstacle) {
       this.state.currentBehavior = "scared_stop";
-      this.face?.setExpression?.("scared", 1.1);
-      this.face?.setEyeDirection?.("center");
 
       if (now - this.lastObstacleStopAt > 1000) {
         this.lastObstacleStopAt = now;
@@ -506,12 +485,6 @@ export class LifeEngine {
         });
       }
     }
-
-    if (this.state.isListening) {
-      this.face?.setExpression?.("attentive", 1);
-      this.face?.setEyeDirection?.("center");
-    }
-
     const recentUserEvent = this.state.recentEvents.find(
       (event) =>
         (event.type === "user_text" || event.type === "user_speech") &&
@@ -521,7 +494,6 @@ export class LifeEngine {
     if (recentUserEvent) {
       this.state.attentionTarget = "user";
       this.state.boredom = 0;
-      this.face?.setExpression?.("attentive", 1);
     }
 
     this.emitStatus();

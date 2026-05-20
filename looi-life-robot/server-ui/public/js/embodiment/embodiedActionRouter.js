@@ -1,5 +1,4 @@
 import { PRIORITY_LEVELS } from "./priorityScheduler.js";
-import { compileMovementFrames } from "./movementCatalog.js";
 
 const ROUTED_ACTIONS = new Set(["run_sequence", "stop"]);
 
@@ -142,99 +141,26 @@ function priorityForAction(action, context) {
 }
 
 function buildRunSequence(args = {}, context = {}, log = () => {}) {
-  const speech = normalizeSpeech({
-    ...args,
-    ...(args.speech && typeof args.speech === "object" && !Array.isArray(args.speech) ? args.speech : {})
-  });
-  const tone = normalizeTone(speech.tone);
-  const expression = normalizeExpression(
-    args.expression?.emotion ?? args.emotion ?? toneToExpression(tone)
-  );
-  const movement = compileMovementFrames(args.movement, {
-    iterate: args.iterateMovement === true
-  });
-  const movementFrames = movement.frames.slice(0, 16);
-  const timing = args.timing === "parallel" ? "parallel" : "sequence";
-  const frames = [
-    {
-      type: "face",
-      expression,
-      intensity: clampNumber(args.expression?.intensity ?? args.intensity, 0, 1.5, 0.82),
-      eyeDirection: "center",
-      durationMs: 60
-    }
-  ];
+  const frames = Array.isArray(args.frames)
+    ? args.frames
+    : Array.isArray(args.sequence)
+      ? args.sequence
+      : [];
 
-  if (movement.ignored.length) {
-    log(`Scenario ignored unknown movement frame group: ${movement.ignored.join(", ")}`, "warn");
+  if (!frames.length) {
+    log("Scenario run_sequence received no frames.", "warn");
   }
-
-  if (speech.text && timing === "parallel") {
-    frames.push({
-      type: "composite",
-      mode: "parallel",
-      durationMs: 0,
-      frames: [
-        {
-          type: "speech",
-          text: speech.text,
-          tone,
-          expression,
-          durationMs: fallbackSpeechDurationMs(speech.text)
-        },
-        ...(movementFrames.length
-          ? [{
-              type: "composite",
-              mode: "sequence",
-              durationMs: 0,
-              frames: movementFrames
-            }]
-          : [])
-      ]
-    });
-  } else {
-    if (movementFrames.length) {
-      frames.push({
-        type: "composite",
-        mode: "sequence",
-        durationMs: 0,
-        frames: movementFrames
-      });
-    }
-
-    if (speech.text) {
-      frames.push({
-        type: "speech",
-        text: speech.text,
-        tone,
-        expression,
-        durationMs: fallbackSpeechDurationMs(speech.text)
-      });
-    }
-  }
-
-  frames.push({
-    type: "face",
-    expression: "attentive",
-    intensity: 0.68,
-    eyeDirection: "center",
-    durationMs: 90,
-    allowSkip: true
-  });
 
   return {
-    name: args.scenario ? `scenario_${args.scenario}` : "scenario_sequence",
-    description: "Private scenario-expanded face/body frame sequence.",
+    name: args.name ?? (args.scenario ? `scenario_${args.scenario}` : "scenario_sequence"),
+    description: "Private scenario frame sequence.",
     priority: context.priority ?? PRIORITY_LEVELS.local_brain_action,
-    interruptible: true,
-    requiresMotion: movement.requestedMotion,
-    cooldownMs: 0,
+    interruptible: args.interruptible !== false,
+    requiresMotion: Boolean(args.requiresMotion),
+    cooldownMs: Math.max(0, Number(args.cooldownMs) || 0),
     tags: ["scenario", "private"],
     frames,
-    metadata: {
-      ignoredMovement: movement.ignored,
-      movement: movement.names
-    }
+    metadata: args.metadata && typeof args.metadata === "object" ? { ...args.metadata } : {}
   };
 }
 
@@ -258,44 +184,4 @@ function buildStopSequence(args = {}) {
       { type: "face", expression: "attentive", intensity: 0.9, eyeDirection: "center", durationMs: 120 }
     ]
   };
-}
-
-function normalizeSpeech(value = {}) {
-  return {
-    text: typeof value.text === "string" ? value.text.trim().slice(0, 240) : "",
-    tone: typeof value.tone === "string" ? value.tone.trim().slice(0, 40) : "soft"
-  };
-}
-
-function normalizeExpression(expression) {
-  return ["neutral", "happy", "curious", "attentive", "sleepy", "scared", "shy", "sad"].includes(expression)
-    ? expression
-    : "attentive";
-}
-
-function normalizeTone(tone) {
-  return ["soft", "happy", "curious", "serious", "shy", "playful"].includes(tone) ? tone : "soft";
-}
-
-function fallbackSpeechDurationMs(text) {
-  return Math.min(3000, Math.max(400, 450 + String(text ?? "").length * 45));
-}
-
-function clampNumber(value, min, max, fallback) {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) {
-    return fallback;
-  }
-  return Math.min(max, Math.max(min, numeric));
-}
-
-function toneToExpression(tone) {
-  return {
-    happy: "happy",
-    playful: "happy",
-    curious: "curious",
-    shy: "shy",
-    serious: "attentive",
-    soft: "attentive"
-  }[tone] ?? "attentive";
 }

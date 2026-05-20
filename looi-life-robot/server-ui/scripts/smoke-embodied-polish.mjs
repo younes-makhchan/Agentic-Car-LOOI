@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { MOVEMENTS, compileMovementFrames } from "../public/js/embodiment/movementCatalog.js";
+import { MOVEMENTS } from "../public/js/embodiment/movementCatalog.js";
 import {
   MODEL_SCENARIO_NAMES,
   getScenarioDefinition
@@ -17,11 +17,8 @@ import { WakeLockManager } from "../public/js/runtime/wakeLockManager.js";
   assert.equal(MODEL_SCENARIO_NAMES.includes(name), true, `missing scenario ${name}`);
   const scenario = getScenarioDefinition(name);
   assert.equal(Boolean(scenario), true, `missing scenario definition ${name}`);
-  const frames = compileMovementFrames(scenario.movement, {
-    iterate: Boolean(scenario.iterateMovement)
-  }).frames;
-  frames
-    .filter((frame) => frame.type === "motion")
+  assert.equal(validateFrameSequence({ name: scenario.name, frames: scenario.sequence }).ok, true, `invalid sequence ${name}`);
+  collectMotionFrames(scenario.sequence)
     .forEach((frame) => {
       assert.ok(Math.abs(frame.linear ?? 0) <= 0.22, `${name} linear too high`);
       assert.ok(Math.abs(frame.angular ?? 0) <= 0.22, `${name} angular too high`);
@@ -204,22 +201,18 @@ const router = new EmbodiedActionRouter({
 const unknown = router.mapActionToSequence({ type: "raw_pwm", args: {} });
 assert.equal(unknown.ok, false);
 
-const movementPlan = compileMovementFrames(["look_left", "look_right", "invented_dance"], { iterate: true });
-assert.equal(movementPlan.names.includes("look_left"), true);
-assert.equal(movementPlan.names.includes("look_right"), true);
-assert.equal(movementPlan.ignored.includes("invented_dance"), true);
-assert.equal(movementPlan.frames.filter((frame) => frame.type === "motion").length > 0, true);
-const canonicalMovement = compileMovementFrames([MOVEMENTS.look_left, MOVEMENTS.move_forward_tiny], { iterate: false });
-assert.equal(canonicalMovement.names.includes("look_left"), true);
-assert.equal(canonicalMovement.names.includes("move_forward_tiny"), true);
+assert.equal(Array.isArray(MOVEMENTS.look_left), true);
+assert.equal(collectMotionFrames(MOVEMENTS.look_left).some((frame) => frame.label === "scenario_tiny_turn_left"), true);
+assert.equal(collectMotionFrames(MOVEMENTS.move_forward_tiny).some((frame) => frame.label === "scenario_tiny_forward"), true);
 
 const sequenceMapped = router.mapActionToSequence({
   type: "run_sequence",
   args: {
-    speech: { text: "I can move softly.", tone: "happy" },
-    movement: [MOVEMENTS.look_left, MOVEMENTS.look_right],
-    iterateMovement: true,
-    timing: "parallel"
+    frames: [
+      { type: "speech", text: "I can move softly.", tone: "happy" },
+      ...MOVEMENTS.look_left,
+      ...MOVEMENTS.look_right
+    ]
   }
 });
 assert.equal(sequenceMapped.ok, true);
@@ -229,10 +222,12 @@ assert.equal(validateFrameSequence(sequenceMapped.sequence).ok, true);
 const sequenceDisarmed = await router.execute({
   type: "run_sequence",
   args: {
-    speech: { text: "I can wiggle softly.", tone: "happy" },
-    movement: [MOVEMENTS.look_left, MOVEMENTS.look_right],
-    iterateMovement: true,
-    timing: "parallel"
+    frames: [
+      { type: "speech", text: "I can wiggle softly.", tone: "happy" },
+      ...MOVEMENTS.look_left,
+      ...MOVEMENTS.look_right
+    ],
+    requiresMotion: true
   },
   source: "local"
 }, {
@@ -248,8 +243,8 @@ assert.equal(spoken.some((entry) => entry.text === "I can wiggle softly."), true
 const sequenceArmed = await router.execute({
   type: "run_sequence",
   args: {
-    movement: [MOVEMENTS.move_forward_tiny],
-    timing: "sequence"
+    frames: [...MOVEMENTS.move_forward_tiny],
+    requiresMotion: true
   },
   source: "local"
 }, {
@@ -277,6 +272,18 @@ console.log(JSON.stringify({
   stops: stops.length,
   faceEvents: faceEvents.length
 }));
+
+function collectMotionFrames(frames = []) {
+  return (Array.isArray(frames) ? frames : []).flatMap((frame) => {
+    if (frame?.type === "motion") {
+      return [frame];
+    }
+    if (frame?.type === "composite") {
+      return collectMotionFrames(frame.frames);
+    }
+    return [];
+  });
+}
 
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));

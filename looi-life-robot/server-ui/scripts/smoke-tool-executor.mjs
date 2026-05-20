@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
-import { MOVEMENTS } from "../public/js/embodiment/movementCatalog.js";
 import { ToolExecutor } from "../public/js/robot/toolExecutor.js";
 
 const logs = [];
 const faceEvents = [];
 const stops = [];
+const motions = [];
 const routedSequences = [];
 const policy = {
   cloudMotionArmed: false,
@@ -49,6 +49,10 @@ const robotClient = {
 };
 
 const commandQueue = {
+  async enqueueMotion(command) {
+    motions.push(command);
+    return { ok: true, command };
+  },
   async stopMotion(reason) {
     stops.push(reason);
     return { ok: true, reason };
@@ -115,6 +119,82 @@ const lifeEngine = {
   }
 };
 
+async function runMockFrames(frames = [], context = {}) {
+  const skippedFrames = [];
+  const details = [];
+  let executedFrames = 0;
+
+  for (const frame of Array.isArray(frames) ? frames : []) {
+    if (frame.type === "motion") {
+      if (context.allowMotion === false) {
+        skippedFrames.push("motion_not_allowed");
+        continue;
+      }
+      await commandQueue.enqueueMotion(frame);
+      executedFrames += 1;
+      continue;
+    }
+
+    if (frame.type === "face") {
+      if (frame.expression) {
+        face.setExpression(frame.expression, frame.intensity ?? 0.8);
+      }
+      if (frame.eyeDirection) {
+        face.setEyeDirection(frame.eyeDirection);
+      }
+      executedFrames += 1;
+      continue;
+    }
+
+    if (frame.type === "action" && typeof frame.action === "function") {
+      const actionResult = await frame.action({
+        face,
+        cameraInput,
+        commandQueue,
+        lifeEngine,
+        allowMotion: context.allowMotion !== false,
+        allowCamera: context.allowCamera === true,
+        wait: async () => {},
+        playFrames: (inlineFrames = []) => runMockFrames(inlineFrames, context),
+        log: (message, level = "info") => logs.push({ level, message })
+      }, frame.args ?? {});
+
+      details.push({
+        type: "action",
+        action: frame.action.name,
+        detail: actionResult?.detail ?? null
+      });
+
+      if (actionResult?.ok === false) {
+        return {
+          ok: false,
+          executed: executedFrames > 0,
+          executedFrames,
+          partial: true,
+          skippedFrames,
+          details,
+          reason: actionResult.reason ?? "action_failed"
+        };
+      }
+
+      executedFrames += 1;
+      continue;
+    }
+
+    executedFrames += 1;
+  }
+
+  return {
+    ok: true,
+    executed: executedFrames > 0,
+    executedFrames,
+    partial: skippedFrames.length > 0,
+    skippedFrames,
+    details,
+    reason: skippedFrames.length ? "partial" : "completed"
+  };
+}
+
 const executor = new ToolExecutor({
   lifeEngine,
   face,
@@ -124,23 +204,12 @@ const executor = new ToolExecutor({
   embodiedActionRouter: {
     async execute(action, context) {
       routedSequences.push({ action, context });
-      if (context.allowMotion === false && action.args?.movement?.some?.((entry) => Array.isArray(entry) && entry.some((frame) => frame.type === "motion"))) {
-        return {
-          ok: true,
-          status: "completed",
-          sequence: action.args?.scenario ?? "scenario_sequence",
-          result: {
-            executed: false,
-            partial: true,
-            skippedFrames: ["motion_not_allowed"]
-          }
-        };
-      }
+      const result = await runMockFrames(action.args?.frames, context);
       return {
         ok: true,
         status: "completed",
-        sequence: action.args?.scenario ?? "scenario_sequence",
-        result: { executed: true, executedFrames: 1 }
+        sequence: action.args?.name ?? action.args?.scenario ?? "scenario_sequence",
+        result
       };
     }
   },
@@ -167,6 +236,24 @@ const rejectedLegacy = await executor.executeBridgeAction({
 assert.equal(rejectedLegacy.status, "rejected");
 assert.match(rejectedLegacy.message, /Unknown action type/i);
 
+const rejectedInternalFromGemini = await executor.executeBridgeAction({
+  id: "internal_pose_gemini",
+  source: "gemini_live",
+  type: "run_scenario",
+  args: { name: "pose_happy" }
+});
+assert.equal(rejectedInternalFromGemini.status, "rejected");
+
+const internalPose = await executor.executeBridgeAction({
+  id: "internal_pose_ui",
+  source: "local",
+  type: "run_scenario",
+  args: { name: "pose_happy" }
+});
+assert.equal(internalPose.status, "completed");
+assert.equal(internalPose.detail.scenario, "pose_happy");
+assert.equal(faceEvents.some((event) => event.type === "expression" && event.expression === "happy"), true);
+
 const disarmedScenario = await executor.executeBridgeAction({
   id: "scenario_disarmed",
   source: "gemini_live",
@@ -176,7 +263,7 @@ const disarmedScenario = await executor.executeBridgeAction({
 assert.equal(disarmedScenario.status, "rejected");
 assert.equal(disarmedScenario.executed, false);
 assert.match(disarmedScenario.message, /local_motion_not_armed/i);
-assert.equal(routedSequences.length, 0);
+assert.equal(routedSequences.length, 1);
 
 policy.localMotionArmed = true;
 const bodyScenario = await executor.executeBridgeAction({
@@ -187,8 +274,9 @@ const bodyScenario = await executor.executeBridgeAction({
 });
 assert.equal(bodyScenario.status, "completed");
 assert.equal(bodyScenario.physical, true);
-assert.deepEqual(bodyScenario.detail.scenarioMovement, ["look_left", "look_right", "move_forward_tiny", "move_backward_tiny"]);
-assert.equal(routedSequences.at(-1).action.args.movement.includes(MOVEMENTS.look_left), true);
+assert.equal("scenarioMovement" in bodyScenario.detail, false);
+assert.equal(routedSequences.at(-1).action.args.frames.some((frame) => frame.label === "scenario_tiny_turn_left"), true);
+assert.equal(motions.some((motion) => motion.label === "scenario_tiny_turn_left"), true);
 
 policy.localCameraAllowed = true;
 const photoScenario = await executor.executeBridgeAction({
@@ -199,6 +287,7 @@ const photoScenario = await executor.executeBridgeAction({
 });
 assert.equal(photoScenario.status, "completed");
 assert.equal(photoScenario.detail.scenario, "take_picture");
+assert.equal(photoScenario.detail.actionDetails.some((entry) => entry.action === "photoPoseAndCapture"), true);
 assert.equal(cameraCalls.some((call) => call.type === "snapshot"), true);
 assert.equal(faceEvents.some((event) => event.type === "take_picture"), true);
 assert.equal(faceEvents.some((event) => event.type === "show_photo"), true);
