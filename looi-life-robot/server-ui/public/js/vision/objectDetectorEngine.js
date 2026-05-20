@@ -144,6 +144,9 @@ export class ObjectDetectorEngine {
 
       this.ready = Boolean(this.detector);
       this.lastError = null;
+      this.log(
+        `detector ready model=${this.modelName} threshold=${this.scoreThreshold.toFixed(2)} maxResults=${this.maxResults}`
+      );
       this.emitStatus();
       return this.getStatus();
     } catch (error) {
@@ -166,6 +169,7 @@ export class ObjectDetectorEngine {
     }
 
     this.running = true;
+    this.log(`detector started intervalMs=${this.detectionIntervalMs}`);
     this.emitStatus();
     this.scheduleNextDetection(0);
     return this.getStatus();
@@ -174,6 +178,7 @@ export class ObjectDetectorEngine {
   stop() {
     this.running = false;
     this.clearTimer();
+    this.log("detector stopped");
     this.emitStatus();
     return this.getStatus();
   }
@@ -195,6 +200,7 @@ export class ObjectDetectorEngine {
   setScoreThreshold(value) {
     this.scoreThreshold = clampNumber(value, 0.05, 0.99, this.scoreThreshold);
     this.detector?.setOptions?.({ scoreThreshold: this.scoreThreshold });
+    this.log(`threshold set ${this.scoreThreshold.toFixed(2)}`);
     this.emitStatus();
     return this.scoreThreshold;
   }
@@ -202,6 +208,7 @@ export class ObjectDetectorEngine {
   setMaxResults(value) {
     this.maxResults = clampInteger(value, 1, 30, this.maxResults);
     this.detector?.setOptions?.({ maxResults: this.maxResults });
+    this.log(`maxResults set ${this.maxResults}`);
     this.emitStatus();
     return this.maxResults;
   }
@@ -211,6 +218,7 @@ export class ObjectDetectorEngine {
     this.detector?.setOptions?.({
       categoryAllowlist: this.categoryAllowlist.length ? this.categoryAllowlist : undefined
     });
+    this.log(`allowlist set ${this.categoryAllowlist.length ? this.categoryAllowlist.join(",") : "all"}`);
     this.emitStatus();
     return [...this.categoryAllowlist];
   }
@@ -234,6 +242,7 @@ export class ObjectDetectorEngine {
     this.lastResult = null;
     this.lastDetectionAt = null;
     this.lastError = null;
+    this.log(`model switching model=${this.modelName}`);
     this.emitStatus();
 
     if (wasRunning) {
@@ -265,6 +274,7 @@ export class ObjectDetectorEngine {
       this.lastDetectionAt = Date.now();
       this.lastResult = result;
       this.lastError = null;
+      this.log(`detected count=${result.detections.length} objects=${summarizeDetectionsForLog(result.detections)}`);
       this.emitDetections(result);
       this.emitStatus();
       return result;
@@ -426,7 +436,7 @@ export class ObjectDetectorEngine {
 
   log(message, level = "info") {
     if (typeof this.logger === "function") {
-      this.logger(`Object detector: ${message}`, level);
+      this.logger(`[mediapipe] ${message}`, level);
     }
   }
 }
@@ -518,6 +528,21 @@ function addCallback(set, callback) {
 
 function performanceNow() {
   return Number(globalThis.performance?.now?.() ?? Date.now());
+}
+
+function summarizeDetectionsForLog(detections = []) {
+  if (!Array.isArray(detections) || detections.length === 0) {
+    return "none";
+  }
+
+  return detections
+    .slice(0, 6)
+    .map((detection) => {
+      const confidence = Number(detection.confidence);
+      const confidenceText = Number.isFinite(confidence) ? confidence.toFixed(2) : "n/a";
+      return `${detection.label}:${confidenceText}:${detection.position ?? "unknown"}:${detection.distance ?? "unknown"}`;
+    })
+    .join(",");
 }
 
 function clampInteger(value, min, max, fallback) {

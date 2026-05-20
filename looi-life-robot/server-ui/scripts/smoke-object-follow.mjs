@@ -10,7 +10,7 @@ import { FollowTargetController } from "../public/js/vision/followTargetControll
 import { VisionScenarioManager } from "../public/js/vision/visionScenarioManager.js";
 import { validateBrainAction, LOCAL_BRAIN_ALLOWED_ACTIONS } from "../public/js/localBrain/actionParser.js";
 import { ToolExecutor } from "../public/js/robot/toolExecutor.js";
-import { setVisionIndicator } from "../public/js/ui/faceCanvas.js";
+import { setVisionIndicator, startFollow, stopFollow } from "../public/js/ui/faceCanvas.js";
 
 const baseTime = Date.now();
 
@@ -47,6 +47,7 @@ function detectionResult(offsetMs, detections) {
 function createVisionRuntime({ policy = {} } = {}) {
   const events = [];
   const motions = [];
+  const scenarioCalls = [];
   const tracker = new ObjectTracker({ maxLostMs: 2000 });
   const visionState = new VisionState();
   const commandQueue = {
@@ -74,12 +75,22 @@ function createVisionRuntime({ policy = {} } = {}) {
     },
     cancel() {}
   };
+  const scenarioRunner = (name, args = {}) => {
+    scenarioCalls.push({ name, args });
+    return Promise.resolve({
+      status: "completed",
+      executed: true,
+      physical: true,
+      message: `scenario ${name} completed`
+    });
+  };
   const controller = new FollowTargetController({
     visionState,
     objectTracker: tracker,
     commandQueue,
     eventBus,
     voiceOutput,
+    scenarioRunner,
     lifeEngine: { getState: () => ({ obstacle: false, stopRespectUntil: 0 }) },
     getPolicy: () => ({
       localMotionArmed: false,
@@ -92,7 +103,7 @@ function createVisionRuntime({ policy = {} } = {}) {
     })
   });
 
-  return { tracker, visionState, controller, commandQueue, eventBus, voiceOutput, events, motions };
+  return { tracker, visionState, controller, commandQueue, eventBus, voiceOutput, events, motions, scenarioCalls };
 }
 
 function updateVision({ tracker, visionState }, result) {
@@ -137,17 +148,14 @@ function updateVision({ tracker, visionState }, result) {
 
 {
   const runtime = createVisionRuntime();
-  const leftMotion = runtime.controller.computeMotionForTarget({ label: "apple", centerX: 0.2, distance: "medium" });
-  const rightMotion = runtime.controller.computeMotionForTarget({ label: "apple", centerX: 0.8, distance: "medium" });
-  const forwardMotion = runtime.controller.computeMotionForTarget({ label: "apple", centerX: 0.5, distance: "far" });
-  assert.ok(leftMotion.angular < 0);
-  assert.ok(rightMotion.angular > 0);
-  assert.ok(forwardMotion.linear > 0);
+  assert.equal(runtime.controller.computeScenarioForTarget({ label: "apple", centerX: 0.2 }), "look_left");
+  assert.equal(runtime.controller.computeScenarioForTarget({ label: "apple", centerX: 0.8 }), "look_right");
+  assert.equal(runtime.controller.computeScenarioForTarget({ label: "apple", centerX: 0.5, distance: "far" }), null);
 
   updateVision(runtime, detectionResult(0, [detection("apple", 0.2)]));
   runtime.controller.start({ label: "apple" });
   runtime.controller.tick();
-  assert.equal(runtime.motions.length, 0, "disarmed follow must not enqueue movement");
+  assert.equal(runtime.scenarioCalls.length, 0, "disarmed follow must not run steering scenarios");
   runtime.controller.stop("test_stop");
 }
 
@@ -162,8 +170,10 @@ function updateVision({ tracker, visionState }, result) {
   updateVision(runtime, detectionResult(0, [detection("apple", 0.2)]));
   runtime.controller.start({ label: "apple" });
   runtime.controller.tick();
-  assert.equal(runtime.motions.length, 1);
-  assert.match(runtime.motions[0].label, /follow_target_apple_left/);
+  assert.equal(runtime.scenarioCalls.length, 1);
+  assert.equal(runtime.scenarioCalls[0].name, "look_left");
+  assert.equal(runtime.scenarioCalls[0].args.source, "vision_follow");
+  assert.equal(runtime.scenarioCalls[0].args.targetLabel, "apple");
   runtime.controller.stop("test_stop");
 }
 
@@ -180,7 +190,7 @@ function updateVision({ tracker, visionState }, result) {
   updateVision(runtime, detectionResult(3000, []));
   runtime.controller.tick();
   assert.ok(runtime.events.some((event) => event.type === "vision_target_lost"));
-  assert.match(runtime.voiceOutput.spoken[0].text, /can't see the apple/);
+  assert.equal(runtime.voiceOutput.spoken.length, 0, "lost target should update metadata/event without local speech");
   runtime.controller.stop("test_stop");
 }
 
@@ -264,12 +274,12 @@ function updateVision({ tracker, visionState }, result) {
     args: { name: "follow_target", label: "apple" }
   });
   assert.equal(setResult.status, "completed");
-  const rejectedStop = await executor.executeBridgeAction({
+  const geminiStop = await executor.executeBridgeAction({
     type: "run_scenario",
     source: "gemini_live",
     args: { name: "stop_following", reason: "conversation_turn" }
   });
-  assert.equal(rejectedStop.status, "rejected");
+  assert.equal(geminiStop.status, "completed");
   const stopResult = await executor.executeBridgeAction({
     type: "run_scenario",
     source: "local_brain",
@@ -294,10 +304,16 @@ function updateVision({ tracker, visionState }, result) {
     objectTracker: runtime.tracker
   });
   assert.equal(context.objects[0].label, "cup");
+  assert.equal(context.objects[0].position, "center");
+  assert.equal(Object.hasOwn(context.objects[0], "confidence"), false);
+  assert.equal(Object.hasOwn(context.objects[0], "distance"), false);
+  assert.equal(Object.hasOwn(context.objects[0], "lastSeenMs"), false);
   assert.equal(context.visibleLabels, "cup");
   assert.equal(Object.hasOwn(context, "summary"), false);
 }
 
 assert.equal(typeof setVisionIndicator, "function");
+assert.equal(typeof startFollow, "function");
+assert.equal(typeof stopFollow, "function");
 
 console.log("smoke:object-follow passed");

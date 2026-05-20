@@ -1,10 +1,6 @@
 import { canonicalObjectLabel } from "./objectLabelUtils.js";
 
-const MODE_SPEEDS = {
-  cautious: { linear: 0.1, angular: 0.12, durationMs: 160, rampMs: 140 },
-  gentle: { linear: 0.12, angular: 0.14, durationMs: 180, rampMs: 140 },
-  curious: { linear: 0.16, angular: 0.18, durationMs: 220, rampMs: 160 }
-};
+const FOLLOW_MODES = new Set(["cautious", "gentle", "curious"]);
 
 export class FollowTargetController {
   constructor({
@@ -15,6 +11,7 @@ export class FollowTargetController {
     safetyGate,
     eventBus,
     voiceOutput,
+    scenarioRunner,
     getPolicy,
     logger,
     tickMs = 200,
@@ -27,6 +24,7 @@ export class FollowTargetController {
     this.safetyGate = safetyGate;
     this.eventBus = eventBus;
     this.voiceOutput = voiceOutput;
+    this.scenarioRunner = scenarioRunner;
     this.getPolicy = getPolicy;
     this.logger = logger;
     this.tickMs = clampNumber(tickMs, 100, 1000, 200);
@@ -41,6 +39,7 @@ export class FollowTargetController {
     this.lastStopAt = 0;
     this.lostAnnounced = false;
     this.paused = false;
+    this.lastScenarioName = null;
   }
 
   start({ label, trackId = null, mode = "gentle" } = {}) {
@@ -55,7 +54,7 @@ export class FollowTargetController {
 
     this.targetLabel = targetLabel || this.targetLabel;
     this.targetTrackId = trackId ?? this.targetTrackId;
-    this.mode = MODE_SPEEDS[mode] ? mode : "gentle";
+    this.mode = FOLLOW_MODES.has(mode) ? mode : "gentle";
     this.running = true;
     this.paused = false;
     this.lostAnnounced = false;
@@ -74,6 +73,7 @@ export class FollowTargetController {
       reason: "follow_started"
     });
     this.eventBus?.publish?.("vision_follow_started", this.getTarget(), { source: "vision" });
+    this.log(`[mediapipe] follow started target=${this.targetLabel} track=${this.targetTrackId ?? "none"} mode=${this.mode}`);
     this.scheduleTick();
     return {
       ok: true,
@@ -96,6 +96,8 @@ export class FollowTargetController {
     }, { source: "vision" });
     this.targetLabel = null;
     this.targetTrackId = null;
+    this.lastScenarioName = null;
+    this.log(`[mediapipe] follow stopped reason=${reason}`);
     return {
       ok: true,
       reason,
@@ -147,36 +149,38 @@ export class FollowTargetController {
       reason: "target_visible"
     });
 
-    const motion = this.computeMotionForTarget(track);
-    if (!motion) {
+    const scenarioName = this.computeScenarioForTarget(track);
+    if (!scenarioName) {
+      this.lastScenarioName = null;
       return this.getStatus();
     }
 
     const permission = this.canMove();
     if (!permission.allowed) {
-      this.log(`Follow target motion held: ${permission.reason}`, "debug");
+      this.log(`[mediapipe] follow scenario held target=${track.label} scenario=${scenarioName} reason=${permission.reason}`, "debug");
       return {
         ...this.getStatus(),
-        motionHeldReason: permission.reason
+        scenarioHeldReason: permission.reason
       };
     }
 
     const now = Date.now();
-    if (now - this.lastMoveAt < 320) {
+    if (now - this.lastMoveAt < 420) {
       return this.getStatus();
     }
 
     this.lastMoveAt = now;
-    this.commandQueue?.enqueueMotion?.(motion)?.catch?.((error) => {
-      this.log(`Follow target motion failed: ${error.message}`, "warn");
-    });
-    this.eventBus?.publish?.("vision_follow_motion", {
+    this.lastScenarioName = scenarioName;
+    this.runFollowScenario(scenarioName, track);
+    this.eventBus?.publish?.("vision_follow_scenario", {
       target: this.getTarget(),
-      motion
+      scenario: scenarioName,
+      centerX: track.centerX,
+      position: track.position
     }, { source: "vision" });
     return {
       ...this.getStatus(),
-      lastMotion: motion
+      lastScenario: scenarioName
     };
   }
 
@@ -200,6 +204,7 @@ export class FollowTargetController {
       lastSeenAt: this.lastSeenAt,
       lostAnnounced: this.lostAnnounced,
       paused: this.paused,
+      lastScenarioName: this.lastScenarioName,
       motionAllowed: this.canMove().allowed
     };
   }
@@ -208,7 +213,7 @@ export class FollowTargetController {
     return Boolean(this.running);
   }
 
-  setRobotInterfaces({ commandQueue, lifeEngine } = {}) {
+  setRobotInterfaces({ commandQueue, lifeEngine, scenarioRunner } = {}) {
     if (commandQueue) {
       this.commandQueue = commandQueue;
     }
@@ -216,53 +221,52 @@ export class FollowTargetController {
     if (lifeEngine) {
       this.lifeEngine = lifeEngine;
     }
+
+    if (scenarioRunner) {
+      this.scenarioRunner = scenarioRunner;
+    }
   }
 
-  computeMotionForTarget(track = {}) {
-    const policy = this.policy();
-    const base = MODE_SPEEDS[this.mode] ?? MODE_SPEEDS.gentle;
-    const maxSpeed = clampNumber(policy.maxObjectFollowSpeed, 0.05, 0.18, 0.18);
-    const linear = Math.min(base.linear, maxSpeed);
-    const angular = Math.min(base.angular, maxSpeed);
+  computeScenarioForTarget(track = {}) {
     const centerX = Number(track.centerX ?? 0.5);
-    const durationMs = base.durationMs;
-    const rampMs = base.rampMs;
 
     if (centerX < 0.42) {
-      return {
-        linear: 0,
-        angular: -angular,
-        durationMs,
-        rampMs,
-        label: `follow_target_${track.label}_left`
-      };
+      return "look_left";
     }
 
     if (centerX > 0.58) {
-      return {
-        linear: 0,
-        angular,
-        durationMs,
-        rampMs,
-        label: `follow_target_${track.label}_right`
-      };
-    }
-
-    if (track.distance === "far") {
-      return {
-        linear,
-        angular: 0,
-        durationMs,
-        rampMs,
-        label: `follow_target_${track.label}_forward`
-      };
-    }
-
-    if (track.distance === "near") {
-      return null;
+      return "look_right";
     }
 
     return null;
+  }
+
+  runFollowScenario(name, track = {}) {
+    if (typeof this.scenarioRunner !== "function") {
+      this.log(`[mediapipe] follow scenario skipped scenario=${name} reason=scenario_runner_unavailable`, "warn");
+      return;
+    }
+
+    this.log(`[mediapipe] follow scenario ${name} target=${track.label ?? this.targetLabel} centerX=${formatNumber(track.centerX)}`);
+    const result = this.scenarioRunner(name, {
+      source: "vision_follow",
+      reason: `mediapipe_follow:${name}`,
+      targetLabel: track.label ?? this.targetLabel,
+      trackId: track.id ?? this.targetTrackId ?? null
+    });
+
+    Promise.resolve(result).then((scenarioResult) => {
+      if (!scenarioResult || scenarioResult.status === "completed") {
+        return;
+      }
+
+      this.log(
+        `[mediapipe] follow scenario not executed scenario=${name} status=${scenarioResult.status} message=${scenarioResult.message ?? ""}`,
+        "warn"
+      );
+    }).catch((error) => {
+      this.log(`[mediapipe] follow scenario failed scenario=${name} error=${error.message}`, "warn");
+    });
   }
 
   handleTargetLost(lostForMs) {
@@ -285,21 +289,12 @@ export class FollowTargetController {
     }
 
     this.lostAnnounced = true;
-    const message = `I can't see the ${label} anymore. Can you show it to me?`;
+    this.log(`[mediapipe] target lost label=${label} lostForMs=${Math.round(lostForMs)}`, "warn");
     this.eventBus?.publish?.("vision_target_lost", {
       label,
       targetLabel: label,
-      lostForMs,
-      message
+      lostForMs
     }, { source: "vision", priority: 4 });
-
-    if (this.policy().localSpeechAllowed !== false) {
-      this.voiceOutput?.speak?.({
-        text: message,
-        tone: "curious",
-        interrupt: true
-      })?.catch?.((error) => this.log(`Lost target speech failed: ${error.message}`, "warn"));
-    }
   }
 
   setTarget(labelOrTrack) {
@@ -417,7 +412,7 @@ export class FollowTargetController {
 
   log(message, level = "info") {
     if (typeof this.logger === "function") {
-      this.logger(`Follow target: ${message}`, level);
+      this.logger(`${message}`, level);
     }
   }
 }
@@ -425,4 +420,9 @@ export class FollowTargetController {
 function clampNumber(value, min, max, fallback) {
   const numeric = Number(value);
   return Number.isFinite(numeric) ? Math.min(max, Math.max(min, numeric)) : fallback;
+}
+
+function formatNumber(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric.toFixed(2) : "unknown";
 }

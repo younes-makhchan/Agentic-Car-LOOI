@@ -54,11 +54,8 @@ function compactObject(object = {}) {
   return {
     label: canonicalObjectLabel(object.label),
     visible: Boolean(object.visible),
-    confidence: finiteOrNull(object.confidence),
     position: object.position ?? "unknown",
-    distance: object.distance ?? "unknown",
-    trackId: object.trackId ?? object.id ?? null,
-    lastSeenMs: finiteOrNull(object.lastSeenMs)
+    trackId: object.trackId ?? object.id ?? null
   };
 }
 
@@ -67,7 +64,6 @@ function compactActiveTarget(target = {}) {
     label: canonicalObjectLabel(target.label),
     visible: Boolean(target.visible),
     position: target.position ?? "unknown",
-    distance: target.distance ?? "unknown",
     trackId: target.trackId ?? null,
     lostForMs: finiteOrNull(target.lostForMs)
   };

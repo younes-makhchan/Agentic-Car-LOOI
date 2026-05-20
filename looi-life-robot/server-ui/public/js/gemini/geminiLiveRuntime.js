@@ -1228,11 +1228,8 @@ function compactVisionContext(vision = {}, { recentObjectReference = null, reaso
     ? vision.objects.slice(0, 12).map((object) => ({
         label: shortText(object.label, 80),
         visible: Boolean(object.visible),
-        confidence: finiteOrNull(object.confidence),
         position: shortText(object.position, 40),
-        distance: shortText(object.distance, 40),
-        trackId: shortText(object.trackId, 80),
-        lastSeenMs: finiteOrNull(object.lastSeenMs)
+        trackId: shortText(object.trackId, 80)
       }))
     : [];
   const followScenarioActive = Boolean(
@@ -1253,7 +1250,6 @@ function compactVisionContext(vision = {}, { recentObjectReference = null, reaso
           label: shortText(vision.activeTarget.label, 80),
           visible: Boolean(vision.activeTarget.visible),
           position: shortText(vision.activeTarget.position, 40),
-          distance: shortText(vision.activeTarget.distance, 40),
           trackId: shortText(vision.activeTarget.trackId, 80),
           lostForMs: finiteOrNull(vision.activeTarget.lostForMs)
       }
@@ -1291,8 +1287,7 @@ function stableVisionSignature(payload = {}) {
           .map((object) => ({
             label: object.label,
             visible: Boolean(object.visible),
-            position: object.position,
-            distance: object.distance
+            position: object.position
           }))
           .sort(compareVisionSignatureObjects)
       : [],
@@ -1300,8 +1295,7 @@ function stableVisionSignature(payload = {}) {
       ? {
           label: payload.activeTarget.label,
           visible: Boolean(payload.activeTarget.visible),
-          position: payload.activeTarget.position,
-          distance: payload.activeTarget.distance
+          position: payload.activeTarget.position
         }
       : null,
     scenario: payload.scenario
@@ -1327,7 +1321,6 @@ function compareVisionSignatureObjects(a, b) {
   return [
     String(a.label ?? "").localeCompare(String(b.label ?? "")),
     String(a.position ?? "").localeCompare(String(b.position ?? "")),
-    String(a.distance ?? "").localeCompare(String(b.distance ?? "")),
     Number(a.visible) - Number(b.visible)
   ].find((value) => value !== 0) ?? 0;
 }

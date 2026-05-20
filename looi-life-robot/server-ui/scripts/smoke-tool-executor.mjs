@@ -293,10 +293,12 @@ assert.equal(faceEvents.some((event) => event.type === "take_picture"), true);
 assert.equal(faceEvents.some((event) => event.type === "show_photo"), true);
 
 const followStarted = [];
+let followRunning = false;
 executor.setVisionControllers({
   visionScenarioManager: {
     async startFollowTarget(payload) {
       followStarted.push(payload);
+      followRunning = true;
       return {
         status: "completed",
         executed: true,
@@ -305,14 +307,16 @@ executor.setVisionControllers({
       };
     },
     stopFollowing(reason) {
+      followRunning = false;
       return { ok: true, reason };
     }
   },
   followTargetController: {
     isRunning() {
-      return true;
+      return followRunning;
     },
     stop(reason) {
+      followRunning = false;
       return { ok: true, reason };
     }
   }
@@ -326,13 +330,43 @@ const followScenario = await executor.executeBridgeAction({
 assert.equal(followScenario.status, "completed");
 assert.equal(followStarted.at(-1).label, "bottle");
 
-const rejectedFollowStop = await executor.executeBridgeAction({
-  id: "follow_stop_rejected",
+const routesBeforeFollowBlock = routedSequences.length;
+const blockedWhileFollowing = await executor.executeBridgeAction({
+  id: "blocked_while_following",
+  source: "gemini_live",
+  type: "run_scenario",
+  args: { name: "back_up" }
+});
+assert.equal(blockedWhileFollowing.status, "rejected");
+assert.match(blockedWhileFollowing.message, /blocked until following stops/i);
+assert.equal(routedSequences.length, routesBeforeFollowBlock);
+
+const visionFollowTurn = await executor.executeBridgeAction({
+  id: "vision_follow_left",
+  source: "vision_follow",
+  type: "run_scenario",
+  args: { name: "look_left" }
+});
+assert.equal(visionFollowTurn.status, "completed");
+assert.equal(routedSequences.at(-1).action.source, "vision_follow");
+assert.equal(routedSequences.at(-1).action.args.scenario, "look_left");
+
+const rejectedVisionFollowScenario = await executor.executeBridgeAction({
+  id: "vision_follow_bad",
+  source: "vision_follow",
+  type: "run_scenario",
+  args: { name: "take_picture" }
+});
+assert.equal(rejectedVisionFollowScenario.status, "rejected");
+assert.match(rejectedVisionFollowScenario.message, /only run steering scenarios/i);
+
+const activeFollowStop = await executor.executeBridgeAction({
+  id: "follow_stop_active",
   source: "gemini_live",
   type: "run_scenario",
   args: { name: "stop_following", reason: "conversation_continues" }
 });
-assert.equal(rejectedFollowStop.status, "rejected");
+assert.equal(activeFollowStop.status, "completed");
 
 executor.getRuntimeContext = () => ({
   geminiLive: { lastInputTranscript: "stop following it" }

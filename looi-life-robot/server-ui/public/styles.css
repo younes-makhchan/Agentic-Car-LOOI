@@ -76,6 +76,8 @@ body {
   --soft-close-time: 420ms;
   --sleep-time: 700ms;
   --photo-time: 2400ms;
+  --follow-open-time: 900ms;
+  --follow-stop-time: 800ms;
   --look-x: 0px;
   --look-scale-y: 1;
   --glow-dir: 1;
@@ -225,6 +227,63 @@ body {
   border-radius: 3px;
   background: #113434;
   box-shadow: inset 0 0 0 3px #f7f7f7;
+}
+
+.looi-follow-target {
+  position: absolute;
+  z-index: 5;
+  left: 50%;
+  bottom: 7%;
+  width: clamp(120px, 15vw, 210px);
+  height: clamp(210px, 24vw, 340px);
+  opacity: 0;
+  transform: translate(-50%, 130%) rotate(-38deg) scale(0.9);
+  transform-origin: 50% 78%;
+  pointer-events: none;
+}
+
+.looi-follow-target::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: 62%;
+  aspect-ratio: 1;
+  border: clamp(8px, 1vw, 14px) solid #8fa4d4;
+  border-radius: 50%;
+  transform: translateX(-50%);
+  background: rgba(220, 230, 248, 0.65);
+  box-shadow:
+    0 0 14px rgba(49, 216, 255, 0.65),
+    inset 0 0 12px rgba(255, 255, 255, 0.65);
+}
+
+.looi-follow-target::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 44%;
+  width: 22%;
+  height: 48%;
+  border-radius: 999px;
+  transform: translateX(-50%);
+  background:
+    linear-gradient(180deg, #4a67ad 0 23%, #8fa4d4 24% 34%, #4a67ad 35% 45%, #ffc14d 46% 100%);
+  box-shadow: 0 0 10px rgba(49, 216, 255, 0.45);
+}
+
+.looi-follow-shine {
+  position: absolute;
+  z-index: 6;
+  left: 42%;
+  top: 10%;
+  width: 20%;
+  height: 8%;
+  border-radius: 999px;
+  border-top: 5px solid rgba(255, 255, 255, 0.85);
+  opacity: 0;
+  transform: rotate(8deg);
+  pointer-events: none;
 }
 
 .looi-photo-preview {
@@ -386,6 +445,39 @@ body {
 
 .looi-eye-system.is-taking-picture .looi-flash-screen {
   animation: looiPhotoFlash var(--photo-time) linear both;
+}
+
+.looi-eye-system.is-follow-opening .looi-follow-shine,
+.looi-eye-system.is-following .looi-follow-shine {
+  opacity: 1;
+}
+
+.looi-eye-system.is-follow-stopping .looi-follow-shine {
+  opacity: 0;
+}
+
+.looi-eye-system.is-follow-opening .looi-eyes {
+  animation: looiFollowOpenEyes var(--follow-open-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-follow-opening .looi-follow-target {
+  animation: looiFollowTargetOpen var(--follow-open-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-following .looi-eyes {
+  animation: looiFollowEyesLoop 1800ms cubic-bezier(0.45, 0, 0.2, 1) infinite;
+}
+
+.looi-eye-system.is-following .looi-follow-target {
+  animation: looiFollowTargetLoop 1800ms cubic-bezier(0.45, 0, 0.2, 1) infinite;
+}
+
+.looi-eye-system.is-follow-stopping .looi-eyes {
+  animation: looiFollowStopEyes var(--follow-stop-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+
+.looi-eye-system.is-follow-stopping .looi-follow-target {
+  animation: looiFollowTargetStop var(--follow-stop-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
 }
 
 .looi-eyes[data-expression="happy"] {
@@ -626,6 +718,114 @@ body {
     transform: translate(calc(var(--glow-dir) * 14px), 12px);
     filter: blur(5px);
     opacity: 0.9;
+  }
+}
+
+@keyframes looiFollowOpenEyes {
+  0% {
+    transform: translateX(var(--look-x)) scaleY(var(--look-scale-y));
+  }
+
+  35% {
+    transform: translateX(0) scaleY(0.9);
+  }
+
+  70% {
+    transform: translateX(-22px) scaleY(1.04);
+  }
+
+  100% {
+    transform: translateX(-52px) scaleY(0.96);
+  }
+}
+
+@keyframes looiFollowTargetOpen {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, 130%) rotate(-38deg) scale(0.9);
+  }
+
+  65% {
+    opacity: 1;
+    transform: translate(-50%, 8%) rotate(-38deg) scale(1.04);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translate(calc(-50% - 70px), 0) rotate(-46deg) scale(1);
+  }
+}
+
+@keyframes looiFollowEyesLoop {
+  0%,
+  100% {
+    transform: translateX(-52px) scaleY(0.96);
+  }
+
+  25% {
+    transform: translateX(-18px) scaleY(1);
+  }
+
+  50% {
+    transform: translateX(52px) scaleY(0.96);
+  }
+
+  75% {
+    transform: translateX(18px) scaleY(1);
+  }
+}
+
+@keyframes looiFollowTargetLoop {
+  0%,
+  100% {
+    opacity: 1;
+    transform: translate(calc(-50% - 70px), 0) rotate(-46deg) scale(1);
+  }
+
+  25% {
+    opacity: 1;
+    transform: translate(calc(-50% - 24px), -8%) rotate(-34deg) scale(0.98);
+  }
+
+  50% {
+    opacity: 1;
+    transform: translate(calc(-50% + 70px), 0) rotate(-30deg) scale(1);
+  }
+
+  75% {
+    opacity: 1;
+    transform: translate(calc(-50% + 24px), -8%) rotate(-42deg) scale(0.98);
+  }
+}
+
+@keyframes looiFollowStopEyes {
+  0% {
+    transform: translateX(52px) scaleY(0.96);
+  }
+
+  45% {
+    transform: translateX(0) scaleY(0.88);
+  }
+
+  100% {
+    transform: translateX(var(--look-x)) scaleY(var(--look-scale-y));
+  }
+}
+
+@keyframes looiFollowTargetStop {
+  0% {
+    opacity: 1;
+    transform: translate(calc(-50% + 70px), 0) rotate(-30deg) scale(1);
+  }
+
+  40% {
+    opacity: 1;
+    transform: translate(-50%, -4%) rotate(-38deg) scale(1.03);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate(-50%, 130%) rotate(-38deg) scale(0.9);
   }
 }
 

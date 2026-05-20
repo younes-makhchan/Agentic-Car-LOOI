@@ -34,11 +34,8 @@ function compactVisionState(vision) {
       ? state.objects.slice(0, 12).map((object) => ({
           label: shortText(object?.label, 80),
           visible: Boolean(object?.visible),
-          confidence: finiteOrNull(object?.confidence),
           position: shortText(object?.position, 40),
-          distance: shortText(object?.distance, 40),
-          trackId: shortText(object?.trackId, 80),
-          lastSeenMs: finiteOrNull(object?.lastSeenMs)
+          trackId: shortText(object?.trackId, 80)
         }))
       : [],
     activeTarget: isPlainObject(state.activeTarget)
@@ -46,7 +43,6 @@ function compactVisionState(vision) {
           label: shortText(state.activeTarget.label, 80),
           visible: Boolean(state.activeTarget.visible),
           position: shortText(state.activeTarget.position, 40),
-          distance: shortText(state.activeTarget.distance, 40),
           trackId: shortText(state.activeTarget.trackId, 80),
           lostForMs: finiteOrNull(state.activeTarget.lostForMs)
         }

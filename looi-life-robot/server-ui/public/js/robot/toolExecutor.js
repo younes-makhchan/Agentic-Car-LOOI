@@ -7,6 +7,7 @@ import { PRIORITY_LEVELS } from "../embodiment/priorityScheduler.js";
 
 const PHYSICAL_ACTIONS = new Set(["run_scenario", "stop"]);
 const ACTION_TYPES = new Set(["run_scenario", "stop"]);
+const VISION_FOLLOW_SCENARIOS = new Set(["look_left", "look_right"]);
 
 // Browser-only execution layer. It never talks to ESP32 directly for movement.
 export class ToolExecutor {
@@ -176,7 +177,7 @@ export class ToolExecutor {
 
   async executeRunScenario(args = {}, action = {}) {
     const normalizedArgs = normalizeRunScenarioArgs(args, {
-      allowInternalScenario: action.source === "local"
+      allowInternalScenario: action.source === "local" || action.source === "vision_follow"
     });
 
     if (!normalizedArgs.name) {
@@ -191,6 +192,33 @@ export class ToolExecutor {
     this.log(
       `STEP 4 RUN_SCENARIO name=${normalizedArgs.name} label=${normalizedArgs.label || "none"} mode=${normalizedArgs.mode}`
     );
+
+    if (action.source === "vision_follow" && !VISION_FOLLOW_SCENARIOS.has(normalizedArgs.name)) {
+      return this.buildResult("rejected", {
+        action,
+        executed: false,
+        physical: false,
+        message: `Vision follow can only run steering scenarios, not ${normalizedArgs.name}.`,
+        detail: { scenario: normalizedArgs.name }
+      });
+    }
+
+    if (
+      this.followTargetController?.isRunning?.() &&
+      normalizedArgs.name !== "stop_following" &&
+      action.source !== "vision_follow"
+    ) {
+      return this.buildResult("rejected", {
+        action,
+        executed: false,
+        physical: false,
+        message: `Follow mode is active. Scenario ${normalizedArgs.name} is blocked until following stops.`,
+        detail: {
+          scenario: normalizedArgs.name,
+          activeFollow: this.followTargetController?.getStatus?.() ?? null
+        }
+      });
+    }
 
     if (normalizedArgs.name === "follow_target") {
       return this.executeFollowTargetScenario({
@@ -455,7 +483,7 @@ export class ToolExecutor {
 
     if (
       action.source === "gemini_live" &&
-      followActive &&
+      !followActive &&
       !isExplicitFollowStopIntent(readLatestUserIntent(this.getRuntimeContext?.()))
     ) {
       return this.buildResult("rejected", {
@@ -463,7 +491,7 @@ export class ToolExecutor {
         executed: false,
         physical: false,
         message: "Ignored follow stop because the latest user intent did not explicitly stop following.",
-        detail: { reason }
+        detail: { reason, followActive }
       });
     }
 
@@ -678,7 +706,10 @@ export class ToolExecutor {
   }
 
   isLocalAction(action = {}) {
-    return action?.source === "local_brain" || action?.source === "local" || action?.source === "gemini_live";
+    return action?.source === "local_brain" ||
+      action?.source === "local" ||
+      action?.source === "gemini_live" ||
+      action?.source === "vision_follow";
   }
 
   policyLabel(action = {}) {

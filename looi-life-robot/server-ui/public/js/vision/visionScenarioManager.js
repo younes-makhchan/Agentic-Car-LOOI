@@ -76,6 +76,7 @@ export class VisionScenarioManager {
         reason: "target_not_visible"
       });
       this.face?.setVisionIndicator?.(true, "lost");
+      this.face?.stopFollow?.();
       this.eventBus?.publish?.("vision_follow_not_found", {
         label: targetLabel,
         aliases,
@@ -101,6 +102,7 @@ export class VisionScenarioManager {
       mode
     });
     this.face?.setVisionIndicator?.(true, "following");
+    this.face?.startFollow?.();
     this.eventBus?.publish?.("vision_follow_target_set", {
       label: target.label,
       trackId: target.id ?? target.trackId,
@@ -121,6 +123,9 @@ export class VisionScenarioManager {
     this.objectDetectorEngine?.stop?.();
     this.visionState?.clearActiveTarget?.(reason);
     this.face?.setVisionIndicator?.(false);
+    if (stopped?.wasRunning !== false) {
+      this.face?.stopFollow?.();
+    }
     this.eventBus?.publish?.("vision_follow_stopped", {
       reason,
       stopped

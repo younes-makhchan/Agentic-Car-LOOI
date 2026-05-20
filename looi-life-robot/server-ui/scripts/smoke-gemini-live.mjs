@@ -163,6 +163,7 @@ assert.ok(setup.setup.systemInstruction.parts[0].text.includes("follow_target"))
 assert.ok(setup.setup.systemInstruction.parts[0].text.includes("take_picture"));
 assert.ok(setup.setup.systemInstruction.parts[0].text.includes("<vision_rules>"));
 assert.ok(setup.setup.systemInstruction.parts[0].text.includes("person"));
+assert.ok(setup.setup.systemInstruction.parts[0].text.includes("While follow is active"));
 
 const runtime = new GeminiLiveRuntime({
   toolExecutor,
@@ -269,6 +270,8 @@ const visionContextMessage = sentMessages.find((message) => message.realtimeInpu
 assert.ok(visionContextMessage, "Gemini Live should receive vision context text");
 assert.ok(visionContextMessage.realtimeInput.text.includes('"mode":"mediapipe_follow"'));
 assert.ok(visionContextMessage.realtimeInput.text.includes('"visibleLabels":"person, bottle"'));
+assert.ok(visionContextMessage.realtimeInput.text.includes('"position":"center"'));
+assert.equal(/"confidence"|"distance"|"lastSeenMs"|summary/i.test(visionContextMessage.realtimeInput.text), false);
 assert.equal(/data:image|base64|dataUrl|imageData/i.test(visionContextMessage.realtimeInput.text), false);
 
 fakeTransport.emit({

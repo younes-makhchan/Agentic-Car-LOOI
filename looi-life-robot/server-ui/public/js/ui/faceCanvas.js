@@ -11,8 +11,10 @@ const FACE_STATE = {
   animationTimer: 0,
   lookTimer: 0,
   photoTimer: 0,
+  followTimer: 0,
   previewTimer: 0,
   latestPhotoUrl: "",
+  followVisualState: "idle",
   visionIndicator: {
     active: false,
     mode: "detecting"
@@ -22,6 +24,8 @@ const FACE_STATE = {
 const BLINK_TIME_MS = 360;
 const SOFT_CLOSE_TIME_MS = 420;
 const PHOTO_TIME_MS = 2400;
+const FOLLOW_OPEN_TIME_MS = 900;
+const FOLLOW_STOP_TIME_MS = 800;
 const AUTO_BLINK_MIN_MS = 2200;
 const AUTO_BLINK_JITTER_MS = 2400;
 const AUTO_GLANCE_MIN_MS = 1400;
@@ -45,6 +49,7 @@ export function initFaceCanvas(element) {
 
   rootRef.replaceChildren(createEyeDom());
   rootRef.classList.add("looi-eye-system");
+  rootRef.classList.remove("is-taking-picture", "is-follow-opening", "is-following", "is-follow-stopping");
   rootRef.setAttribute("role", "img");
   rootRef.setAttribute("aria-label", "LOOI animated robot eyes");
 
@@ -89,7 +94,7 @@ export function setEyeDirection(direction, { auto = false } = {}) {
 }
 
 export function blink() {
-  if (!eyesRef || FACE_STATE.speaking || FACE_STATE.sleeping) {
+  if (!eyesRef || FACE_STATE.speaking || FACE_STATE.sleeping || hasBlockingFaceAnimation()) {
     scheduleNextBlink();
     return;
   }
@@ -102,7 +107,7 @@ export function blink() {
 }
 
 export function softClose() {
-  if (!eyesRef || FACE_STATE.speaking || FACE_STATE.sleeping) {
+  if (!eyesRef || FACE_STATE.speaking || FACE_STATE.sleeping || hasBlockingFaceAnimation()) {
     return;
   }
 
@@ -214,7 +219,9 @@ export function takePicture() {
   clearMomentaryAnimations();
   window.clearTimeout(FACE_STATE.lookTimer);
   window.clearTimeout(FACE_STATE.photoTimer);
+  window.clearTimeout(FACE_STATE.followTimer);
   FACE_STATE.sleeping = false;
+  rootRef.classList.remove("is-following", "is-follow-opening", "is-follow-stopping");
   eyesRef.classList.remove("is-sleeping");
   eyesRef.style.setProperty("--look-x", "0px");
   eyesRef.style.setProperty("--look-scale-y", "1");
@@ -223,6 +230,60 @@ export function takePicture() {
   FACE_STATE.photoTimer = window.setTimeout(() => {
     rootRef?.classList.remove("is-taking-picture");
   }, PHOTO_TIME_MS);
+}
+
+export function startFollow() {
+  if (!rootRef || !eyesRef) {
+    return;
+  }
+
+  clearMomentaryAnimations();
+  window.clearTimeout(FACE_STATE.lookTimer);
+  window.clearTimeout(FACE_STATE.followTimer);
+  FACE_STATE.sleeping = false;
+  FACE_STATE.followVisualState = "opening";
+  rootRef.classList.remove("is-taking-picture", "is-following", "is-follow-stopping");
+  eyesRef.classList.remove("is-sleeping");
+  eyesRef.style.setProperty("--look-x", "0px");
+  eyesRef.style.setProperty("--look-scale-y", "1");
+  forceRestartAnimation();
+  rootRef.classList.add("is-follow-opening");
+  FACE_STATE.followTimer = window.setTimeout(() => {
+    rootRef?.classList.remove("is-follow-opening");
+    requestAnimationFrame(() => {
+      FACE_STATE.followVisualState = "following";
+      rootRef?.classList.add("is-following");
+    });
+  }, FOLLOW_OPEN_TIME_MS);
+}
+
+export function stopFollow() {
+  if (!rootRef || !eyesRef) {
+    return;
+  }
+
+  if (
+    FACE_STATE.followVisualState === "idle" &&
+    !rootRef.classList.contains("is-following") &&
+    !rootRef.classList.contains("is-follow-opening")
+  ) {
+    return;
+  }
+
+  clearMomentaryAnimations();
+  window.clearTimeout(FACE_STATE.lookTimer);
+  window.clearTimeout(FACE_STATE.followTimer);
+  FACE_STATE.followVisualState = "stopping";
+  rootRef.classList.remove("is-following", "is-follow-opening");
+  eyesRef.classList.remove("is-sleeping");
+  forceRestartAnimation();
+  rootRef.classList.add("is-follow-stopping");
+  FACE_STATE.followTimer = window.setTimeout(() => {
+    FACE_STATE.followVisualState = "idle";
+    rootRef?.classList.remove("is-follow-stopping");
+    eyesRef?.style.setProperty("--look-x", "0px");
+    eyesRef?.style.setProperty("--look-scale-y", "1");
+  }, FOLLOW_STOP_TIME_MS);
 }
 
 export function showPhoto(dataUrl, { dismissMs = 5000 } = {}) {
@@ -301,6 +362,8 @@ export function createFaceController(element) {
     invertLook,
     sleep,
     takePicture,
+    startFollow,
+    stopFollow,
     showPhoto,
     dismissPhoto,
     setVisionIndicator
@@ -348,6 +411,13 @@ function createEyeDom() {
     <div class="looi-camera-icon__flash-dot"></div>
   `;
 
+  const followTarget = document.createElement("div");
+  followTarget.className = "looi-follow-target";
+
+  const followShine = document.createElement("div");
+  followShine.className = "looi-follow-shine";
+  followTarget.append(followShine);
+
   const visionIndicator = document.createElement("div");
   visionIndicator.className = "looi-vision-indicator";
   visionIndicator.hidden = true;
@@ -360,7 +430,7 @@ function createEyeDom() {
   eyes.className = "looi-eyes";
   eyes.append(createEye(), createEye());
 
-  fragment.append(flash, preview, cameraIcon, visionIndicator, eyes);
+  fragment.append(flash, followTarget, preview, cameraIcon, visionIndicator, eyes);
   return fragment;
 }
 
@@ -464,6 +534,9 @@ function canAutoGlance() {
     !FACE_STATE.speaking &&
     !FACE_STATE.sleeping &&
     !rootRef?.classList.contains("is-taking-picture") &&
+    !rootRef?.classList.contains("is-follow-opening") &&
+    !rootRef?.classList.contains("is-following") &&
+    !rootRef?.classList.contains("is-follow-stopping") &&
     !eyesRef.classList.contains("is-blinking") &&
     !eyesRef.classList.contains("is-soft-closing")
   );
@@ -488,6 +561,10 @@ function clearMomentaryAnimations() {
 
   window.clearTimeout(FACE_STATE.animationTimer);
   eyesRef.classList.remove("is-blinking", "is-soft-closing");
+  rootRef?.classList.remove("is-follow-opening", "is-follow-stopping");
+  if (!rootRef?.classList.contains("is-following")) {
+    FACE_STATE.followVisualState = "idle";
+  }
 }
 
 function clearAllTimers() {
@@ -497,6 +574,7 @@ function clearAllTimers() {
   window.clearTimeout(FACE_STATE.animationTimer);
   window.clearTimeout(FACE_STATE.lookTimer);
   window.clearTimeout(FACE_STATE.photoTimer);
+  window.clearTimeout(FACE_STATE.followTimer);
   window.clearTimeout(FACE_STATE.previewTimer);
 }
 
@@ -509,6 +587,15 @@ function settleLookHeight() {
 
 function forceRestartAnimation() {
   return eyesRef?.offsetWidth ?? 0;
+}
+
+function hasBlockingFaceAnimation() {
+  return Boolean(
+    rootRef?.classList.contains("is-taking-picture") ||
+    rootRef?.classList.contains("is-follow-opening") ||
+    rootRef?.classList.contains("is-following") ||
+    rootRef?.classList.contains("is-follow-stopping")
+  );
 }
 
 function saveLatestPhoto() {
