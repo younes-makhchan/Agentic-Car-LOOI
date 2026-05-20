@@ -1,0 +1,566 @@
+NI TX audio frame=341 bytes=1364 samples=682 inputRate=48000 outputRate=16000 totalBytes=465124
+app.js:4893 [LOOI] GEMINI AUDIO chunk ended active=6
+app.js:4893 [LOOI] Life behavior: listen_pose
+app.js:4893 [LOOI] [TRACE] STEP 4 MACRO macro_result: {"macro":"soft_listen","reason":"macro_cooldown_active","result":null}
+app.js:4893 [LOOI] Macro soft_listen: macro_cooldown_active
+appendLogEntry @ app.js:4893
+log @ app.js:4878
+logger @ app.js:1486
+log @ motionMacroSequencer.js:453
+recordResult @ motionMacroSequencer.js:447
+playMacroObject @ motionMacroSequencer.js:79
+playMacro @ motionMacroSequencer.js:51
+macroBehavior @ motionStyles.js:569
+listenPose @ motionStyles.js:52
+executeBehavior @ lifeEngine.js:891
+tickBehavior @ lifeEngine.js:836
+(anonymous) @ lifeEngine.js:117
+setInterval (async)
+start @ lifeEngine.js:117
+init @ app.js:1738
+await in init (async)
+(anonymous) @ app.js:1272Understand this warning
+app.js:4893 [LOOI] GEMINI AUDIO chunk ended active=5
+app.js:4893 [LOOI] GEMINI AUDIO chunk ended active=4
+app.js:4893 [LOOI] GEMINI AUDIO chunk ended active=3
+app.js:4893 [LOOI] Life behavior: listen_pose
+app.js:4893 [LOOI] [TRACE] STEP 4 MACRO macro_result: {"macro":"soft_listen","reason":"macro_cooldown_active","result":null}
+app.js:4893 [LOOI] Macro soft_listen: macro_cooldown_active
+appendLogEntry @ app.js:4893
+log @ app.js:4878
+logger @ app.js:1486
+log @ motionMacroSequencer.js:453
+recordResult @ motionMacroSequencer.js:447
+playMacroObject @ motionMacroSequencer.js:79
+playMacro @ motionMacroSequencer.js:51
+macroBehavior @ motionStyles.js:569
+listenPose @ motionStyles.js:52
+executeBehavior @ lifeEngine.js:891
+tickBehavior @ lifeEngine.js:836
+(anonymous) @ lifeEngine.js:117
+setInterval (async)
+start @ lifeEngine.js:117
+init @ app.js:1738
+await in init (async)
+(anonymous) @ app.js:1272Understand this warning
+app.js:4893 [LOOI] GEMINI AUDIO chunk ended active=2
+app.js:4893 [LOOI] GEMINI AUDIO chunk ended active=1
+app.js:4893 [LOOI] Life behavior: listen_pose
+app.js:4893 [LOOI] [TRACE] STEP 4 MACRO macro_result: {"macro":"soft_listen","reason":"macro_cooldown_active","result":null}
+app.js:4893 [LOOI] Macro soft_listen: macro_cooldown_active
+appendLogEntry @ app.js:4893
+log @ app.js:4878
+logger @ app.js:1486
+log @ motionMacroSequencer.js:453
+recordResult @ motionMacroSequencer.js:447
+playMacroObject @ motionMacroSequencer.js:79
+playMacro @ motionMacroSequencer.js:51
+macroBehavior @ motionStyles.js:569
+listenPose @ motionStyles.js:52
+executeBehavior @ lifeEngine.js:891
+tickBehavior @ lifeEngine.js:836
+(anonymous) @ lifeEngine.js:117
+setInterval (async)
+start @ lifeEngine.js:117
+init @ app.js:1738
+await in init (async)
+(anonymous) @ app.js:1272Understand this warning
+app.js:4893 [LOOI] Gemini tool requests: none
+app.js:4893 [LOOI] GEMINI AUDIO chunk ended active=0
+app.js:4893 [LOOI] GEMINI TX audio frame=365 bytes=1364 samples=682 inputRate=48000 outputRate=16000 totalBytes=497860
+app.js:4893 [LOOI] Life behavior: listen_pose
+app.js:4893 [LOOI] [TRACE] STEP 4 MACRO macro_result: {"macro":"soft_listen","reason":"macro_cooldown_active","result":null}
+app.js:4893 [LOOI] Macro soft_listen: macro_cooldown_active
+appendLogEntry @ app.js:4893
+log @ app.js:4878
+logger @ app.js:1486
+log @ motionMacroSequencer.js:453
+recordResult @ motionMacroSequencer.js:447
+playMacroObject @ motionMacroSequencer.js:79
+playMacro @ motionMacroSequencer.js:51
+macroBehavior @ motionStyles.js:569
+listenPose @ motionStyles.js:52
+executeBehavior @ lifeEngine.js:891
+tickBehavior @ lifeEngine.js:836
+(anonymous) @ lifeEngine.js:117
+setInterval (async)
+start @ lifeEngine.js:117
+init @ app.js:1738
+await in init (async)
+(anonymous) @ app.js:1272Understand this warning
+app.js:4893 [LOOI] Gemini tool requests: none
+app.js:4893 [LOOI] Life behavior: listen_pose
+app.js:4893 [LOOI] [TRACE] STEP 4 MACRO macro_result: {"macro":"soft_listen","reason":"macro_cooldown_active","result":null}
+app.js:4893 [LOOI] Macro soft_listen: macro_cooldown_active
+appendLogEntry @ app.js:4893
+log @ app.js:4878
+logger @ app.js:1486
+log @ motionMacroSequencer.js:453
+recordResult @ motionMacroSequencer.js:447
+playMacroObject @ motionMacroSequencer.js:79
+playMacro @ motionMacroSequencer.js:51
+macroBehavior @ motionStyles.js:569
+listenPose @ motionStyles.js:52
+executeBehavior @ lifeEngine.js:891
+tickBehavior @ lifeEngine.js:836
+(anonymous) @ lifeEngine.js:117
+setInterval (async)
+start @ lifeEngine.js:117
+init @ app.js:1738
+await in init (async)
+(anonymous) @ app.js:1272Understand this warning
+app.js:4893 [LOOI] Life behavior: listen_pose
+app.js:4893 [LOOI] [TRACE] STEP 4 MACRO macro_result: {"macro":"soft_listen","reason":"macro_cooldown_active","result":null}
+app.js:4893 [LOOI] Macro soft_listen: macro_cooldown_active
+appendLogEntry @ app.js:4893
+log @ app.js:4878
+logger @ app.js:1486
+log @ motionMacroSequencer.js:453
+recordResult @ motionMacroSequencer.js:447
+playMacroObject @ motionMacroSequencer.js:79
+playMacro @ motionMacroSequencer.js:51
+macroBehavior @ motionStyles.js:569
+listenPose @ motionStyles.js:52
+executeBehavior @ lifeEngine.js:891
+tickBehavior @ lifeEngine.js:836
+(anonymous) @ lifeEngine.js:117
+setInterval (async)
+start @ lifeEngine.js:117
+init @ app.js:1738
+await in init (async)
+(anonymous) @ app.js:1272Understand this warning
+app.js:4893 [LOOI] Life behavior: listen_pose
+app.js:4893 [LOOI] [TRACE] STEP 4 MACRO macro_result: {"macro":"soft_listen","reason":"macro_cooldown_active","result":null}
+app.js:4893 [LOOI] Macro soft_listen: macro_cooldown_active
+appendLogEntry @ app.js:4893
+log @ app.js:4878
+logger @ app.js:1486
+log @ motionMacroSequencer.js:453
+recordResult @ motionMacroSequencer.js:447
+playMacroObject @ motionMacroSequencer.js:79
+playMacro @ motionMacroSequencer.js:51
+macroBehavior @ motionStyles.js:569
+listenPose @ motionStyles.js:52
+executeBehavior @ lifeEngine.js:891
+tickBehavior @ lifeEngine.js:836
+(anonymous) @ lifeEngine.js:117
+setInterval (async)
+start @ lifeEngine.js:117
+init @ app.js:1738
+await in init (async)
+(anonymous) @ app.js:1272Understand this warning
+app.js:4893 [LOOI] GEMINI TX audio frame=389 bytes=1364 samples=682 inputRate=48000 outputRate=16000 totalBytes=530596
+app.js:4893 [LOOI] Life behavior: listen_pose
+app.js:4893 [LOOI] [TRACE] STEP 4 MACRO macro_result: {"macro":"soft_listen","reason":"macro_cooldown_active","result":null}
+app.js:4893 [LOOI] Macro soft_listen: macro_cooldown_active
+appendLogEntry @ app.js:4893
+log @ app.js:4878
+logger @ app.js:1486
+log @ motionMacroSequencer.js:453
+recordResult @ motionMacroSequencer.js:447
+playMacroObject @ motionMacroSequencer.js:79
+playMacro @ motionMacroSequencer.js:51
+macroBehavior @ motionStyles.js:569
+listenPose @ motionStyles.js:52
+executeBehavior @ lifeEngine.js:891
+tickBehavior @ lifeEngine.js:836
+(anonymous) @ lifeEngine.js:117
+setInterval (async)
+start @ lifeEngine.js:117
+init @ app.js:1738
+await in init (async)
+(anonymous) @ app.js:1272Understand this warning
+app.js:4893 [LOOI] Gemini tool requests: none
+app.js:4893 [LOOI] Life behavior: listen_pose
+app.js:4893 [LOOI] [TRACE] STEP 4 MACRO macro_result: {"macro":"soft_listen","reason":"macro_cooldown_active","result":null}
+app.js:4893 [LOOI] Macro soft_listen: macro_cooldown_active
+appendLogEntry @ app.js:4893
+log @ app.js:4878
+logger @ app.js:1486
+log @ motionMacroSequencer.js:453
+recordResult @ motionMacroSequencer.js:447
+playMacroObject @ motionMacroSequencer.js:79
+playMacro @ motionMacroSequencer.js:51
+macroBehavior @ motionStyles.js:569
+listenPose @ motionStyles.js:52
+executeBehavior @ lifeEngine.js:891
+tickBehavior @ lifeEngine.js:836
+(anonymous) @ lifeEngine.js:117
+setInterval (async)
+start @ lifeEngine.js:117
+init @ app.js:1738
+await in init (async)
+(anonymous) @ app.js:1272Understand this warning
+app.js:4893 [LOOI] Life behavior: listen_pose
+app.js:4893 [LOOI] [TRACE] STEP 4 MACRO macro_result: {"macro":"soft_listen","reason":"macro_cooldown_active","result":null}
+app.js:4893 [LOOI] Macro soft_listen: macro_cooldown_active
+appendLogEntry @ app.js:4893
+log @ app.js:4878
+logger @ app.js:1486
+log @ motionMacroSequencer.js:453
+recordResult @ motionMacroSequencer.js:447
+playMacroObject @ motionMacroSequencer.js:79
+playMacro @ motionMacroSequencer.js:51
+macroBehavior @ motionStyles.js:569
+listenPose @ motionStyles.js:52
+executeBehavior @ lifeEngine.js:891
+tickBehavior @ lifeEngine.js:836
+(anonymous) @ lifeEngine.js:117
+setInterval (async)
+start @ lifeEngine.js:117
+init @ app.js:1738
+await in init (async)
+(anonymous) @ app.js:1272Understand this warning
+app.js:4893 [LOOI] GEMINI TX audio frame=413 bytes=1364 samples=682 inputRate=48000 outputRate=16000 totalBytes=563332
+app.js:4893 [LOOI] Life behavior: listen_pose
+app.js:4893 [LOOI] [TRACE] STEP 4 MACRO macro_result: {"macro":"soft_listen","reason":"macro_cooldown_active","result":null}
+app.js:4893 [LOOI] Macro soft_listen: macro_cooldown_active
+appendLogEntry @ app.js:4893
+log @ app.js:4878
+logger @ app.js:1486
+log @ motionMacroSequencer.js:453
+recordResult @ motionMacroSequencer.js:447
+playMacroObject @ motionMacroSequencer.js:79
+playMacro @ motionMacroSequencer.js:51
+macroBehavior @ motionStyles.js:569
+listenPose @ motionStyles.js:52
+executeBehavior @ lifeEngine.js:891
+tickBehavior @ lifeEngine.js:836
+(anonymous) @ lifeEngine.js:117
+setInterval (async)
+start @ lifeEngine.js:117
+init @ app.js:1738
+await in init (async)
+(anonymous) @ app.js:1272Understand this warning
+app.js:4893 [LOOI] Gemini tool requests: none
+app.js:4893 [LOOI] Life behavior: listen_pose
+app.js:4893 [LOOI] [TRACE] STEP 4 MACRO macro_result: {"macro":"soft_listen","reason":"macro_cooldown_active","result":null}
+app.js:4893 [LOOI] Macro soft_listen: macro_cooldown_active
+appendLogEntry @ app.js:4893
+log @ app.js:4878
+logger @ app.js:1486
+log @ motionMacroSequencer.js:453
+recordResult @ motionMacroSequencer.js:447
+playMacroObject @ motionMacroSequencer.js:79
+playMacro @ motionMacroSequencer.js:51
+macroBehavior @ motionStyles.js:569
+listenPose @ motionStyles.js:52
+executeBehavior @ lifeEngine.js:891
+tickBehavior @ lifeEngine.js:836
+(anonymous) @ lifeEngine.js:117
+setInterval (async)
+start @ lifeEngine.js:117
+init @ app.js:1738
+await in init (async)
+(anonymous) @ app.js:1272Understand this warning
+app.js:4893 [LOOI] Life behavior: listen_pose
+app.js:4893 [LOOI] [TRACE] STEP 4 MACRO macro_result: {"macro":"soft_listen","reason":"macro_cooldown_active","result":null}
+app.js:4893 [LOOI] Macro soft_listen: macro_cooldown_active
+appendLogEntry @ app.js:4893
+log @ app.js:4878
+logger @ app.js:1486
+log @ motionMacroSequencer.js:453
+recordResult @ motionMacroSequencer.js:447
+playMacroObject @ motionMacroSequencer.js:79
+playMacro @ motionMacroSequencer.js:51
+macroBehavior @ motionStyles.js:569
+listenPose @ motionStyles.js:52
+executeBehavior @ lifeEngine.js:891
+tickBehavior @ lifeEngine.js:836
+(anonymous) @ lifeEngine.js:117
+setInterval (async)
+start @ lifeEngine.js:117
+init @ app.js:1738
+await in init (async)
+(anonymous) @ app.js:1272Understand this warning
+app.js:4893 [LOOI] Life behavior: listen_pose
+app.js:4893 [LOOI] [TRACE] STEP 4 MACRO macro_result: {"macro":"soft_listen","reason":"macro_cooldown_active","result":null}
+app.js:4893 [LOOI] Macro soft_listen: macro_cooldown_active
+appendLogEntry @ app.js:4893
+log @ app.js:4878
+logger @ app.js:1486
+log @ motionMacroSequencer.js:453
+recordResult @ motionMacroSequencer.js:447
+playMacroObject @ motionMacroSequencer.js:79
+playMacro @ motionMacroSequencer.js:51
+macroBehavior @ motionStyles.js:569
+listenPose @ motionStyles.js:52
+executeBehavior @ lifeEngine.js:891
+tickBehavior @ lifeEngine.js:836
+(anonymous) @ lifeEngine.js:117
+setInterval (async)
+start @ lifeEngine.js:117
+init @ app.js:1738
+await in init (async)
+(anonymous) @ app.js:1272Understand this warning
+app.js:4893 [LOOI] GEMINI TX audio frame=437 bytes=1364 samples=682 inputRate=48000 outputRate=16000 totalBytes=596068
+app.js:4893 [LOOI] Life behavior: listen_pose
+app.js:4893 [LOOI] [TRACE] STEP 4 MACRO macro_result: {"macro":"soft_listen","reason":"macro_cooldown_active","result":null}
+app.js:4893 [LOOI] Macro soft_listen: macro_cooldown_active
+appendLogEntry @ app.js:4893
+log @ app.js:4878
+logger @ app.js:1486
+log @ motionMacroSequencer.js:453
+recordResult @ motionMacroSequencer.js:447
+playMacroObject @ motionMacroSequencer.js:79
+playMacro @ motionMacroSequencer.js:51
+macroBehavior @ motionStyles.js:569
+listenPose @ motionStyles.js:52
+executeBehavior @ lifeEngine.js:891
+tickBehavior @ lifeEngine.js:836
+(anonymous) @ lifeEngine.js:117
+setInterval (async)
+start @ lifeEngine.js:117
+init @ app.js:1738
+await in init (async)
+(anonymous) @ app.js:1272Understand this warning
+app.js:4893 [LOOI] Gemini tool requests: none
+app.js:4893 [LOOI] Life behavior: listen_pose
+app.js:4893 [LOOI] [TRACE] STEP 4 MACRO macro_result: {"macro":"soft_listen","reason":"macro_cooldown_active","result":null}
+app.js:4893 [LOOI] Macro soft_listen: macro_cooldown_active
+appendLogEntry @ app.js:4893
+log @ app.js:4878
+logger @ app.js:1486
+log @ motionMacroSequencer.js:453
+recordResult @ motionMacroSequencer.js:447
+playMacroObject @ motionMacroSequencer.js:79
+playMacro @ motionMacroSequencer.js:51
+macroBehavior @ motionStyles.js:569
+listenPose @ motionStyles.js:52
+executeBehavior @ lifeEngine.js:891
+tickBehavior @ lifeEngine.js:836
+(anonymous) @ lifeEngine.js:117
+setInterval (async)
+start @ lifeEngine.js:117
+init @ app.js:1738
+await in init (async)
+(anonymous) @ app.js:1272Understand this warning
+app.js:4893 [LOOI] Life behavior: listen_pose
+app.js:4893 [LOOI] [TRACE] STEP 4 MACRO macro_result: {"macro":"soft_listen","reason":"macro_cooldown_active","result":null}
+app.js:4893 [LOOI] Macro soft_listen: macro_cooldown_active
+appendLogEntry @ app.js:4893
+log @ app.js:4878
+logger @ app.js:1486
+log @ motionMacroSequencer.js:453
+recordResult @ motionMacroSequencer.js:447
+playMacroObject @ motionMacroSequencer.js:79
+playMacro @ motionMacroSequencer.js:51
+macroBehavior @ motionStyles.js:569
+listenPose @ motionStyles.js:52
+executeBehavior @ lifeEngine.js:891
+tickBehavior @ lifeEngine.js:836
+(anonymous) @ lifeEngine.js:117
+setInterval (async)
+start @ lifeEngine.js:117
+init @ app.js:1738
+await in init (async)
+(anonymous) @ app.js:1272Understand this warning
+app.js:4893 [LOOI] GEMINI TX audio frame=461 bytes=1364 samples=682 inputRate=48000 outputRate=16000 totalBytes=628804
+app.js:4893 [LOOI] Life behavior: listen_pose
+app.js:4893 [LOOI] [TRACE] STEP 4 MACRO macro_result: {"macro":"soft_listen","reason":"macro_cooldown_active","result":null}
+app.js:4893 [LOOI] Macro soft_listen: macro_cooldown_active
+appendLogEntry @ app.js:4893
+log @ app.js:4878
+logger @ app.js:1486
+log @ motionMacroSequencer.js:453
+recordResult @ motionMacroSequencer.js:447
+playMacroObject @ motionMacroSequencer.js:79
+playMacro @ motionMacroSequencer.js:51
+macroBehavior @ motionStyles.js:569
+listenPose @ motionStyles.js:52
+executeBehavior @ lifeEngine.js:891
+tickBehavior @ lifeEngine.js:836
+(anonymous) @ lifeEngine.js:117
+setInterval (async)
+start @ lifeEngine.js:117
+init @ app.js:1738
+await in init (async)
+(anonymous) @ app.js:1272Understand this warning
+app.js:4893 [LOOI] Life behavior: listen_pose
+app.js:4893 [LOOI] [TRACE] STEP 4 MACRO macro_result: {"macro":"soft_listen","reason":"macro_cooldown_active","result":null}
+app.js:4893 [LOOI] Macro soft_listen: macro_cooldown_active
+appendLogEntry @ app.js:4893
+log @ app.js:4878
+logger @ app.js:1486
+log @ motionMacroSequencer.js:453
+recordResult @ motionMacroSequencer.js:447
+playMacroObject @ motionMacroSequencer.js:79
+playMacro @ motionMacroSequencer.js:51
+macroBehavior @ motionStyles.js:569
+listenPose @ motionStyles.js:52
+executeBehavior @ lifeEngine.js:891
+tickBehavior @ lifeEngine.js:836
+(anonymous) @ lifeEngine.js:117
+setInterval (async)
+start @ lifeEngine.js:117
+init @ app.js:1738
+await in init (async)
+(anonymous) @ app.js:1272Understand this warning
+app.js:4893 [LOOI] Gemini tool requests: none
+app.js:4893 [LOOI] Life behavior: listen_pose
+app.js:4893 [LOOI] [TRACE] STEP 4 MACRO macro_result: {"macro":"soft_listen","reason":"macro_cooldown_active","result":null}
+app.js:4893 [LOOI] Macro soft_listen: macro_cooldown_active
+appendLogEntry @ app.js:4893
+log @ app.js:4878
+logger @ app.js:1486
+log @ motionMacroSequencer.js:453
+recordResult @ motionMacroSequencer.js:447
+playMacroObject @ motionMacroSequencer.js:79
+playMacro @ motionMacroSequencer.js:51
+macroBehavior @ motionStyles.js:569
+listenPose @ motionStyles.js:52
+executeBehavior @ lifeEngine.js:891
+tickBehavior @ lifeEngine.js:836
+(anonymous) @ lifeEngine.js:117
+setInterval (async)
+start @ lifeEngine.js:117
+init @ app.js:1738
+await in init (async)
+(anonymous) @ app.js:1272Understand this warning
+app.js:4893 [LOOI] GEMINI TX audio frame=485 bytes=1364 samples=682 inputRate=48000 outputRate=16000 totalBytes=661540
+app.js:4893 [LOOI] Life behavior: listen_pose
+app.js:4893 [LOOI] [TRACE] STEP 4 MACRO macro_result: {"macro":"soft_listen","reason":"macro_cooldown_active","result":null}
+app.js:4893 [LOOI] Macro soft_listen: macro_cooldown_active
+appendLogEntry @ app.js:4893
+log @ app.js:4878
+logger @ app.js:1486
+log @ motionMacroSequencer.js:453
+recordResult @ motionMacroSequencer.js:447
+playMacroObject @ motionMacroSequencer.js:79
+playMacro @ motionMacroSequencer.js:51
+macroBehavior @ motionStyles.js:569
+listenPose @ motionStyles.js:52
+executeBehavior @ lifeEngine.js:891
+tickBehavior @ lifeEngine.js:836
+(anonymous) @ lifeEngine.js:117
+setInterval (async)
+start @ lifeEngine.js:117
+init @ app.js:1738
+await in init (async)
+(anonymous) @ app.js:1272Understand this warning
+app.js:4893 [LOOI] Life behavior: listen_pose
+app.js:4893 [LOOI] [TRACE] STEP 4 MACRO macro_result: {"macro":"soft_listen","reason":"macro_cooldown_active","result":null}
+app.js:4893 [LOOI] Macro soft_listen: macro_cooldown_active
+appendLogEntry @ app.js:4893
+log @ app.js:4878
+logger @ app.js:1486
+log @ motionMacroSequencer.js:453
+recordResult @ motionMacroSequencer.js:447
+playMacroObject @ motionMacroSequencer.js:79
+playMacro @ motionMacroSequencer.js:51
+macroBehavior @ motionStyles.js:569
+listenPose @ motionStyles.js:52
+executeBehavior @ lifeEngine.js:891
+tickBehavior @ lifeEngine.js:836
+(anonymous) @ lifeEngine.js:117
+setInterval (async)
+start @ lifeEngine.js:117
+init @ app.js:1738
+await in init (async)
+(anonymous) @ app.js:1272Understand this warning
+app.js:4893 [LOOI] Gemini tool requests: none
+app.js:4893 [LOOI] Life behavior: listen_pose
+app.js:4893 [LOOI] [TRACE] STEP 4 MACRO macro_result: {"macro":"soft_listen","reason":"macro_cooldown_active","result":null}
+app.js:4893 [LOOI] Macro soft_listen: macro_cooldown_active
+appendLogEntry @ app.js:4893
+log @ app.js:4878
+logger @ app.js:1486
+log @ motionMacroSequencer.js:453
+recordResult @ motionMacroSequencer.js:447
+playMacroObject @ motionMacroSequencer.js:79
+playMacro @ motionMacroSequencer.js:51
+macroBehavior @ motionStyles.js:569
+listenPose @ motionStyles.js:52
+executeBehavior @ lifeEngine.js:891
+tickBehavior @ lifeEngine.js:836
+(anonymous) @ lifeEngine.js:117
+setInterval (async)
+start @ lifeEngine.js:117
+init @ app.js:1738
+await in init (async)
+(anonymous) @ app.js:1272Understand this warning
+app.js:4893 [LOOI] Life behavior: listen_pose
+app.js:4893 [LOOI] [TRACE] STEP 4 MACRO macro_result: {"macro":"soft_listen","reason":"macro_cooldown_active","result":null}
+app.js:4893 [LOOI] Macro soft_listen: macro_cooldown_active
+appendLogEntry @ app.js:4893
+log @ app.js:4878
+logger @ app.js:1486
+log @ motionMacroSequencer.js:453
+recordResult @ motionMacroSequencer.js:447
+playMacroObject @ motionMacroSequencer.js:79
+playMacro @ motionMacroSequencer.js:51
+macroBehavior @ motionStyles.js:569
+listenPose @ motionStyles.js:52
+executeBehavior @ lifeEngine.js:891
+tickBehavior @ lifeEngine.js:836
+(anonymous) @ lifeEngine.js:117
+setInterval (async)
+start @ lifeEngine.js:117
+init @ app.js:1738
+await in init (async)
+(anonymous) @ app.js:1272Understand this warning
+app.js:4893 [LOOI] GEMINI TX audio frame=509 bytes=1364 samples=682 inputRate=48000 outputRate=16000 totalBytes=694276
+app.js:4893 [LOOI] Life behavior: listen_pose
+app.js:4893 [LOOI] [TRACE] STEP 4 MACRO macro_result: {"macro":"soft_listen","reason":"macro_cooldown_active","result":null}
+app.js:4893 [LOOI] Macro soft_listen: macro_cooldown_active
+appendLogEntry @ app.js:4893
+log @ app.js:4878
+logger @ app.js:1486
+log @ motionMacroSequencer.js:453
+recordResult @ motionMacroSequencer.js:447
+playMacroObject @ motionMacroSequencer.js:79
+playMacro @ motionMacroSequencer.js:51
+macroBehavior @ motionStyles.js:569
+listenPose @ motionStyles.js:52
+executeBehavior @ lifeEngine.js:891
+tickBehavior @ lifeEngine.js:836
+(anonymous) @ lifeEngine.js:117
+setInterval (async)
+start @ lifeEngine.js:117
+init @ app.js:1738
+await in init (async)
+(anonymous) @ app.js:1272Understand this warning
+app.js:4893 [LOOI] Gemini tool requests: none
+app.js:4893 [LOOI] Life behavior: listen_pose
+app.js:4893 [LOOI] [TRACE] STEP 4 MACRO macro_result: {"macro":"soft_listen","reason":"macro_cooldown_active","result":null}
+app.js:4893 [LOOI] Macro soft_listen: macro_cooldown_active
+appendLogEntry @ app.js:4893
+log @ app.js:4878
+logger @ app.js:1486
+log @ motionMacroSequencer.js:453
+recordResult @ motionMacroSequencer.js:447
+playMacroObject @ motionMacroSequencer.js:79
+playMacro @ motionMacroSequencer.js:51
+macroBehavior @ motionStyles.js:569
+listenPose @ motionStyles.js:52
+executeBehavior @ lifeEngine.js:891
+tickBehavior @ lifeEngine.js:836
+(anonymous) @ lifeEngine.js:117
+setInterval (async)
+start @ lifeEngine.js:117
+init @ app.js:1738
+await in init (async)
+(anonymous) @ app.js:1272Understand this warning
+app.js:4893 [LOOI] Life behavior: listen_pose
+app.js:4893 [LOOI] [TRACE] STEP 4 MACRO macro_result: {"macro":"soft_listen","reason":"macro_cooldown_active","result":null}
+app.js:4893 [LOOI] Macro soft_listen: macro_cooldown_active
+appendLogEntry @ app.js:4893
+log @ app.js:4878
+logger @ app.js:1486
+log @ motionMacroSequencer.js:453
+recordResult @ motionMacroSequencer.js:447
+playMacroObject @ motionMacroSequencer.js:79
+playMacro @ motionMacroSequencer.js:51
+macroBehavior @ motionStyles.js:569
+listenPose @ motionStyles.js:52
+executeBehavior @ lifeEngine.js:891
+tickBehavior @ lifeEngine.js:836
+(anonymous) @ lifeEngine.js:117
+setInterval (async)
+start @ lifeEngine.js:117
+init @ app.js:1738
+await in init (async)
+(anonymous) @ app.js:1272Understand this warning
+app.js:4893 [LOOI] GEMINI TX audio frame=533 bytes=1364 samples=682 inputRate=48000 outputRate=16000 totalBytes=727012
+app.js:4893 [LOOI] Life behavior: listen_pose
+app.js:4893 [LOOI] [TRACE] STEP 4 MACRO macro_result: 
