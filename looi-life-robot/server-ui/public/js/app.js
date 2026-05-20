@@ -1789,7 +1789,7 @@ async function init() {
     log(`Learned phrase cache unavailable: ${error.message}`, "warn");
   });
   log("UI ready.");
-  log("Local-first runtime active. Legacy cloud bridge is inactive in this browser path.");
+  log("Local-first runtime active.");
   log("Local Motion is disarmed by default. Arm only while supervised.");
   log(`Default ESP32 URL: ${ui.esp32UrlInput.value}`);
   log("Safety: lift the wheels before the first movement test.", "warn");

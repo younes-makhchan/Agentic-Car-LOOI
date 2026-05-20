@@ -343,16 +343,3 @@ function register(callbacks, callback) {
   callbacks.add(callback);
   return () => callbacks.delete(callback);
 }
-
-// Backward-compatible placeholders from earlier steps.
-let legacySpeechInput = null;
-
-export function startSpeechRecognition() {
-  legacySpeechInput ??= new SpeechInput();
-  return legacySpeechInput.start();
-}
-
-export function stopSpeechRecognition() {
-  legacySpeechInput ??= new SpeechInput();
-  return legacySpeechInput.stop();
-}

@@ -675,7 +675,7 @@ export class ToolExecutor {
       }
     }
 
-    const result = await this.lifeEngine?.executeKimiAction?.("drive", {
+    const result = await this.lifeEngine?.executeRobotAction?.("drive", {
       linear,
       angular,
       durationMs,
@@ -744,7 +744,7 @@ export class ToolExecutor {
       return routed;
     }
 
-    const result = await this.lifeEngine?.executeKimiAction?.("approach_user", args);
+    const result = await this.lifeEngine?.executeRobotAction?.("approach_user", args);
     return this.resultFromLifeEngine(action, result, "Approach user routed through Life Engine.");
   }
 
@@ -763,7 +763,7 @@ export class ToolExecutor {
       return routed;
     }
 
-    const result = await this.lifeEngine?.executeKimiAction?.("retreat", args);
+    const result = await this.lifeEngine?.executeRobotAction?.("retreat", args);
     return this.resultFromLifeEngine(action, result, "Retreat routed through Life Engine.");
   }
 
@@ -809,7 +809,7 @@ export class ToolExecutor {
       return routed;
     }
 
-    const result = await this.lifeEngine?.executeKimiAction?.("curious_scan", args);
+    const result = await this.lifeEngine?.executeRobotAction?.("curious_scan", args);
     return this.resultFromLifeEngine(action, result, "Curious scan routed through Life Engine.");
   }
 
@@ -828,7 +828,7 @@ export class ToolExecutor {
       return routed;
     }
 
-    const result = await this.lifeEngine?.executeKimiAction?.("excited_wiggle", args);
+    const result = await this.lifeEngine?.executeRobotAction?.("excited_wiggle", args);
     return this.resultFromLifeEngine(action, result, "Excited wiggle routed through Life Engine.");
   }
 
@@ -1190,7 +1190,7 @@ export class ToolExecutor {
           action: args.action,
           args: args.args ?? {},
           confidence: args.confidence ?? importance,
-          source: action.source === "kimi_claw_cloud" ? "kimi_claw" : "manual"
+          source: action.source ?? "manual"
         });
         stored.learnedPhrase = phrasePayload.phrase ?? null;
       }
@@ -1199,7 +1199,7 @@ export class ToolExecutor {
         type: storageType,
         text: `[${memoryType}/${importance}] ${text}`,
         metadata: {
-          source: action.source ?? "kimi_claw",
+          source: action.source ?? "manual",
           importance,
           memory_type: memoryType
         }
@@ -1524,7 +1524,7 @@ export class ToolExecutor {
       allowSpeak: true,
       allowNonPhysical: true,
       cloudCameraAllowed: false,
-      source: "legacy",
+      source: "local",
       localMotionArmed: false,
       localCameraAllowed: false,
       localSpeechAllowed: true,

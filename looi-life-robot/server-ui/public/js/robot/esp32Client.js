@@ -3,7 +3,7 @@ const MAX_SPEED = 0.4;
 const MAX_DURATION_MS = 1000;
 const MIN_DURATION_MS = 50;
 const MAX_RAMP_MS = 500;
-const POLL_INTERVAL_MS = 350;
+const POLL_FALLBACK_INTERVAL_MS = 1000;
 const READY_STATE = {
   CONNECTING: 0,
   OPEN: 1,
@@ -27,6 +27,8 @@ export class ESP32Client {
     this.lastMessageAt = null;
     this.lastSeq = 0;
     this.pollTimer = null;
+    this.eventSource = null;
+    this.eventStreamConnected = false;
     this.statusCallbacks = new Set();
     this.telemetryCallbacks = new Set();
     this.messageCallbacks = new Set();
@@ -49,7 +51,7 @@ export class ESP32Client {
     return this.postGateway("/connect", { url: this.url })
       .then((payload) => {
         this.applySnapshot(payload);
-        this.startPolling();
+        this.startGatewayUpdates();
         this.log(`Server gateway connected to ESP32 at ${this.url}`);
         this.ping();
         return this.getStatus();
@@ -67,7 +69,7 @@ export class ESP32Client {
   }
 
   disconnect() {
-    this.stopPolling();
+    this.stopGatewayUpdates();
     this.connected = false;
     this.readyState = READY_STATE.CLOSED;
     this.latestTelemetry = null;
@@ -206,24 +208,88 @@ export class ESP32Client {
     return this.getGateway(`/status?since=${encodeURIComponent(this.lastSeq)}`).then((snapshot) => {
       this.applySnapshot(snapshot);
       if (this.isConnected()) {
-        this.startPolling();
+        this.startGatewayUpdates();
       }
       return this.getStatus();
     });
   }
 
-  startPolling() {
+  startGatewayUpdates() {
+    if (this.eventSource || this.pollTimer) {
+      return;
+    }
+
+    if (typeof EventSource === "function") {
+      this.startEventStream();
+      return;
+    }
+
+    this.startPollingFallback("EventSource is not available in this browser.");
+  }
+
+  stopGatewayUpdates() {
+    this.stopEventStream();
+    this.stopPollingFallback();
+  }
+
+  startEventStream() {
+    if (this.eventSource) {
+      return;
+    }
+
+    const eventUrl = `${this.apiBase}/events?since=${encodeURIComponent(this.lastSeq)}`;
+    const source = new EventSource(eventUrl);
+    this.eventSource = source;
+    this.eventStreamConnected = false;
+
+    source.addEventListener("open", () => {
+      this.eventStreamConnected = true;
+      this.stopPollingFallback();
+      this.log("ESP32 gateway event stream connected.");
+    });
+
+    source.addEventListener("snapshot", (event) => {
+      const snapshot = parseEventSourcePayload(event.data);
+      if (snapshot) {
+        this.applySnapshot(snapshot);
+      }
+    });
+
+    source.addEventListener("error", () => {
+      if (this.eventStreamConnected) {
+        this.log("ESP32 gateway event stream interrupted; browser will retry.", "warn");
+        return;
+      }
+
+      this.log("ESP32 gateway event stream unavailable; falling back to low-rate polling.", "warn");
+      this.stopEventStream();
+      this.startPollingFallback("event_stream_unavailable");
+    });
+  }
+
+  stopEventStream() {
+    if (!this.eventSource) {
+      return;
+    }
+
+    this.eventSource.close();
+    this.eventSource = null;
+    this.eventStreamConnected = false;
+  }
+
+  startPollingFallback(reason = "fallback") {
     if (this.pollTimer) {
       return;
     }
 
+    this.log(`ESP32 gateway using fallback polling (${reason}).`, "warn");
     this.pollMessages();
     this.pollTimer = globalThis.setInterval(() => {
       this.pollMessages();
-    }, POLL_INTERVAL_MS);
+    }, POLL_FALLBACK_INTERVAL_MS);
   }
 
-  stopPolling() {
+  stopPollingFallback() {
     globalThis.clearInterval(this.pollTimer);
     this.pollTimer = null;
   }
@@ -455,4 +521,12 @@ async function parseGatewayResponse(response) {
   }
 
   return payload;
+}
+
+function parseEventSourcePayload(data) {
+  try {
+    return JSON.parse(data);
+  } catch (_error) {
+    return null;
+  }
 }

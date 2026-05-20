@@ -78,7 +78,7 @@ export class RuleBrainFallback {
     switch (classification) {
       case "safety_stop":
         return brainResponse({
-          legacyPlan: [
+          plan: [
             {
               type: "stop",
               args: { reason: "rule_brain_stop" },
@@ -92,7 +92,7 @@ export class RuleBrainFallback {
         if (!policy.localMotionArmed) {
           return brainResponse({
             text: policy.localSpeechAllowed === false ? null : "My body is not armed yet.",
-            legacyPlan: [
+            plan: [
               {
                 type: "express",
                 args: { emotion: "attentive", intensity: 0.55 },
@@ -113,7 +113,7 @@ export class RuleBrainFallback {
           });
         }
         return brainResponse({
-          legacyPlan: [
+          plan: [
             {
               type: "approach_user",
               args: { style: "gentle", distance: "short" },
@@ -126,7 +126,7 @@ export class RuleBrainFallback {
       case "scenario_take_picture":
         return brainResponse({
           text: policy.localSpeechAllowed === false ? null : "Okay, hold still.",
-          legacyPlan: [
+          plan: [
             {
               type: "scenario_take_picture",
               args: {},
@@ -195,7 +195,7 @@ export class RuleBrainFallback {
         if (!policy.localMotionArmed) {
           return brainResponse({
             text: policy.localSpeechAllowed === false ? null : "I'll stay still and give you space.",
-            legacyPlan: [
+            plan: [
               {
                 type: "express",
                 args: { emotion: "shy", intensity: 0.55 },
@@ -216,7 +216,7 @@ export class RuleBrainFallback {
           });
         }
         return brainResponse({
-          legacyPlan: [
+          plan: [
             {
               type: "retreat",
               args: { style: "gentle", distance: "short" },
@@ -229,7 +229,7 @@ export class RuleBrainFallback {
       case "direct_command_look":
         if (!policy.localMotionArmed) {
           return brainResponse({
-            legacyPlan: [
+            plan: [
               policy.localCameraAllowed
                 ? {
                     type: "observe_scene",
@@ -247,7 +247,7 @@ export class RuleBrainFallback {
           });
         }
         return brainResponse({
-          legacyPlan: [
+          plan: [
             {
               type: "curious_scan",
               args: { direction: "both", intensity: 0.55 },
@@ -261,7 +261,7 @@ export class RuleBrainFallback {
       case "wake_name":
         return brainResponse({
           text: policy.localSpeechAllowed === false ? null : classification === "wake_name" ? "Hm?" : "Hi.",
-          legacyPlan: [
+          plan: [
             {
               type: "express",
               args: { emotion: classification === "wake_name" ? "attentive" : "happy", intensity: 0.6 },
@@ -285,7 +285,7 @@ export class RuleBrainFallback {
         });
       case "direct_question":
         return brainResponse({
-          legacyPlan: [
+          plan: [
             {
               type: "express",
               args: { emotion: "curious", intensity: 0.55 },
@@ -305,7 +305,7 @@ export class RuleBrainFallback {
       default:
         if (context.reason === "autonomous_tick" && Number(context.lifeState?.boredom) > 0.82) {
           return brainResponse({
-            legacyPlan: [
+            plan: [
               {
                 type: "express",
                 args: { emotion: "curious", intensity: 0.5 },
@@ -318,7 +318,7 @@ export class RuleBrainFallback {
         }
 
         return brainResponse({
-          legacyPlan: [
+          plan: [
             {
               type: "none",
               args: {},
@@ -335,7 +335,7 @@ export class RuleBrainFallback {
     if (!policy.localMotionArmed) {
       return brainResponse({
         text: policy.localSpeechAllowed === false ? null : "My body is not armed yet.",
-        legacyPlan: [
+        plan: [
           {
             type: "express",
             args: { emotion: blockedEmotion, intensity: 0.55 },
@@ -358,7 +358,7 @@ export class RuleBrainFallback {
 
     return brainResponse({
       text: policy.localSpeechAllowed === false ? null : text,
-      legacyPlan: [
+      plan: [
         action,
         ...(policy.localSpeechAllowed === false
           ? []
@@ -376,20 +376,20 @@ export class RuleBrainFallback {
   }
 }
 
-function brainResponse({ text = null, legacyPlan = [], reason = "rule", confidence = 0.5 } = {}) {
+function brainResponse({ text = null, plan = [], reason = "rule", confidence = 0.5 } = {}) {
   return {
     ok: true,
     source: "rule_fallback",
     text,
-    action: normalizeOfficialAction(legacyPlan),
+    action: normalizeOfficialAction(plan),
     reason,
     confidence,
     shouldRemember: false
   };
 }
 
-function normalizeOfficialAction(legacyPlan = []) {
-  const list = Array.isArray(legacyPlan) ? legacyPlan : [];
+function normalizeOfficialAction(plan = []) {
+  const list = Array.isArray(plan) ? plan : [];
   const speechAction = list.find((action) => action?.type === "speak");
   const movementAction = list.find((action) => action?.type !== "speak") ?? speechAction;
 
@@ -424,16 +424,16 @@ function movementForAction(action = {}) {
     case "retreat":
       return ["move_backward_tiny"];
     case "curious_scan":
-      return ["curious_shift"];
+      return ["look_left", "look_right"];
     case "excited_wiggle":
-      return ["excited_wiggle"];
+      return ["look_left", "look_right"];
     case "scenario_take_picture":
       return ["still"];
     case "drive":
       return movementForDrive(action.args);
     case "express":
     case "observe_scene":
-      return ["look_up"];
+      return ["still"];
     case "speak":
     case "stop":
     case "none":

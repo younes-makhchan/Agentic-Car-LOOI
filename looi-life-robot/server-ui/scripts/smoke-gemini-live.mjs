@@ -258,7 +258,7 @@ fakeTransport.emit({
         id: "scenario_1",
         name: "run_scenario",
         args: {
-          name: "happy_wiggle"
+          name: "body_talking"
         }
       }
     ]
@@ -266,7 +266,7 @@ fakeTransport.emit({
 });
 await wait(5);
 assert.equal(actions.at(-1).type, "run_scenario");
-assert.equal(actions.at(-1).args.name, "happy_wiggle");
+assert.equal(actions.at(-1).args.name, "body_talking");
 assert.equal(sentMessages.at(-1).toolResponse.functionResponses[0].response.output.accepted, true);
 assert.ok(runtimeLogs.some((entry) => /Gemini tool requests: run_scenario\(/.test(entry.message)));
 assert.equal(runtimeLogs.some((entry) => /GEMINI RX/.test(entry.message)), false);

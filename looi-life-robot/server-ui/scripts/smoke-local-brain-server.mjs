@@ -23,7 +23,7 @@ const cases = [
   ["come here", "move_forward_tiny"],
   ["move forward", "move_forward_tiny"],
   ["give me space", "move_backward_tiny"],
-  ["look around", "curious_shift"],
+  ["look around", "look_left"],
   ["stop", "still"]
 ];
 
@@ -108,7 +108,7 @@ const performResponse = normalizeBrainResponse(parseBrainResponse({
     type: "perform",
     args: {
       speech: { text: "I can come closer.", tone: "happy" },
-      movement: ["excited_wiggle", "move_forward_tiny"],
+      movement: ["look_left", "move_forward_tiny"],
       iterateMovement: true,
       timing: "parallel"
     }
@@ -117,7 +117,7 @@ const performResponse = normalizeBrainResponse(parseBrainResponse({
 assert.equal(performResponse.ok, true);
 assert.equal(performResponse.action.type, "perform");
 assert.equal(performResponse.action.args.speech.text, "I can come closer.");
-assert.equal(performResponse.action.args.movement[0], "excited_wiggle");
+assert.equal(performResponse.action.args.movement[0], "look_left");
 const scenarioResponse = normalizeBrainResponse(parseBrainResponse({
   action: {
     type: "perform",
@@ -132,19 +132,19 @@ const scenarioResponse = normalizeBrainResponse(parseBrainResponse({
 }), { provider: "test", model: "test" });
 assert.equal(scenarioResponse.ok, true);
 assert.equal(scenarioResponse.action.args.scenario, "take_picture");
-const legacyMovementResponse = normalizeBrainResponse(parseBrainResponse({
+const rejectedMovementResponse = normalizeBrainResponse(parseBrainResponse({
   action: {
     type: "movement",
     args: {
-      movement: ["excited_wiggle", "move_forward_tiny"],
+      movement: ["look_left", "move_forward_tiny"],
       iterateMovement: false,
       timing: "sequence"
     }
   }
 }), { provider: "test", model: "test" });
-assert.equal(legacyMovementResponse.ok, false);
-assert.equal(legacyMovementResponse.action, null);
-assert.match(legacyMovementResponse.reason, /Unknown action type/);
+assert.equal(rejectedMovementResponse.ok, false);
+assert.equal(rejectedMovementResponse.action, null);
+assert.match(rejectedMovementResponse.reason, /Unknown action type/);
 assert.equal(stripMarkdownCodeFence("```json\n{\"ok\":true}\n```"), '{"ok":true}');
 assert.equal(parseBrainResponse("```json\n{\"action\":{\"type\":\"perform\",\"args\":{\"movement\":[\"still\"]}}}\n```").action.type, "perform");
 const invalid = normalizeBrainResponse(parseBrainResponse("not json"), { provider: "test", model: "test" });
@@ -255,7 +255,7 @@ try {
   const chatPayload = await chatResponse.json();
   assert.equal(chatResponse.ok, true);
   assert.equal(chatPayload.action.type, "perform");
-  assert.equal(chatPayload.action.args.movement.includes("curious_shift"), true);
+  assert.equal(chatPayload.action.args.movement.includes("look_left"), true);
 } finally {
   await new Promise((resolve) => server.close(resolve));
 }

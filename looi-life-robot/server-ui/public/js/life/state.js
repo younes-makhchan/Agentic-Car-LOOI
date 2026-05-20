@@ -1,4 +1,4 @@
-// Browser-local Life Engine state. Kimi and long-term memory are added later.
+// Browser-local Life Engine state.
 export function createDefaultLifeState() {
   const now = Date.now();
 

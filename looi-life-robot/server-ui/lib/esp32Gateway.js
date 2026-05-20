@@ -21,6 +21,7 @@ export class ESP32Gateway {
     this.messages = [];
     this.seq = 0;
     this.lastTelemetryLogKey = "";
+    this.listeners = new Set();
   }
 
   async connect(url = DEFAULT_URL, { timeoutMs = this.connectTimeoutMs } = {}) {
@@ -222,6 +223,17 @@ export class ESP32Gateway {
     };
   }
 
+  onUpdate(callback) {
+    if (typeof callback !== "function") {
+      return () => {};
+    }
+
+    this.listeners.add(callback);
+    return () => {
+      this.listeners.delete(callback);
+    };
+  }
+
   handleRawMessage(rawMessage) {
     let text = rawMessage;
 
@@ -268,12 +280,45 @@ export class ESP32Gateway {
 
   recordMessage(message) {
     this.seq += 1;
-    this.messages.push({
+    const entry = {
       seq: this.seq,
       receivedAt: Date.now(),
       message
-    });
+    };
+
+    this.messages.push(entry);
     this.messages = this.messages.slice(-MAX_MESSAGES);
+    this.emitUpdate({
+      status: this.getStatus(),
+      telemetry: this.latestTelemetry,
+      config: this.latestConfig,
+      messages: [entry],
+      latestSeq: this.seq
+    });
+
+    return entry;
+  }
+
+  emitUpdate(payload = {}) {
+    if (!this.listeners.size) {
+      return;
+    }
+
+    const snapshot = {
+      status: payload.status ?? this.getStatus(),
+      telemetry: payload.telemetry ?? this.latestTelemetry,
+      config: payload.config ?? this.latestConfig,
+      messages: Array.isArray(payload.messages) ? payload.messages : [],
+      latestSeq: this.seq
+    };
+
+    this.listeners.forEach((callback) => {
+      try {
+        callback(snapshot);
+      } catch (error) {
+        this.log(`GATEWAY_LISTENER_ERROR ${error.message}`, "warn");
+      }
+    });
   }
 
   logIncomingMessage(message = {}) {

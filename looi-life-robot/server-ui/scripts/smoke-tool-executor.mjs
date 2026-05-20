@@ -138,7 +138,7 @@ const lifeEngine = {
   receiveEvent(event) {
     return event;
   },
-  async executeKimiAction(toolName, args) {
+  async executeRobotAction(toolName, args) {
     behaviorRequests.push({ toolName, args });
     return {
       ok: true,
@@ -282,9 +282,9 @@ const photoScenario = await executor.executeBridgeAction({
 });
 assert.equal(photoScenario.status, "completed");
 assert.equal(photoScenario.detail.scenario, "take_picture");
-assert.deepEqual(photoScenario.detail.scenarioMovement, ["move_backward_tiny"]);
+assert.deepEqual(photoScenario.detail.scenarioMovement, ["move_backward"]);
 assert.deepEqual(photoScenario.detail.ignoredMovement, ["move_forward_tiny"]);
-assert.equal(routedMovements.at(-1).action.args.movement.includes(MOVEMENTS.move_backward_tiny), true);
+assert.equal(routedMovements.at(-1).action.args.movement.includes(MOVEMENTS.move_backward), true);
 assert.equal(faceEvents.some((event) => event.type === "take_picture"), true);
 assert.equal(faceEvents.some((event) => event.type === "show_photo"), true);
 policy.localCameraAllowed = false;
@@ -306,7 +306,7 @@ const faceOnlyMovement = await executor.executeBridgeAction({
   source: "test",
   type: "movement",
   args: {
-    movement: ["look_up"]
+    movement: ["look_left"]
   }
 });
 assert.equal(faceOnlyMovement.status, "completed");

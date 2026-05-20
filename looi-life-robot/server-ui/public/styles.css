@@ -1025,16 +1025,6 @@ body {
   font-size: 1rem;
 }
 
-.legacy-warning {
-  margin: 0.65rem 0 0;
-  padding: 0.8rem 0.9rem;
-  border-radius: 0.95rem;
-  background: rgba(97, 211, 255, 0.08);
-  border: 1px solid rgba(97, 211, 255, 0.2);
-  color: #ccefff;
-  line-height: 1.45;
-}
-
 .voice-warning {
   margin: 0.65rem 0 0;
   padding: 0.75rem 0.85rem;

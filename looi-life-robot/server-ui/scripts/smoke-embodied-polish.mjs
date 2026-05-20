@@ -210,13 +210,13 @@ assert.equal(stop.macroObject.name, "scared_stop");
 const unknown = router.mapActionToMacro({ type: "raw_pwm", args: {} });
 assert.equal(unknown.ok, false);
 
-const movementPlan = compileMovementFrames(["excited_wiggle", "look_up", "invented_dance"], { iterate: true });
-assert.equal(movementPlan.names.includes("excited_wiggle"), true);
-assert.equal(movementPlan.names.includes("look_up"), true);
+const movementPlan = compileMovementFrames(["look_left", "look_right", "invented_dance"], { iterate: true });
+assert.equal(movementPlan.names.includes("look_left"), true);
+assert.equal(movementPlan.names.includes("look_right"), true);
 assert.equal(movementPlan.ignored.includes("invented_dance"), true);
 assert.equal(movementPlan.frames.filter((frame) => frame.type === "motion").length > 0, true);
-const canonicalMovement = compileMovementFrames(["excited_wiggle", "move_forward_tiny"], { iterate: false });
-assert.equal(canonicalMovement.names.includes("excited_wiggle"), true);
+const canonicalMovement = compileMovementFrames(["look_left", "move_forward_tiny"], { iterate: false });
+assert.equal(canonicalMovement.names.includes("look_left"), true);
 assert.equal(canonicalMovement.names.includes("move_forward_tiny"), true);
 
 const performSpeechOnly = router.mapActionToMacro({
@@ -234,7 +234,7 @@ const performNewMovementShape = router.mapActionToMacro({
   type: "perform",
   args: {
     speech: { text: "I can wiggle.", tone: "happy" },
-    movement: ["gentle_wiggle", "look_up"],
+    movement: ["look_left", "look_right"],
     iterateMovement: true,
     timing: "parallel"
   }
@@ -245,7 +245,7 @@ assert.equal(validateMacro(performNewMovementShape.macroObject).ok, true);
 const movementOnly = router.mapActionToMacro({
   type: "movement",
   args: {
-    movement: ["excited_wiggle", "move_backward_tiny"],
+    movement: ["look_left", "move_backward_tiny"],
     timing: "sequence"
   }
 });
@@ -256,7 +256,7 @@ const performDisarmed = await router.execute({
   type: "perform",
   args: {
     speech: { text: "I can wiggle softly.", tone: "happy" },
-    movement: ["gentle_wiggle"],
+    movement: ["look_left", "look_right"],
     iterateMovement: true,
     timing: "parallel"
   },
@@ -310,7 +310,7 @@ const runningPerform = interruptRouter.execute({
   type: "perform",
   args: {
     speech: { text: "This should be interrupted.", tone: "soft" },
-    movement: ["excited_wiggle"],
+    movement: ["look_left", "look_right"],
     iterateMovement: true,
     timing: "parallel"
   },

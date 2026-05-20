@@ -544,7 +544,7 @@ export class LifeEngine {
     }
   }
 
-  async executeKimiAction(toolName, args = {}) {
+  async executeRobotAction(toolName, args = {}) {
     try {
       switch (toolName) {
         case "drive":
@@ -557,15 +557,15 @@ export class LifeEngine {
           return normalizeLifeActionResult(toolName, result);
         }
         case "stop":
-          await this.commandQueue?.emergencyStop?.(args.reason ?? "kimi_stop");
-          this.receiveEvent({ type: "stop", reason: args.reason ?? "kimi_stop" });
+          await this.commandQueue?.emergencyStop?.(args.reason ?? "robot_stop");
+          this.receiveEvent({ type: "stop", reason: args.reason ?? "robot_stop" });
           return {
             ok: true,
             executed: true,
             queued: false,
             rejected: false,
             reason: "stop_executed",
-            detail: { reason: args.reason ?? "kimi_stop" }
+            detail: { reason: args.reason ?? "robot_stop" }
           };
         case "express":
           this.face?.setExpression?.(args.emotion ?? "neutral", args.intensity ?? 1);
@@ -583,7 +583,7 @@ export class LifeEngine {
             executed: false,
             queued: false,
             rejected: true,
-            reason: "unknown_kimi_action",
+            reason: "unknown_robot_action",
             detail: { toolName }
           };
       }

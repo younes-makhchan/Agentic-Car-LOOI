@@ -9,8 +9,6 @@ const child = spawn(process.execPath, ["server.js"], {
   env: {
     ...process.env,
     PORT: String(port),
-    ROBOT_BRIDGE_ALLOW_UNAUTH_LOCAL: "true",
-    ROBOT_BRIDGE_TOKEN: "smoke_token",
     ESP32_DEFAULT_WS_URL: "ws://192.168.4.1:81",
     ESP32_CONNECT_ON_START: "false"
   },
@@ -29,6 +27,11 @@ try {
   assert.equal(status.status.connected, false);
   assert.equal(status.status.state, "disconnected");
   assert.ok(Array.isArray(status.messages));
+
+  const eventSnapshot = await readFirstSseSnapshot("/api/esp32/events");
+  assert.equal(eventSnapshot.ok, true);
+  assert.equal(eventSnapshot.status.connected, false);
+  assert.equal(eventSnapshot.status.state, "disconnected");
 
   const send = await postJson(
     "/api/esp32/send",
@@ -89,6 +92,62 @@ async function parseResponse(response, expectOk) {
   }
 
   return payload;
+}
+
+async function readFirstSseSnapshot(path) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 2000);
+
+  try {
+    const response = await fetch(`${baseUrl}${path}`, {
+      signal: controller.signal
+    });
+    assert.equal(response.ok, true);
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+
+      buffer += decoder.decode(value, { stream: true });
+      const event = extractSnapshotEvent(buffer);
+      if (event) {
+        controller.abort();
+        return event;
+      }
+    }
+  } finally {
+    clearTimeout(timeout);
+  }
+
+  throw new Error("ESP32 SSE snapshot was not received");
+}
+
+function extractSnapshotEvent(buffer) {
+  const chunks = buffer.split(/\n\n/);
+
+  for (const chunk of chunks) {
+    if (!chunk.includes("event: snapshot")) {
+      continue;
+    }
+
+    const dataLine = chunk
+      .split("\n")
+      .find((line) => line.startsWith("data: "));
+
+    if (!dataLine) {
+      continue;
+    }
+
+    return JSON.parse(dataLine.slice("data: ".length));
+  }
+
+  return null;
 }
 
 function wait(ms) {

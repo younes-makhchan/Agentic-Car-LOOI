@@ -146,7 +146,7 @@ engine.setAdapter({
       return {
         ok: true,
         source: "server_llm",
-        action: { type: "perform", args: { speech: { text: "", tone: "soft" }, movement: ["look_up"], timing: "parallel", iterateMovement: false } },
+        action: { type: "perform", args: { speech: { text: "", tone: "soft" }, movement: ["look_left"], timing: "parallel", iterateMovement: false } },
         reason: "speech"
       };
   }

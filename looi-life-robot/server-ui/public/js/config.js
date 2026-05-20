@@ -43,8 +43,6 @@ export const PUBLIC_CONFIG = {
   idleMicroMaxMs: 12000,
   macroDefaultRampMs: 160,
   performanceMonitorEnabledDefault: true,
-  robotBridgeEnabled: false,
   cameraObservationPostMs: 3000,
-  cameraSnapshotMaxWidth: 320,
-  legacyCloudBridgeInactive: true
+  cameraSnapshotMaxWidth: 320
 };

@@ -11,20 +11,14 @@
     "smoke:always-listening": "node scripts/smoke-always-listening.mjs",
     "smoke:embodied": "node scripts/smoke-embodied-polish.mjs",
     "smoke:sim": "node scripts/smoke-simulator.mjs",
-    "smoke:bridge": "node scripts/smoke-robot-bridge.mjs",
     "smoke:tools": "node scripts/smoke-tool-executor.mjs",
-    "smoke:runtime": "node scripts/smoke-runtime-feedback.mjs",
-    "smoke:events": "node scripts/smoke-event-inbox.mjs",
     "smoke:voice": "node scripts/smoke-voice.mjs",
     "smoke:gemini-live": "node scripts/smoke-gemini-live.mjs",
     "smoke:object-follow": "node scripts/smoke-object-follow.mjs",
     "smoke:camera": "node scripts/smoke-camera.mjs",
     "smoke:calibration": "node scripts/smoke-calibration.mjs",
     "smoke:personality": "node scripts/smoke-memory-personality.mjs",
-    "smoke:esp32": "node scripts/smoke-esp32-gateway.mjs",
-    "kimi:agent": "node scripts/run-kimi-agent.mjs",
-    "kimi:agent:once": "node scripts/run-kimi-agent.mjs --once",
-    "smoke:kimi": "node scripts/smoke-kimi-agent.mjs"
+    "smoke:esp32": "node scripts/smoke-esp32-gateway.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

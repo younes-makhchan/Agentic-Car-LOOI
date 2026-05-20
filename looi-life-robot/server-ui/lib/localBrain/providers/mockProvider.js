@@ -106,7 +106,7 @@ export class MockProvider {
     if (/\blook around\b|\bcheck the room\b|\bscan\b/.test(text)) {
       return performResponse({
         policy,
-        movement: ["curious_shift"],
+        movement: ["look_left", "look_right"],
         reason: "look around request",
         confidence: 0.82
       });
@@ -116,8 +116,8 @@ export class MockProvider {
       return performResponse({
         policy,
         movement: policy.localMotionArmed && policy.allowAutonomousMovement
-          ? ["curious_shift"]
-          : ["look_up"],
+          ? ["look_left", "look_right"]
+          : ["still"],
         reason: "boredom high",
         confidence: 0.56
       });
@@ -128,7 +128,7 @@ export class MockProvider {
         policy,
         text: "Hi.",
         tone: "happy",
-        movement: ["gentle_wiggle"],
+        movement: ["look_left", "look_right"],
         reason: "greeting",
         confidence: 0.74
       });

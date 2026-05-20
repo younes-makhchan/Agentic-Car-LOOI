@@ -59,8 +59,13 @@ const SCENARIO_DEFINITIONS = Object.freeze({
   }),
   body_talking: Object.freeze({
     name: "body_talking",
-    description: "mutliple body movements when you feel chatty",
-    movement: Object.freeze([MOVEMENTS.gentle_wiggle, MOVEMENTS.curious_shift]),
+    description: "used this tool when the convseration is casual and you want to add more body language to make the conversation more engaging.",
+    movement: Object.freeze([
+      MOVEMENTS.look_left,
+      MOVEMENTS.look_right,
+      MOVEMENTS.move_forward_tiny,
+      MOVEMENTS.move_backward_tiny
+    ]),
     requiresCamera: false,
     requiresMotion: true,
     iterateMovement: true,

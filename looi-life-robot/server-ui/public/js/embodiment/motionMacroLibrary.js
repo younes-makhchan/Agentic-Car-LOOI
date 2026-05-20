@@ -276,13 +276,6 @@ export function getMacro(name, options = {}) {
   return tuneMacro(cloneMacro(macro), options);
 }
 
-export function createMacroLibrary({ calibration, personality } = {}) {
-  return {
-    listMacros: () => listMacros().map((macro) => tuneMacro(macro, { calibration, personality })),
-    getMacro: (name, options = {}) => getMacro(name, { calibration, personality, ...options })
-  };
-}
-
 export function validateMacro(macro) {
   if (!macro || typeof macro !== "object" || Array.isArray(macro)) {
     return { ok: false, error: "macro_must_be_object" };

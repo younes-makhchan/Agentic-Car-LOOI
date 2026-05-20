@@ -93,7 +93,7 @@ export class RuleProvider {
       case "direct_command_look":
         return performResponse({
           policy,
-          movement: ["curious_shift"],
+          movement: ["look_left", "look_right"],
           reason: classification,
           confidence: 0.8
         });
@@ -102,7 +102,7 @@ export class RuleProvider {
           policy,
           text: "Hi.",
           tone: "happy",
-          movement: ["gentle_wiggle"],
+          movement: ["look_left", "look_right"],
           reason: classification,
           confidence: 0.7
         });
@@ -110,7 +110,7 @@ export class RuleProvider {
         return performResponse({
           policy,
           text: "I'm listening locally.",
-          movement: ["look_up"],
+          movement: ["still"],
           reason: classification,
           confidence: 0.55
         });

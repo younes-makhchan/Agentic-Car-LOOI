@@ -127,11 +127,6 @@ export function validateBehaviorRequest(name, args = {}, _state = {}) {
   };
 }
 
-// Backward-compatible placeholder name from Step 1.
-export function validateAction(action, state) {
-  return validateMotionCommand(action, state);
-}
-
 function finiteOrZero(value, fieldName, warnings) {
   const numericValue = Number(value);
 

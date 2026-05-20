@@ -59,7 +59,7 @@ assert.equal(giveSpace.action.type, "perform");
 assert.equal(giveSpace.action.args.movement.includes("move_backward_tiny"), true);
 const lookAround = await mock.think(contextForText("look around", { localMotionArmed: true }));
 assert.equal(lookAround.action.type, "perform");
-assert.equal(lookAround.action.args.movement.includes("curious_shift"), true);
+assert.equal(lookAround.action.args.movement.includes("look_left"), true);
 const stop = await mock.think(contextForText("freeze"));
 assert.equal(stop.action.type, "perform");
 assert.equal(stop.action.args.movement.includes("still"), true);

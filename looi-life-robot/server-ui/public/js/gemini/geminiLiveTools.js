@@ -25,7 +25,7 @@ export const GEMINI_LIVE_SYSTEM_INSTRUCTION = [
   `Allowed scenario names: ${MODEL_SCENARIO_PROMPT_LIST}.`,
   "Do not mention raw movement names, motor commands, PWM, speed values, ESP32 calls, or internal tool names.",
   "Use run_scenario name take_picture for photo/selfie requests.",
-  "Use run_scenario name come_closer, back_up, happy_wiggle, curious_look, ack_yes, ack_no, still, or talking_body_loop for simple body-language requests.",
+  "For simple body-language requests, choose the closest exact scenario from the allowed scenario list.",
   "</scenario_rules>",
   "<follow_rules>",
   "Follow starts only when the latest user intent explicitly asks to follow, track, or keep looking at an object.",
