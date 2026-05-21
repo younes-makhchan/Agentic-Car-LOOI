@@ -8,6 +8,14 @@ import { createGeminiLiveTokenFromEnv, getGeminiLiveEnv } from "./lib/gemini/gem
 import { createLocalBrainServerFromEnv } from "./lib/localBrain/localBrainServer.js";
 import { LearnedPhraseStore } from "./lib/memory/learnedPhraseStore.js";
 import { MemoryStore, looksLikeSecret } from "./lib/memory/memoryStore.js";
+import {
+  fetchRoboflowTurnConfig,
+  getRoboflowWebrtcEnv,
+  initializeRoboflowWebrtcWorker,
+  isRoboflowWorkflowError,
+  publicRoboflowWebrtcConfig,
+  terminateRoboflowPipeline
+} from "./lib/roboflow/webrtcProxy.js";
 
 dotenv.config();
 
@@ -42,6 +50,7 @@ const localBrainModel = process.env.LOCAL_BRAIN_MODEL || defaultLocalBrainModel(
 const localBrainServer = createLocalBrainServerFromEnv(process.env, serverLog);
 const localBrainRequireLocalNetwork = process.env.LOCAL_BRAIN_REQUIRE_LOCAL_NETWORK === "true";
 const geminiLiveConfig = getGeminiLiveEnv(process.env);
+const roboflowWebrtcConfig = getRoboflowWebrtcEnv(process.env);
 
 // Only public, browser-safe config lives here.
 const PUBLIC_CONFIG = {
@@ -61,17 +70,17 @@ const PUBLIC_CONFIG = {
   geminiLiveModel: geminiLiveConfig.model,
   geminiLiveVoice: geminiLiveConfig.voice,
   geminiLiveThinkingLevel: geminiLiveConfig.thinkingLevel,
+  roboflowWebrtc: publicRoboflowWebrtcConfig(roboflowWebrtcConfig),
+  roboflowWebrtcProxyUrl: "/api/init-webrtc",
+  roboflowWebrtcTurnConfigUrl: "/api/roboflow-webrtc/turn-config",
+  roboflowWebrtcTerminateUrl: "/api/roboflow-webrtc/terminate",
   geminiVisionAssistDefault: true,
   geminiVisionAssistIntervalMs: 1500,
   localVisionEnabled: true,
   objectDetectionEnabledDefault: false,
-  objectDetectionIntervalMs: 1000,
-  objectDetectorScoreThreshold: 0.5,
+  objectDetectionProvider: "roboflow_webrtc",
   objectDetectorMaxResults: 12,
-  objectDetectorModelPreset: "efficientdet_lite2_int8",
-  objectDetectorModelAssetPath: "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite2/int8/latest/efficientdet_lite2.tflite",
-  objectDetectorWasmBasePath: "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm",
-  objectDetectorModuleUrl: "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/+esm",
+  objectDetectorModuleUrl: "/vendor/roboflow-inference-sdk/index.es.js",
   followLostTimeoutMs: 2000,
   maxObjectFollowSpeed: 0.18,
   localBrainEventTimeoutMs: Number(process.env.LOCAL_BRAIN_EVENT_TIMEOUT_MS || 12000),
@@ -91,8 +100,12 @@ const PUBLIC_CONFIG = {
 
 app.set("trust proxy", true);
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: "1mb" }));
 app.use(apiTraceMiddleware);
+app.use(
+  "/vendor/roboflow-inference-sdk",
+  express.static(path.join(__dirname, "node_modules", "@roboflow", "inference-sdk", "dist"))
+);
 app.use(express.static(path.join(__dirname, "public")));
 
 app.get("/api/health", (_req, res) => {
@@ -105,6 +118,62 @@ app.get("/api/health", (_req, res) => {
 
 app.get("/api/config", (_req, res) => {
   res.json(PUBLIC_CONFIG);
+});
+
+app.get("/api/roboflow-webrtc/status", requireRoboflowWebrtcAccess, (_req, res) => {
+  const config = getRoboflowWebrtcEnv(process.env);
+  res.json({
+    ok: true,
+    ...publicRoboflowWebrtcConfig(config)
+  });
+});
+
+app.get("/api/roboflow-webrtc/turn-config", requireRoboflowWebrtcAccess, async (_req, res) => {
+  const startedAt = Date.now();
+
+  try {
+    const iceServers = await fetchRoboflowTurnConfig(process.env);
+    serverLog(
+      `ROBOFLOW_WEBRTC turn config ok latency=${Date.now() - startedAt}ms iceServers=${Array.isArray(iceServers) ? iceServers.length : 0}`,
+      "info",
+      "VISION"
+    );
+    res.json({ iceServers: iceServers ?? [] });
+  } catch (error) {
+    sendRoboflowWebrtcError(res, error, "turn config");
+  }
+});
+
+app.post("/api/init-webrtc", requireRoboflowWebrtcAccess, async (req, res) => {
+  const startedAt = Date.now();
+
+  try {
+    const answer = await initializeRoboflowWebrtcWorker(req.body, process.env);
+    serverLog(
+      `ROBOFLOW_WEBRTC init ok latency=${Date.now() - startedAt}ms pipeline=${answer?.context?.pipeline_id ?? "unknown"}`,
+      "info",
+      "VISION"
+    );
+    res.json(answer);
+  } catch (error) {
+    sendRoboflowWebrtcError(res, error, "init");
+  }
+});
+
+app.post("/api/roboflow-webrtc/terminate", requireRoboflowWebrtcAccess, async (req, res) => {
+  const startedAt = Date.now();
+
+  try {
+    await terminateRoboflowPipeline(req.body?.pipelineId, process.env);
+    serverLog(
+      `ROBOFLOW_WEBRTC terminate ok latency=${Date.now() - startedAt}ms pipeline=${shortServerLogText(req.body?.pipelineId, 80)}`,
+      "info",
+      "VISION"
+    );
+    res.json({ ok: true });
+  } catch (error) {
+    sendRoboflowWebrtcError(res, error, "terminate");
+  }
 });
 
 app.post("/api/gemini-live/token", requireGeminiLiveAccess, async (_req, res) => {
@@ -521,6 +590,22 @@ function summarizeApiRequestBody(req) {
     };
   }
 
+  if (req.path === "/api/init-webrtc") {
+    return {
+      offer: {
+        type: body.offer?.type,
+        sdpChars: typeof body.offer?.sdp === "string" ? body.offer.sdp.length : 0
+      },
+      wrtcParams: summarizeWebrtcParams(body.wrtcParams)
+    };
+  }
+
+  if (req.path === "/api/roboflow-webrtc/terminate") {
+    return {
+      pipelineId: shortServerLogText(body.pipelineId, 100)
+    };
+  }
+
   if (req.path === "/api/memory/write") {
     return {
       type: body.type ?? null,
@@ -587,7 +672,26 @@ function summarizeApiResponseBody(req, body) {
       geminiLiveEnabled: body.geminiLiveEnabled,
       geminiLiveConfigured: body.geminiLiveConfigured,
       geminiLiveModel: body.geminiLiveModel,
+      roboflowWebrtcEnabled: body.roboflowWebrtc?.enabled,
+      roboflowWebrtcConfigured: body.roboflowWebrtc?.configured,
+      objectDetectionProvider: body.objectDetectionProvider,
       esp32ConnectionMode: body.esp32ConnectionMode
+    };
+  }
+
+  if (req.path === "/api/init-webrtc" || req.path.startsWith("/api/roboflow-webrtc/")) {
+    return {
+      ok: body.ok,
+      enabled: body.enabled,
+      configured: body.configured,
+      status: body.status,
+      type: body.type,
+      sdpChars: typeof body.sdp === "string" ? body.sdp.length : undefined,
+      pipelineId: body.context?.pipeline_id,
+      iceServers: Array.isArray(body.iceServers) ? body.iceServers.length : undefined,
+      error: body.error ? shortServerLogText(body.error, 240) : undefined,
+      message: body.message ? shortServerLogText(body.message, 240) : undefined,
+      error_type: body.error_type
     };
   }
 
@@ -705,6 +809,30 @@ function summarizeEsp32Payload(payload = null) {
   return summary;
 }
 
+function summarizeWebrtcParams(wrtcParams = null) {
+  if (!wrtcParams || typeof wrtcParams !== "object") {
+    return null;
+  }
+
+  return {
+    hasWorkflowSpec: Boolean(wrtcParams.workflowSpec),
+    workspaceName: shortServerLogText(wrtcParams.workspaceName, 100),
+    workflowId: shortServerLogText(wrtcParams.workflowId, 100),
+    imageInputName: wrtcParams.imageInputName,
+    streamOutputNames: Array.isArray(wrtcParams.streamOutputNames)
+      ? wrtcParams.streamOutputNames.slice(0, 12)
+      : undefined,
+    dataOutputNames: Array.isArray(wrtcParams.dataOutputNames)
+      ? wrtcParams.dataOutputNames.slice(0, 12)
+      : undefined,
+    threadPoolWorkers: wrtcParams.threadPoolWorkers,
+    processingTimeout: wrtcParams.processingTimeout,
+    requestedPlan: wrtcParams.requestedPlan,
+    requestedRegion: wrtcParams.requestedRegion,
+    iceServers: Array.isArray(wrtcParams.iceServers) ? wrtcParams.iceServers.length : undefined
+  };
+}
+
 function requireMemoryAccess(req, res, next) {
   if (isLocalRequest(req) || isPrivateLanRequest(req)) {
     next();
@@ -743,6 +871,23 @@ function requireGeminiLiveAccess(req, res, next) {
     ok: false,
     error:
       "Gemini Live token endpoint requires localhost, private LAN, or GEMINI_LIVE_ALLOW_PUBLIC_TOKEN=true for temporary public testing."
+  });
+}
+
+function requireRoboflowWebrtcAccess(req, res, next) {
+  if (
+    isLocalRequest(req) ||
+    isPrivateLanRequest(req) ||
+    process.env.ROBOFLOW_WEBRTC_ALLOW_PUBLIC === "true"
+  ) {
+    next();
+    return;
+  }
+
+  res.status(403).json({
+    ok: false,
+    error:
+      "Roboflow WebRTC endpoint requires localhost, private LAN, or ROBOFLOW_WEBRTC_ALLOW_PUBLIC=true for temporary public testing."
   });
 }
 
@@ -814,6 +959,29 @@ function sendMemoryError(res, error) {
   res.status(statusCode).json({
     ok: false,
     error: statusCode === 500 ? "Memory request failed" : error.message
+  });
+}
+
+function sendRoboflowWebrtcError(res, error, action = "request") {
+  if (isRoboflowWorkflowError(error)) {
+    serverLog(
+      `ROBOFLOW_WEBRTC ${action} failed status=${error.statusCode} error=${shortServerLogText(error.message, 240)}`,
+      "warn",
+      "VISION"
+    );
+    res.status(error.statusCode).json(error.errorData);
+    return;
+  }
+
+  const statusCode = Number(error?.statusCode) || 502;
+  serverLog(
+    `ROBOFLOW_WEBRTC ${action} failed status=${statusCode} error=${shortServerLogText(error.message, 240)}`,
+    "warn",
+    "VISION"
+  );
+  res.status(statusCode).json({
+    ok: false,
+    error: error.message || "Roboflow WebRTC request failed."
   });
 }
 
@@ -1045,6 +1213,9 @@ async function startServer() {
   );
   console.log(
     `[BOOT] Gemini Live enabled=${geminiLiveConfig.enabled} configured=${geminiLiveConfig.configured} model=${geminiLiveConfig.model} voice=${geminiLiveConfig.voice}`
+  );
+  console.log(
+    `[BOOT] Roboflow WebRTC enabled=${roboflowWebrtcConfig.enabled} configured=${roboflowWebrtcConfig.configured} workspace=${roboflowWebrtcConfig.workspace || "(not set)"} workflow=${roboflowWebrtcConfig.workflowId || "(not set)"} region=${roboflowWebrtcConfig.requestedRegion || "(default)"}`
   );
   console.log(
     `[BOOT] Server API trace=${serverTraceEnabled} pollTrace=${serverTracePollEndpoints} esp32Gateway=${esp32DefaultWsUrl}`

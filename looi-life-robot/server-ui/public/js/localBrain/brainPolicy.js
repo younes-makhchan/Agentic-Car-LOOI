@@ -6,7 +6,6 @@ export function createDefaultBrainPolicy() {
     localSpeechAllowed: true,
     localVisionEnabled: true,
     objectDetectionEnabledDefault: false,
-    objectDetectionIntervalMs: 1000,
     followModeArmed: false,
     allowFollowMovement: false,
     followLostTimeoutMs: 2000,
@@ -30,12 +29,6 @@ export function clampBrainPolicy(policy = {}) {
     objectDetectionEnabledDefault: toBoolean(
       value.objectDetectionEnabledDefault,
       defaults.objectDetectionEnabledDefault
-    ),
-    objectDetectionIntervalMs: clampInteger(
-      value.objectDetectionIntervalMs,
-      200,
-      5000,
-      defaults.objectDetectionIntervalMs
     ),
     followModeArmed: toBoolean(value.followModeArmed, defaults.followModeArmed),
     allowFollowMovement: toBoolean(value.allowFollowMovement, defaults.allowFollowMovement),

@@ -675,7 +675,7 @@
                 <h3>Gemini Live Vision</h3>
                 <p>
                   Normal conversation uses Gemini camera frames. When follow starts,
-                  Gemini video pauses and MediaPipe takes over local tracking until follow stops.
+                  Gemini video pauses and Roboflow WebRTC object metadata drives follow tracking until follow stops.
                 </p>
               </div>
               <label class="checkbox-field">
@@ -738,8 +738,8 @@
               <div>
                 <h3>Object Vision / Follow</h3>
                 <p>
-                  MediaPipe runs only for focused object follow. It tracks the selected
-                  target locally and never drives through Gemini frame-by-frame.
+                  Roboflow WebRTC runs only for focused object follow. It streams the camera
+                  through the server proxy and never exposes the API key in the browser.
                 </p>
               </div>
               <div class="button-grid button-grid--compact">
@@ -748,19 +748,13 @@
               </div>
             </div>
             <div class="slider-grid">
-              <label class="slider-field" for="objectDetectorModelSelect">
-                <span>Vision model</span>
-                <select id="objectDetectorModelSelect"></select>
-              </label>
-              <label class="slider-field" for="objectDetectionIntervalSlider">
-                <span>Detection interval</span>
-                <strong id="objectDetectionIntervalValue">1000 ms</strong>
-                <input id="objectDetectionIntervalSlider" type="range" min="200" max="5000" step="100" value="1000" />
-              </label>
-              <label class="slider-field" for="objectScoreThresholdSlider">
-                <span>Threshold</span>
-                <strong id="objectScoreThresholdValue">0.50</strong>
-                <input id="objectScoreThresholdSlider" type="range" min="0.2" max="0.9" step="0.05" value="0.5" />
+              <label class="slider-field" for="objectRoboflowGpuPlanSelect">
+                <span>Roboflow GPU</span>
+                <select id="objectRoboflowGpuPlanSelect">
+                  <option value="webrtc-gpu-small">Small GPU · lower cost</option>
+                  <option value="webrtc-gpu-medium">Medium GPU · balanced</option>
+                  <option value="webrtc-gpu-large">Large GPU · faster</option>
+                </select>
               </label>
               <label class="slider-field" for="objectMaxResultsInput">
                 <span>Max results</span>
@@ -785,7 +779,11 @@
                 <strong id="objectDetectorQuality">--</strong>
               </div>
               <div class="status-row">
-                <span>Interval / threshold</span>
+                <span>GPU plan</span>
+                <strong id="objectDetectorGpuPlan">--</strong>
+              </div>
+              <div class="status-row">
+                <span>Filters</span>
                 <strong id="objectDetectorParams">--</strong>
               </div>
               <div class="status-row">
@@ -802,6 +800,10 @@
               </div>
             </div>
             <div class="debug-grid">
+              <label class="debug-field">
+                <span>Detected objects</span>
+                <div id="objectDetectionList" class="detected-object-list">No detections yet.</div>
+              </label>
               <label class="debug-field">
                 <span>Visible labels sent to Gemini</span>
                 <strong id="visibleObjectLabels">--</strong>

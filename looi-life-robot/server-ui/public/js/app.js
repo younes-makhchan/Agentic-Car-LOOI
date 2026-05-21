@@ -31,9 +31,6 @@ import { WakeLockManager } from "./runtime/wakeLockManager.js";
 import { createFaceController } from "./ui/faceCanvas.js";
 import {
   DEFAULT_OBJECT_DETECTOR_MAX_RESULTS,
-  DEFAULT_OBJECT_DETECTOR_MODEL_PRESET,
-  DEFAULT_OBJECT_DETECTOR_SCORE_THRESHOLD,
-  OBJECT_DETECTOR_MODEL_PRESETS,
   ObjectDetectorEngine
 } from "./vision/objectDetectorEngine.js";
 import { ObjectTracker } from "./vision/objectTracker.js";
@@ -180,20 +177,18 @@ const ui = {
   cameraLastObservation: document.getElementById("cameraLastObservation"),
   startObjectDetectionButton: document.getElementById("startObjectDetectionButton"),
   stopObjectDetectionButton: document.getElementById("stopObjectDetectionButton"),
-  objectDetectorModelSelect: document.getElementById("objectDetectorModelSelect"),
-  objectDetectionIntervalSlider: document.getElementById("objectDetectionIntervalSlider"),
-  objectDetectionIntervalValue: document.getElementById("objectDetectionIntervalValue"),
-  objectScoreThresholdSlider: document.getElementById("objectScoreThresholdSlider"),
-  objectScoreThresholdValue: document.getElementById("objectScoreThresholdValue"),
+  objectRoboflowGpuPlanSelect: document.getElementById("objectRoboflowGpuPlanSelect"),
   objectMaxResultsInput: document.getElementById("objectMaxResultsInput"),
   objectCategoryAllowlistInput: document.getElementById("objectCategoryAllowlistInput"),
   objectDetectorState: document.getElementById("objectDetectorState"),
   objectDetectorModel: document.getElementById("objectDetectorModel"),
   objectDetectorQuality: document.getElementById("objectDetectorQuality"),
+  objectDetectorGpuPlan: document.getElementById("objectDetectorGpuPlan"),
   objectDetectorParams: document.getElementById("objectDetectorParams"),
   objectDetectionLastRun: document.getElementById("objectDetectionLastRun"),
   objectDetectionMetadataCount: document.getElementById("objectDetectionMetadataCount"),
   objectDetectionError: document.getElementById("objectDetectionError"),
+  objectDetectionList: document.getElementById("objectDetectionList"),
   visibleObjectLabels: document.getElementById("visibleObjectLabels"),
   visionMetadataPreview: document.getElementById("visionMetadataPreview"),
   followTargetLabelInput: document.getElementById("followTargetLabelInput"),
@@ -381,6 +376,7 @@ let looiModeEnabled = false;
 let keepRobotAwakeEnabled = false;
 let localVisionWidgetSizePx = loadLocalVisionWidgetSize();
 let lastLogSignature = "";
+let lastOverlayDebugAt = 0;
 
 face = createFaceController(ui.canvas);
 applyLocalVisionWidgetSize(localVisionWidgetSizePx, { persist: false });
@@ -671,7 +667,7 @@ ui.geminiVisionAssistToggle?.addEventListener("change", () => {
   syncGeminiVisionAssist("toggle");
   log(
     geminiVisionAssistEnabled
-      ? "Gemini Live Vision enabled for normal conversation. It pauses during MediaPipe follow."
+      ? "Gemini Live Vision enabled for normal conversation. It pauses during Roboflow object follow."
       : "Gemini Live Vision disabled.",
     geminiVisionAssistEnabled ? "warn" : "info"
   );
@@ -1099,10 +1095,10 @@ ui.speedSlider.addEventListener("input", updateSliderLabels);
 ui.durationSlider.addEventListener("input", updateSliderLabels);
 ui.localVisionSizeSlider?.addEventListener("input", () => {
   applyLocalVisionWidgetSize(ui.localVisionSizeSlider.value);
-  drawObjectDetectionOverlays(objectDetectorEngine?.lastResult?.detections ?? []);
+  drawObjectDetectionOverlays(objectDetectorEngine?.lastResult ?? { detections: [] });
 });
 globalThis.addEventListener?.("resize", () => {
-  drawObjectDetectionOverlays(objectDetectorEngine?.lastResult?.detections ?? []);
+  drawObjectDetectionOverlays(objectDetectorEngine?.lastResult ?? { detections: [] });
 });
 ui.startObjectDetectionButton?.addEventListener("click", () => {
   startObjectDetectionFromUi().catch((error) => log(`Object detector start failed: ${error.message}`, "warn"));
@@ -1112,31 +1108,11 @@ ui.stopObjectDetectionButton?.addEventListener("click", () => {
   followTargetController?.stop?.("object_detector_stopped");
   updateVisionUi();
 });
-ui.objectDetectorModelSelect?.addEventListener("change", () => {
-  const preset = ui.objectDetectorModelSelect.value || DEFAULT_OBJECT_DETECTOR_MODEL_PRESET;
-  const model = OBJECT_DETECTOR_MODEL_PRESETS[preset];
-  if (!model || !objectDetectorEngine?.setModelAssetPath) {
-    return;
-  }
-  objectDetectorEngine.setModelAssetPath(model.url, { modelPreset: preset, modelName: model.label })
-    .then(updateVisionUi)
-    .catch((error) => log(`Object detector model switch failed: ${error.message}`, "warn"));
-});
-ui.objectDetectionIntervalSlider?.addEventListener("input", () => {
-  const value = Number(ui.objectDetectionIntervalSlider.value);
-  objectDetectorEngine?.setDetectionIntervalMs?.(value);
-  if (ui.objectDetectionIntervalValue) {
-    ui.objectDetectionIntervalValue.textContent = `${Math.round(value)} ms`;
-  }
-  updateVisionUi();
-});
-ui.objectScoreThresholdSlider?.addEventListener("input", () => {
-  const value = Number(ui.objectScoreThresholdSlider.value);
-  objectDetectorEngine?.setScoreThreshold?.(value);
-  if (ui.objectScoreThresholdValue) {
-    ui.objectScoreThresholdValue.textContent = value.toFixed(2);
-  }
-  updateVisionUi();
+ui.objectRoboflowGpuPlanSelect?.addEventListener("change", () => {
+  setRoboflowGpuPlanFromUi().catch((error) => {
+    log(`Roboflow GPU plan switch failed: ${error.message}`, "warn");
+    updateVisionUi();
+  });
 });
 ui.objectMaxResultsInput?.addEventListener("change", () => {
   objectDetectorEngine?.setMaxResults?.(Number(ui.objectMaxResultsInput.value));
@@ -1181,10 +1157,6 @@ async function init() {
       activeConfig.objectDetectionEnabledDefault ??
       PUBLIC_CONFIG.objectDetectionEnabledDefault ??
       false,
-    objectDetectionIntervalMs:
-      activeConfig.objectDetectionIntervalMs ??
-      PUBLIC_CONFIG.objectDetectionIntervalMs ??
-      1000,
     followModeArmed: false,
     allowFollowMovement: false,
     followLostTimeoutMs:
@@ -1387,7 +1359,6 @@ async function init() {
   cameraInput.onObservation(handleCameraObservation);
   cameraInput.onSnapshot(handleCameraSnapshot);
 
-  setupObjectDetectorModelOptions();
   visionState = new VisionState({
     logger: (message, level = "info") => log(message, level)
   });
@@ -1398,28 +1369,25 @@ async function init() {
   objectDetectorEngine = new ObjectDetectorEngine({
     videoElement: ui.cameraPreview,
     cameraInput,
-    modelPreset:
-      activeConfig.objectDetectorModelPreset ??
-      PUBLIC_CONFIG.objectDetectorModelPreset ??
-      DEFAULT_OBJECT_DETECTOR_MODEL_PRESET,
-    modelAssetPath:
-      activeConfig.objectDetectorModelAssetPath ??
-      PUBLIC_CONFIG.objectDetectorModelAssetPath,
-    wasmBasePath:
-      activeConfig.objectDetectorWasmBasePath ??
-      PUBLIC_CONFIG.objectDetectorWasmBasePath,
     moduleUrl:
       activeConfig.objectDetectorModuleUrl ??
       PUBLIC_CONFIG.objectDetectorModuleUrl,
-    scoreThreshold:
-      activeConfig.objectDetectorScoreThreshold ??
-      PUBLIC_CONFIG.objectDetectorScoreThreshold ??
-      DEFAULT_OBJECT_DETECTOR_SCORE_THRESHOLD,
+    proxyUrl:
+      activeConfig.roboflowWebrtcProxyUrl ??
+      PUBLIC_CONFIG.roboflowWebrtcProxyUrl,
+    turnConfigUrl:
+      activeConfig.roboflowWebrtcTurnConfigUrl ??
+      PUBLIC_CONFIG.roboflowWebrtcTurnConfigUrl,
+    terminateUrl:
+      activeConfig.roboflowWebrtcTerminateUrl ??
+      PUBLIC_CONFIG.roboflowWebrtcTerminateUrl,
+    roboflowConfig:
+      activeConfig.roboflowWebrtc ??
+      PUBLIC_CONFIG.roboflowWebrtc,
     maxResults:
       activeConfig.objectDetectorMaxResults ??
       PUBLIC_CONFIG.objectDetectorMaxResults ??
       DEFAULT_OBJECT_DETECTOR_MAX_RESULTS,
-    detectionIntervalMs: brainPolicy.objectDetectionIntervalMs,
     logger: (message, level = "info") => log(message, level)
   });
   objectDetectorEngine.onDetections(handleObjectDetections);
@@ -3371,12 +3339,12 @@ async function runScenarioFromUi(name, args = {}) {
 
 async function runScenarioFromVisionFollow(name, args = {}) {
   if (!toolExecutor?.executeBridgeAction) {
-    log(`[mediapipe] follow scenario skipped ${name}: tool executor unavailable`, "warn");
+    log(`[roboflow] follow scenario skipped ${name}: tool executor unavailable`, "warn");
     return null;
   }
 
   return toolExecutor.executeBridgeAction({
-    id: `mediapipe_follow_${name}_${Date.now()}`,
+    id: `roboflow_follow_${name}_${Date.now()}`,
     source: "vision_follow",
     type: "run_scenario",
     args: {
@@ -3384,7 +3352,7 @@ async function runScenarioFromVisionFollow(name, args = {}) {
       targetLabel: args.targetLabel ?? "",
       trackId: args.trackId ?? null
     },
-    reason: args.reason ?? `mediapipe_follow:${name}`
+    reason: args.reason ?? `roboflow_follow:${name}`
   });
 }
 
@@ -3922,21 +3890,6 @@ function updateCameraUi(status = cameraInput?.getCameraStatus?.()) {
   updateProductionChrome();
 }
 
-function setupObjectDetectorModelOptions() {
-  if (!ui.objectDetectorModelSelect) {
-    return;
-  }
-
-  ui.objectDetectorModelSelect.replaceChildren();
-  Object.entries(OBJECT_DETECTOR_MODEL_PRESETS).forEach(([key, preset]) => {
-    ui.objectDetectorModelSelect.append(new Option(preset.label, key));
-  });
-  ui.objectDetectorModelSelect.value =
-    activeConfig.objectDetectorModelPreset ??
-    PUBLIC_CONFIG.objectDetectorModelPreset ??
-    DEFAULT_OBJECT_DETECTOR_MODEL_PRESET;
-}
-
 async function startObjectDetectionFromUi() {
   if (!objectDetectorEngine) {
     throw new Error("Object detector is not initialized.");
@@ -3964,11 +3917,35 @@ async function startObjectDetectionFromUi() {
   return status;
 }
 
+async function setRoboflowGpuPlanFromUi() {
+  if (!objectDetectorEngine?.setRequestedPlan) {
+    return null;
+  }
+
+  const requestedPlan = ui.objectRoboflowGpuPlanSelect?.value?.trim();
+  if (!requestedPlan) {
+    return null;
+  }
+
+  const wasRunning = Boolean(objectDetectorEngine.isRunning?.());
+  const status = await objectDetectorEngine.setRequestedPlan(requestedPlan, {
+    restart: true
+  });
+  log(
+    wasRunning
+      ? `Roboflow GPU plan changed to ${formatRoboflowGpuPlan(requestedPlan)}. Detector restarted.`
+      : `Roboflow GPU plan changed to ${formatRoboflowGpuPlan(requestedPlan)}. It will apply on next detector start.`,
+    wasRunning ? "warn" : "info"
+  );
+  updateVisionUi();
+  return status;
+}
+
 function handleObjectDetections(result = {}) {
   const tracks = objectTracker?.update?.(result) ?? [];
   visionState?.updateFromDetections?.(result, tracks);
   updateVisionUi();
-  drawObjectDetectionOverlays(result.detections ?? []);
+  drawObjectDetectionOverlays(result);
   localEventBus?.publish?.("vision_objects_updated", {
     visibleLabels: getVisionContext().visibleLabels,
     objectCount: getVisionContext().objects.length,
@@ -4044,15 +4021,6 @@ function updateVisionUi() {
   const activeTarget = context.activeTarget;
   const followStatus = followTargetController?.getStatus?.() ?? {};
 
-  if (ui.objectDetectorModelSelect && detectorStatus.modelPreset) {
-    ui.objectDetectorModelSelect.value = detectorStatus.modelPreset;
-  }
-  if (ui.objectDetectionIntervalSlider && detectorStatus.detectionIntervalMs !== undefined) {
-    ui.objectDetectionIntervalSlider.value = String(detectorStatus.detectionIntervalMs);
-  }
-  if (ui.objectDetectionIntervalValue && detectorStatus.detectionIntervalMs !== undefined) {
-    ui.objectDetectionIntervalValue.textContent = `${Math.round(Number(detectorStatus.detectionIntervalMs))} ms`;
-  }
   if (ui.objectMaxResultsInput && detectorStatus.maxResults !== undefined && document.activeElement !== ui.objectMaxResultsInput) {
     ui.objectMaxResultsInput.value = String(detectorStatus.maxResults);
   }
@@ -4076,10 +4044,18 @@ function updateVisionUi() {
       detectorStatus.modelQuantization
     ].filter(Boolean).join(" · ") || "--";
   }
+  if (
+    ui.objectRoboflowGpuPlanSelect &&
+    detectorStatus.requestedPlan &&
+    document.activeElement !== ui.objectRoboflowGpuPlanSelect
+  ) {
+    setSelectValue(ui.objectRoboflowGpuPlanSelect, detectorStatus.requestedPlan, formatRoboflowGpuPlan(detectorStatus.requestedPlan));
+  }
+  if (ui.objectDetectorGpuPlan) {
+    ui.objectDetectorGpuPlan.textContent = formatRoboflowGpuPlan(detectorStatus.requestedPlan);
+  }
   if (ui.objectDetectorParams) {
     ui.objectDetectorParams.textContent = [
-      detectorStatus.detectionIntervalMs ? `${Math.round(detectorStatus.detectionIntervalMs)} ms` : null,
-      detectorStatus.scoreThreshold !== undefined ? `threshold ${Number(detectorStatus.scoreThreshold).toFixed(2)}` : null,
       detectorStatus.maxResults ? `max ${detectorStatus.maxResults}` : null,
       detectorStatus.categoryAllowlist?.length ? `allow ${detectorStatus.categoryAllowlist.join(", ")}` : "all categories"
     ].filter(Boolean).join(" · ");
@@ -4095,6 +4071,9 @@ function updateVisionUi() {
   }
   if (ui.objectDetectionError) {
     ui.objectDetectionError.textContent = detectorStatus.lastError ?? "--";
+  }
+  if (ui.objectDetectionList) {
+    renderDetectedObjects(ui.objectDetectionList, objectDetectorEngine?.lastResult?.detections ?? []);
   }
   if (ui.visibleObjectLabels) {
     ui.visibleObjectLabels.textContent = context.visibleLabels || "--";
@@ -4115,47 +4094,86 @@ function updateVisionUi() {
       ? `running · motion ${followStatus.motionAllowed ? "allowed" : "held"}`
       : "stopped";
   }
-  if (ui.objectScoreThresholdValue && detectorStatus.scoreThreshold !== undefined) {
-    ui.objectScoreThresholdValue.textContent = Number(detectorStatus.scoreThreshold).toFixed(2);
+  drawObjectDetectionOverlays(objectDetectorEngine?.lastResult ?? { detections: [] });
+}
+
+function renderDetectedObjects(container, detections = []) {
+  if (!container) {
+    return;
   }
-  drawObjectDetectionOverlays(objectDetectorEngine?.lastResult?.detections ?? []);
+
+  container.replaceChildren();
+  const visible = Array.isArray(detections) ? detections.slice(0, 12) : [];
+  if (!visible.length) {
+    container.textContent = "No detections yet.";
+    return;
+  }
+
+  visible.forEach((detection) => {
+    const confidence = Math.round(Number(detection.confidence || 0) * 100);
+    const centerX = Number.isFinite(Number(detection.centerX))
+      ? Number(detection.centerX).toFixed(2)
+      : "--";
+    const centerY = Number.isFinite(Number(detection.centerY))
+      ? Number(detection.centerY).toFixed(2)
+      : "--";
+    const chip = document.createElement("span");
+    chip.className = "detected-object-chip";
+    chip.textContent = `${detection.label} ${confidence}% · ${detection.position ?? "unknown"}/${detection.distance ?? "unknown"} · (${centerX},${centerY})`;
+    container.append(chip);
+  });
 }
 
-function drawObjectDetectionOverlays(detections = []) {
-  drawObjectDetectionOverlay(ui.objectDetectionOverlay, detections);
-  drawObjectDetectionOverlay(ui.localVisionOverlay, detections);
+function drawObjectDetectionOverlays(resultOrDetections = []) {
+  const result = Array.isArray(resultOrDetections)
+    ? {
+        detections: resultOrDetections,
+        frameWidth: objectDetectorEngine?.lastResult?.frameWidth,
+        frameHeight: objectDetectorEngine?.lastResult?.frameHeight
+      }
+    : resultOrDetections || { detections: [] };
+
+  drawObjectDetectionOverlay(ui.objectDetectionOverlay, result, ui.cameraPreview);
+  drawObjectDetectionOverlay(ui.localVisionOverlay, result, ui.localVisionPreview);
 }
 
-function drawObjectDetectionOverlay(canvas, detections = []) {
+function drawObjectDetectionOverlay(canvas, result = {}, videoElement = null) {
   if (!canvas) {
     return;
   }
 
+  const detections = Array.isArray(result?.detections) ? result.detections : [];
   const rect = canvas.getBoundingClientRect();
   const width = Math.round(rect.width || canvas.clientWidth || 0);
   const height = Math.round(rect.height || canvas.clientHeight || 0);
+  logOverlayDiagnostics(canvas, result, { width, height });
   if (width <= 0 || height <= 0) {
     return;
   }
+
   canvas.width = width;
   canvas.height = height;
   const ctx = canvas.getContext("2d");
   ctx.clearRect(0, 0, width, height);
+  const frameWidth = Number(result?.frameWidth || videoElement?.videoWidth || width);
+  const frameHeight = Number(result?.frameHeight || videoElement?.videoHeight || height);
+  const scale = Math.max(width / Math.max(1, frameWidth), height / Math.max(1, frameHeight));
+  const renderedWidth = frameWidth * scale;
+  const renderedHeight = frameHeight * scale;
+  const offsetX = (width - renderedWidth) / 2;
+  const offsetY = (height - renderedHeight) / 2;
 
   detections.slice(0, 12).forEach((detection) => {
     const bbox = detection.bbox ?? {};
-    const frameWidth = Number(objectDetectorEngine?.lastResult?.frameWidth || ui.cameraPreview?.videoWidth || width);
-    const frameHeight = Number(objectDetectorEngine?.lastResult?.frameHeight || ui.cameraPreview?.videoHeight || height);
-    const scale = Math.max(width / Math.max(1, frameWidth), height / Math.max(1, frameHeight));
-    const renderedWidth = frameWidth * scale;
-    const renderedHeight = frameHeight * scale;
-    const offsetX = (width - renderedWidth) / 2;
-    const offsetY = (height - renderedHeight) / 2;
     const x = Number(bbox.x || 0) * scale + offsetX;
     const y = Number(bbox.y || 0) * scale + offsetY;
     const boxWidth = Number(bbox.width || 0) * scale;
     const boxHeight = Number(bbox.height || 0) * scale;
     const label = `${detection.label} ${Math.round(Number(detection.confidence || 0) * 100)}% · ${detection.position}/${detection.distance}`;
+    if (!Number.isFinite(x + y + boxWidth + boxHeight) || boxWidth <= 0 || boxHeight <= 0) {
+      drawDetectionCenter(ctx, detection, { width, height, scale, offsetX, offsetY, frameWidth, frameHeight, label });
+      return;
+    }
 
     ctx.strokeStyle = "rgba(126, 224, 186, 0.95)";
     ctx.lineWidth = 2;
@@ -4168,6 +4186,56 @@ function drawObjectDetectionOverlay(canvas, detections = []) {
     ctx.fillRect(labelX, labelY, Math.max(0, Math.min(textWidth, width - labelX)), 18);
     ctx.fillStyle = "#dfffee";
     ctx.fillText(label, labelX + 5, labelY + 13);
+  });
+}
+
+function drawDetectionCenter(ctx, detection = {}, geometry = {}) {
+  const centerX = Number.isFinite(Number(detection.centerX))
+    ? Number(detection.centerX) * geometry.frameWidth
+    : geometry.frameWidth / 2;
+  const centerY = Number.isFinite(Number(detection.centerY))
+    ? Number(detection.centerY) * geometry.frameHeight
+    : geometry.frameHeight / 2;
+  const x = centerX * geometry.scale + geometry.offsetX;
+  const y = centerY * geometry.scale + geometry.offsetY;
+
+  ctx.strokeStyle = "rgba(255, 214, 77, 0.95)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(x, y, 8, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.fillStyle = "rgba(5, 8, 16, 0.82)";
+  ctx.fillRect(Math.max(0, x + 10), Math.max(0, y - 10), Math.min(geometry.width - x - 10, 120), 18);
+  ctx.fillStyle = "#fff0a6";
+  ctx.font = "12px sans-serif";
+  ctx.fillText(geometry.label || detection.label || "object", Math.max(0, x + 15), Math.max(0, y + 3));
+}
+
+function logOverlayDiagnostics(canvas, result = {}, size = {}) {
+  const detections = Array.isArray(result?.detections) ? result.detections : [];
+  if (!detections.length) {
+    return;
+  }
+
+  const now = Date.now();
+  if (now - lastOverlayDebugAt < 1500) {
+    return;
+  }
+
+  lastOverlayDebugAt = now;
+  const first = detections[0] ?? {};
+  console.debug?.("[LOOI overlay]", {
+    canvas: canvas.id || "unknown",
+    canvasSize: `${size.width}x${size.height}`,
+    frameSize: `${result?.frameWidth ?? "?"}x${result?.frameHeight ?? "?"}`,
+    detections: detections.length,
+    first: {
+      label: first.label,
+      confidence: first.confidence,
+      centerX: first.centerX,
+      centerY: first.centerY,
+      bbox: first.bbox
+    }
   });
 }
 
@@ -4517,6 +4585,32 @@ function clampNumber(value, min, max, fallback) {
 
 function formatNumber(value) {
   return Number(value).toFixed(2);
+}
+
+function formatRoboflowGpuPlan(value) {
+  const plan = String(value || "").trim();
+  if (!plan) {
+    return "--";
+  }
+
+  const labels = {
+    "webrtc-gpu-small": "Small GPU",
+    "webrtc-gpu-medium": "Medium GPU",
+    "webrtc-gpu-large": "Large GPU"
+  };
+  return labels[plan] ?? plan;
+}
+
+function setSelectValue(select, value, label = value) {
+  if (!select || !value) {
+    return;
+  }
+
+  const exists = [...select.options].some((option) => option.value === value);
+  if (!exists) {
+    select.append(new Option(label, value));
+  }
+  select.value = value;
 }
 
 function formatMaybe(value, formatter = String) {

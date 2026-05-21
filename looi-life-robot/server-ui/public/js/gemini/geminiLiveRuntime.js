@@ -1620,14 +1620,14 @@ function compactVisionContext(vision = {}, { recentObjectReference = null, reaso
     vision?.scenario?.state !== "idle" &&
     vision?.scenario?.state !== "not_found"
   );
-  const useMediaPipeObjects = Boolean(followScenarioActive || vision?.activeTarget);
+  const useRoboflowObjects = Boolean(followScenarioActive || vision?.activeTarget);
 
   return {
-    mode: useMediaPipeObjects ? "mediapipe_follow" : "gemini_live_video",
+    mode: useRoboflowObjects ? "roboflow_follow" : "gemini_live_video",
     reason: shortText(reason, 80),
-    visibleLabels: useMediaPipeObjects ? shortText(vision?.visibleLabels, 240) : "",
-    objects: useMediaPipeObjects ? objects : [],
-    activeTarget: useMediaPipeObjects && vision?.activeTarget
+    visibleLabels: useRoboflowObjects ? shortText(vision?.visibleLabels, 240) : "",
+    objects: useRoboflowObjects ? objects : [],
+    activeTarget: useRoboflowObjects && vision?.activeTarget
       ? {
           label: shortText(vision.activeTarget.label, 80),
           visible: Boolean(vision.activeTarget.visible),
@@ -1645,10 +1645,10 @@ function compactVisionContext(vision = {}, { recentObjectReference = null, reaso
           reason: shortText(vision.scenario.reason, 120)
         }
       : null,
-    detectorRunning: useMediaPipeObjects ? Boolean(vision?.detectorRunning) : false,
+    detectorRunning: useRoboflowObjects ? Boolean(vision?.detectorRunning) : false,
     cameraRunning: Boolean(vision?.cameraRunning),
     currentCameraFacingMode: shortText(vision?.currentCameraFacingMode, 40),
-    lastDetectionAgeMs: useMediaPipeObjects ? finiteOrNull(vision?.lastDetectionAgeMs) : null,
+    lastDetectionAgeMs: useRoboflowObjects ? finiteOrNull(vision?.lastDetectionAgeMs) : null,
     recentObjectReference: recentObjectReference
       ? {
           label: shortText(recentObjectReference.label, 80),

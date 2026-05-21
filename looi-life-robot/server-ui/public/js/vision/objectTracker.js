@@ -144,7 +144,7 @@ export class ObjectTracker {
       lostAt: null,
       lostForMs: 0,
       seenCount: 1,
-      source: "mediapipe"
+      source: detection.source ?? "roboflow_webrtc"
     };
   }
 

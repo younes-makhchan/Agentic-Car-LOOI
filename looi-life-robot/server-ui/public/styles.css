@@ -4032,11 +4032,15 @@ button {
 
 .vision-preview-shell video {
   display: block;
+  position: relative;
+  z-index: 1;
 }
 
 .object-detection-overlay {
+  display: block;
   position: absolute;
   inset: 0;
+  z-index: 2;
   width: 100%;
   height: 100%;
   pointer-events: none;
@@ -4100,6 +4104,34 @@ button {
 
 .debug-grid span {
   color: var(--muted);
+}
+
+.detected-object-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  min-height: 2.5rem;
+  margin-top: 0.35rem;
+  padding: 0.65rem;
+  border-radius: 0.95rem;
+  background: rgba(6, 10, 17, 0.82);
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+
+.detected-object-chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 0.42rem 0.55rem;
+  border-radius: 999px;
+  background: rgba(126, 224, 186, 0.1);
+  border: 1px solid rgba(126, 224, 186, 0.2);
+  color: var(--text);
+  font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
+  font-size: 0.78rem;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
 }
 
 .debug-grid pre {

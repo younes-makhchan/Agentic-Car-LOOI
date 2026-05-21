@@ -275,7 +275,7 @@ function normalizeTracks(tracks = []) {
         lostAt: track.lostAt ?? null,
         lostForMs: Number(track.lostForMs ?? 0),
         seenCount: Number(track.seenCount ?? 0),
-        source: track.source ?? "mediapipe"
+        source: track.source ?? "roboflow_webrtc"
       })).filter((track) => track.id && track.label)
     : [];
 }

@@ -292,7 +292,7 @@ assert.ok(runtimeLogs.some((entry) => entry.message === "Gemini tool requests: n
 assert.equal(actions.some((action) => action.source === "gemini_live_speech_start"), false);
 const visionContextMessage = sentMessages.find((message) => message.realtimeInput?.text?.startsWith("<vision_context>"));
 assert.ok(visionContextMessage, "Gemini Live should receive vision context text");
-assert.ok(visionContextMessage.realtimeInput.text.includes('"mode":"mediapipe_follow"'));
+assert.ok(visionContextMessage.realtimeInput.text.includes('"mode":"roboflow_follow"'));
 assert.ok(visionContextMessage.realtimeInput.text.includes('"visibleLabels":"person, bottle"'));
 assert.ok(visionContextMessage.realtimeInput.text.includes('"position":"center"'));
 assert.equal(/"confidence"|"distance"|"lastSeenMs"|summary/i.test(visionContextMessage.realtimeInput.text), false);

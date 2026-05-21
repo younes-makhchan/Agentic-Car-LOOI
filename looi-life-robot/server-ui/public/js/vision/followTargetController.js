@@ -1,6 +1,7 @@
 import { canonicalObjectLabel } from "./objectLabelUtils.js";
 
 const FOLLOW_MODES = new Set(["cautious", "gentle", "curious"]);
+const FOLLOW_POSITION_LOG_INTERVAL_MS = 600;
 
 export class FollowTargetController {
   constructor({
@@ -40,6 +41,7 @@ export class FollowTargetController {
     this.lostAnnounced = false;
     this.paused = false;
     this.lastScenarioName = null;
+    this.lastPositionLogAt = 0;
   }
 
   start({ label, trackId = null, mode = "gentle" } = {}) {
@@ -73,7 +75,7 @@ export class FollowTargetController {
       reason: "follow_started"
     });
     this.eventBus?.publish?.("vision_follow_started", this.getTarget(), { source: "vision" });
-    this.log(`[mediapipe] follow started target=${this.targetLabel} track=${this.targetTrackId ?? "none"} mode=${this.mode}`);
+    this.log(`[roboflow] follow started target=${this.targetLabel} track=${this.targetTrackId ?? "none"} mode=${this.mode}`);
     this.scheduleTick();
     return {
       ok: true,
@@ -97,7 +99,7 @@ export class FollowTargetController {
     this.targetLabel = null;
     this.targetTrackId = null;
     this.lastScenarioName = null;
-    this.log(`[mediapipe] follow stopped reason=${reason}`);
+    this.log(`[roboflow] follow stopped reason=${reason}`);
     return {
       ok: true,
       reason,
@@ -150,6 +152,7 @@ export class FollowTargetController {
     });
 
     const scenarioName = this.computeScenarioForTarget(track);
+    this.logTargetPosition(track, scenarioName);
     if (!scenarioName) {
       this.lastScenarioName = null;
       return this.getStatus();
@@ -157,7 +160,7 @@ export class FollowTargetController {
 
     const permission = this.canMove();
     if (!permission.allowed) {
-      this.log(`[mediapipe] follow scenario held target=${track.label} scenario=${scenarioName} reason=${permission.reason}`, "debug");
+      this.log(`[roboflow] follow scenario held target=${track.label} scenario=${scenarioName} reason=${permission.reason}`, "debug");
       return {
         ...this.getStatus(),
         scenarioHeldReason: permission.reason
@@ -241,16 +244,41 @@ export class FollowTargetController {
     return null;
   }
 
-  runFollowScenario(name, track = {}) {
-    if (typeof this.scenarioRunner !== "function") {
-      this.log(`[mediapipe] follow scenario skipped scenario=${name} reason=scenario_runner_unavailable`, "warn");
+  logTargetPosition(track = {}, scenarioName = null) {
+    const now = Date.now();
+    if (now - this.lastPositionLogAt < FOLLOW_POSITION_LOG_INTERVAL_MS) {
       return;
     }
 
-    this.log(`[mediapipe] follow scenario ${name} target=${track.label ?? this.targetLabel} centerX=${formatNumber(track.centerX)}`);
+    this.lastPositionLogAt = now;
+    const centerX = clampNumber(track.centerX, 0, 1, 0.5);
+    const centerY = clampNumber(track.centerY, 0, 1, 0.5);
+    const offsetX = centerX - 0.5;
+    const bbox = track.bbox && typeof track.bbox === "object" ? track.bbox : {};
+    const bboxText = [
+      formatPixel(bbox.x),
+      formatPixel(bbox.y),
+      formatPixel(bbox.width),
+      formatPixel(bbox.height)
+    ].join(",");
+    const steering = scenarioName ?? "centered";
+
+    this.log(
+      `[roboflow] follow target position label=${track.label ?? this.targetLabel ?? "unknown"} track=${track.id ?? this.targetTrackId ?? "none"} center=(${formatNumber(centerX)},${formatNumber(centerY)}) offsetX=${formatNumber(offsetX)} position=${track.position ?? "unknown"} vertical=${track.verticalPosition ?? "unknown"} distance=${track.distance ?? "unknown"} area=${formatNumber(track.areaRatio)} bbox=(${bboxText}) steering=${steering}`,
+      "debug"
+    );
+  }
+
+  runFollowScenario(name, track = {}) {
+    if (typeof this.scenarioRunner !== "function") {
+      this.log(`[roboflow] follow scenario skipped scenario=${name} reason=scenario_runner_unavailable`, "warn");
+      return;
+    }
+
+    this.log(`[roboflow] follow scenario ${name} target=${track.label ?? this.targetLabel} centerX=${formatNumber(track.centerX)}`);
     const result = this.scenarioRunner(name, {
       source: "vision_follow",
-      reason: `mediapipe_follow:${name}`,
+      reason: `roboflow_follow:${name}`,
       targetLabel: track.label ?? this.targetLabel,
       trackId: track.id ?? this.targetTrackId ?? null
     });
@@ -261,11 +289,11 @@ export class FollowTargetController {
       }
 
       this.log(
-        `[mediapipe] follow scenario not executed scenario=${name} status=${scenarioResult.status} message=${scenarioResult.message ?? ""}`,
+        `[roboflow] follow scenario not executed scenario=${name} status=${scenarioResult.status} message=${scenarioResult.message ?? ""}`,
         "warn"
       );
     }).catch((error) => {
-      this.log(`[mediapipe] follow scenario failed scenario=${name} error=${error.message}`, "warn");
+      this.log(`[roboflow] follow scenario failed scenario=${name} error=${error.message}`, "warn");
     });
   }
 
@@ -289,7 +317,7 @@ export class FollowTargetController {
     }
 
     this.lostAnnounced = true;
-    this.log(`[mediapipe] target lost label=${label} lostForMs=${Math.round(lostForMs)}`, "warn");
+    this.log(`[roboflow] target lost label=${label} lostForMs=${Math.round(lostForMs)}`, "warn");
     this.eventBus?.publish?.("vision_target_lost", {
       label,
       targetLabel: label,
@@ -425,4 +453,9 @@ function clampNumber(value, min, max, fallback) {
 function formatNumber(value) {
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric.toFixed(2) : "unknown";
+}
+
+function formatPixel(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? String(Math.round(numeric)) : "unknown";
 }

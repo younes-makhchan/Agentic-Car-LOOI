@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { ObjectDetectorEngine } from "../public/js/vision/objectDetectorEngine.js";
 import { ObjectTracker } from "../public/js/vision/objectTracker.js";
 import { VisionState } from "../public/js/vision/visionState.js";
 import {
@@ -310,6 +311,54 @@ function updateVision({ tracker, visionState }, result) {
   assert.equal(Object.hasOwn(context.objects[0], "lastSeenMs"), false);
   assert.equal(context.visibleLabels, "cup");
   assert.equal(Object.hasOwn(context, "summary"), false);
+}
+
+{
+  const engine = new ObjectDetectorEngine();
+  const result = engine.normalizeDetections([
+    {
+      predictions: {
+        image: {
+          width: 2048,
+          height: 1272
+        },
+        predictions: [
+          {
+            width: 1280,
+            height: 1054,
+            x: 1157,
+            y: 593,
+            confidence: 0.9685842394828796,
+            class_id: 1,
+            class: "person",
+            detection_id: "24c15c43-0671-4ca5-8edc-7abdbbf27116",
+            parent_id: "image"
+          },
+          {
+            width: 788,
+            height: 437,
+            x: 1329,
+            y: 1043.5,
+            confidence: 0.9630815386772156,
+            class_id: 73,
+            class: "laptop",
+            detection_id: "bc92817d-65cd-4943-b9a5-ee296403bb78",
+            parent_id: "image"
+          }
+        ]
+      }
+    }
+  ]);
+
+  assert.equal(result.frameWidth, 2048);
+  assert.equal(result.frameHeight, 1272);
+  assert.equal(result.detections.length, 2);
+  assert.equal(result.detections[0].label, "person");
+  assert.equal(Math.round(result.detections[0].bbox.x), 517);
+  assert.equal(Math.round(result.detections[0].bbox.y), 66);
+  assert.equal(result.detections[0].position, "center");
+  assert.equal(result.detections[1].label, "laptop");
+  assert.equal(result.detections[1].position, "right");
 }
 
 assert.equal(typeof setVisionIndicator, "function");
