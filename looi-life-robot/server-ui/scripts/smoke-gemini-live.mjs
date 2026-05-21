@@ -177,7 +177,7 @@ assert.ok(setup.setup.systemInstruction.parts[0].text.includes("Gemini output au
 assert.ok(setup.setup.systemInstruction.parts[0].text.includes("do not duplicate"));
 assert.ok(setup.setup.systemInstruction.parts[0].text.includes("<vision_rules>"));
 assert.ok(setup.setup.systemInstruction.parts[0].text.includes("person"));
-assert.ok(setup.setup.systemInstruction.parts[0].text.includes("runtime exits follow first"));
+assert.ok(setup.setup.systemInstruction.parts[0].text.includes("follow context only to know whether local tracking is active or lost"));
 
 const runtime = new GeminiLiveRuntime({
   toolExecutor,
@@ -292,9 +292,11 @@ assert.ok(runtimeLogs.some((entry) => entry.message === "Gemini tool requests: n
 assert.equal(actions.some((action) => action.source === "gemini_live_speech_start"), false);
 const visionContextMessage = sentMessages.find((message) => message.realtimeInput?.text?.startsWith("<vision_context>"));
 assert.ok(visionContextMessage, "Gemini Live should receive vision context text");
-assert.ok(visionContextMessage.realtimeInput.text.includes('"mode":"roboflow_follow"'));
-assert.ok(visionContextMessage.realtimeInput.text.includes('"visibleLabels":"person, bottle"'));
-assert.ok(visionContextMessage.realtimeInput.text.includes('"position":"center"'));
+assert.ok(visionContextMessage.realtimeInput.text.includes('"mode":"gemini_live_video"'));
+assert.ok(visionContextMessage.realtimeInput.text.includes('"targetLabel":"bottle"'));
+assert.ok(visionContextMessage.realtimeInput.text.includes('"state":"following"'));
+assert.equal(visionContextMessage.realtimeInput.text.includes('"visibleLabels"'), false);
+assert.equal(visionContextMessage.realtimeInput.text.includes('"objects"'), false);
 assert.equal(/"confidence"|"distance"|"lastSeenMs"|summary/i.test(visionContextMessage.realtimeInput.text), false);
 assert.equal(/data:image|base64|dataUrl|imageData/i.test(visionContextMessage.realtimeInput.text), false);
 

@@ -667,7 +667,7 @@ ui.geminiVisionAssistToggle?.addEventListener("change", () => {
   syncGeminiVisionAssist("toggle");
   log(
     geminiVisionAssistEnabled
-      ? "Gemini Live Vision enabled for normal conversation. It pauses during Roboflow object follow."
+      ? "Gemini Live Vision enabled. Roboflow follow runs separately for tracking."
       : "Gemini Live Vision disabled.",
     geminiVisionAssistEnabled ? "warn" : "info"
   );
@@ -1132,13 +1132,11 @@ ui.setFollowTargetButton?.addEventListener("click", () => {
     ?.then?.((result) => {
       log(result.message, result.executed ? "info" : "warn");
       updateVisionUi();
-      sendFollowVisionContext("manual_follow_target", { force: true, allowStopped: !result.executed });
     });
 });
 ui.stopFollowingButton?.addEventListener("click", () => {
   visionScenarioManager?.stopFollowing?.("manual_stop_following");
   updateVisionUi();
-  sendFollowVisionContext("manual_stop_following", { force: true, allowStopped: true });
 });
 
 init();
@@ -1394,7 +1392,6 @@ async function init() {
   objectDetectorEngine.onStatus((status) => {
     visionState?.setDetectorStatus?.(status);
     updateVisionUi();
-    sendFollowVisionContext("detector_status");
   });
   objectDetectorEngine.onError((message) => {
     log(`Object detector error: ${message}`, "warn");
@@ -1486,26 +1483,12 @@ async function init() {
     "vision_follow_starting",
     "vision_follow_started",
     "vision_follow_stopped",
-    "vision_follow_target_set",
     "vision_follow_not_found",
     "vision_target_lost"
   ].forEach((type) => {
     localEventBus.subscribe(type, () => {
-      if (type === "vision_follow_starting") {
-        stopGeminiVisionAssist("follow_starting");
-        updateVisionUi();
-        syncGeminiVisionAssist(type);
-        return;
-      }
       updateVisionUi();
-      sendFollowVisionContext(type, {
-        force: [
-          "vision_follow_started",
-          "vision_follow_not_found",
-          "vision_target_lost"
-        ].includes(type),
-        allowStopped: ["vision_follow_stopped", "vision_follow_not_found"].includes(type)
-      });
+      sendFollowStateContext(type);
       syncGeminiVisionAssist(type);
     });
   });
@@ -1855,7 +1838,6 @@ async function handleGatedTranscript(transcript = {}) {
   updateRecentObjectReferenceFromText(text);
   if (isStopFollowIntent(text)) {
     visionScenarioManager?.stopFollowing?.("user_stop_following");
-    sendFollowVisionContext("user_stop_following", { force: true, allowStopped: true });
   }
 
   const source = transcript.source === "typed"
@@ -3254,21 +3236,17 @@ async function sendGeminiVisionAssistFrame(reason = "frame") {
 function getGeminiVisionAssistState(reason = "") {
   const geminiStatus = geminiLiveRuntime?.getStatus?.() ?? {};
   const cameraStatus = cameraInput?.getCameraStatus?.() ?? {};
-  const followActive = isFollowVisionModeActive();
   const blockedReason = !geminiVisionAssistEnabled
     ? "disabled"
     : !geminiStatus.connected
       ? "gemini_not_connected"
       : !cameraStatus.running
         ? "camera_off"
-        : followActive
-          ? "paused_for_follow"
-          : "running";
+        : "running";
   const shouldRun = Boolean(
     geminiVisionAssistEnabled &&
     geminiStatus.connected &&
-    cameraStatus.running &&
-    !followActive
+    cameraStatus.running
   );
 
   return {
@@ -3276,7 +3254,7 @@ function getGeminiVisionAssistState(reason = "") {
     enabled: geminiVisionAssistEnabled,
     connected: Boolean(geminiStatus.connected),
     cameraRunning: Boolean(cameraStatus.running),
-    followActive,
+    followActive: isFollowVisionModeActive(),
     reason: shouldRun ? reason || "running" : blockedReason
   };
 }
@@ -3288,9 +3266,7 @@ function updateGeminiVisionAssistUi(state = getGeminiVisionAssistState()) {
   if (ui.geminiVisionAssistState) {
     ui.geminiVisionAssistState.textContent = state.shouldRun
       ? "sending frames"
-      : state.followActive
-        ? "paused for follow"
-        : state.reason || "off";
+      : state.reason || "off";
   }
   if (ui.geminiVisionAssistLastFrame) {
     ui.geminiVisionAssistLastFrame.textContent = geminiVisionAssistLastFrameAt
@@ -3946,12 +3922,6 @@ function handleObjectDetections(result = {}) {
   visionState?.updateFromDetections?.(result, tracks);
   updateVisionUi();
   drawObjectDetectionOverlays(result);
-  localEventBus?.publish?.("vision_objects_updated", {
-    visibleLabels: getVisionContext().visibleLabels,
-    objectCount: getVisionContext().objects.length,
-    activeTarget: getVisionContext().activeTarget
-  }, { source: "vision" });
-  sendFollowVisionContext("vision_objects_updated");
 }
 
 function getVisionContext() {
@@ -3973,20 +3943,32 @@ function isFollowVisionModeActive() {
   return Boolean(followTargetController?.isRunning?.() || scenarioActive);
 }
 
-function sendFollowVisionContext(reason = "follow_context", { force = false, allowStopped = false } = {}) {
+function sendFollowStateContext(reason = "follow_context") {
   if (!geminiLiveRuntime?.sendVisionContext) {
     return false;
   }
 
-  if (!allowStopped && !isFollowVisionModeActive()) {
+  if (!isFollowStateContextReason(reason)) {
     return false;
   }
 
-  const sendPromise = geminiLiveRuntime.sendVisionContext({ force, reason });
+  const sendPromise = geminiLiveRuntime.sendVisionContext({
+    force: true,
+    reason
+  });
   sendPromise?.catch?.((error) => {
-    log(`Gemini follow vision context failed: ${error.message}`, "warn");
+    log(`Gemini follow state context failed: ${error.message}`, "warn");
   });
   return sendPromise;
+}
+
+function isFollowStateContextReason(reason = "") {
+  return [
+    "vision_follow_started",
+    "vision_follow_stopped",
+    "vision_follow_not_found",
+    "vision_target_lost"
+  ].includes(reason);
 }
 
 function updateRecentObjectReferenceFromText(text) {

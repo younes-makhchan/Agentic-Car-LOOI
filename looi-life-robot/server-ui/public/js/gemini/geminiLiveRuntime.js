@@ -1615,55 +1615,32 @@ function stripDataUrlPrefix(value) {
 }
 
 function compactVisionContext(vision = {}, { recentObjectReference = null, reason = "" } = {}) {
-  const objects = Array.isArray(vision?.objects)
-    ? vision.objects.slice(0, 12).map((object) => ({
-        label: shortText(object.label, 80),
-        visible: Boolean(object.visible),
-        position: shortText(object.position, 40),
-        trackId: shortText(object.trackId, 80)
-      }))
-    : [];
   const followScenarioActive = Boolean(
     vision?.scenario?.active &&
     vision?.scenario?.type === "follow_object" &&
     vision?.scenario?.state !== "idle" &&
     vision?.scenario?.state !== "not_found"
   );
-  const useRoboflowObjects = Boolean(followScenarioActive || vision?.activeTarget);
+  const targetLabel = vision?.scenario?.targetLabel || vision?.activeTarget?.label || "";
+  const follow = followScenarioActive || vision?.activeTarget || targetLabel
+    ? {
+        active: followScenarioActive,
+        targetLabel: shortText(targetLabel, 80),
+        state: shortText(vision?.scenario?.state, 80),
+        targetVisible: Boolean(vision?.activeTarget?.visible),
+        detectorRunning: Boolean(vision?.detectorRunning)
+      }
+    : null;
 
   return {
-    mode: useRoboflowObjects ? "roboflow_follow" : "gemini_live_video",
+    mode: "gemini_live_video",
     reason: shortText(reason, 80),
-    visibleLabels: useRoboflowObjects ? shortText(vision?.visibleLabels, 240) : "",
-    objects: useRoboflowObjects ? objects : [],
-    activeTarget: useRoboflowObjects && vision?.activeTarget
-      ? {
-          label: shortText(vision.activeTarget.label, 80),
-          visible: Boolean(vision.activeTarget.visible),
-          position: shortText(vision.activeTarget.position, 40),
-          trackId: shortText(vision.activeTarget.trackId, 80),
-          lostForMs: finiteOrNull(vision.activeTarget.lostForMs)
-      }
-      : null,
-    scenario: vision?.scenario
-      ? {
-          active: Boolean(vision.scenario.active),
-          type: shortText(vision.scenario.type, 80),
-          targetLabel: shortText(vision.scenario.targetLabel, 80),
-          state: shortText(vision.scenario.state, 80),
-          reason: shortText(vision.scenario.reason, 120)
-        }
-      : null,
-    detectorRunning: useRoboflowObjects ? Boolean(vision?.detectorRunning) : false,
+    follow,
     cameraRunning: Boolean(vision?.cameraRunning),
     currentCameraFacingMode: shortText(vision?.currentCameraFacingMode, 40),
-    lastDetectionAgeMs: useRoboflowObjects ? finiteOrNull(vision?.lastDetectionAgeMs) : null,
     recentObjectReference: recentObjectReference
       ? {
-          label: shortText(recentObjectReference.label, 80),
-          trackId: shortText(recentObjectReference.trackId, 80),
-          lastMentionedByUserAt: shortText(recentObjectReference.lastMentionedByUserAt, 80),
-          lastSeenAt: finiteOrNull(recentObjectReference.lastSeenAt)
+          label: shortText(recentObjectReference.label, 80)
         }
       : null
   };
@@ -1672,32 +1649,14 @@ function compactVisionContext(vision = {}, { recentObjectReference = null, reaso
 function stableVisionSignature(payload = {}) {
   return {
     mode: payload.mode,
-    visibleLabels: payload.visibleLabels,
-    objects: Array.isArray(payload.objects)
-      ? payload.objects
-          .map((object) => ({
-            label: object.label,
-            visible: Boolean(object.visible),
-            position: object.position
-          }))
-          .sort(compareVisionSignatureObjects)
-      : [],
-    activeTarget: payload.activeTarget
+    follow: payload.follow
       ? {
-          label: payload.activeTarget.label,
-          visible: Boolean(payload.activeTarget.visible),
-          position: payload.activeTarget.position
+          active: Boolean(payload.follow.active),
+          targetLabel: payload.follow.targetLabel,
+          state: payload.follow.state,
+          targetVisible: Boolean(payload.follow.targetVisible)
         }
       : null,
-    scenario: payload.scenario
-      ? {
-          active: Boolean(payload.scenario.active),
-          type: payload.scenario.type,
-          targetLabel: payload.scenario.targetLabel,
-          state: payload.scenario.state
-        }
-      : null,
-    detectorRunning: payload.detectorRunning,
     cameraRunning: payload.cameraRunning,
     currentCameraFacingMode: payload.currentCameraFacingMode,
     recentObjectReference: payload.recentObjectReference
@@ -1706,19 +1665,6 @@ function stableVisionSignature(payload = {}) {
         }
       : null
   };
-}
-
-function compareVisionSignatureObjects(a, b) {
-  return [
-    String(a.label ?? "").localeCompare(String(b.label ?? "")),
-    String(a.position ?? "").localeCompare(String(b.position ?? "")),
-    Number(a.visible) - Number(b.visible)
-  ].find((value) => value !== 0) ?? 0;
-}
-
-function finiteOrNull(value) {
-  const numeric = Number(value);
-  return Number.isFinite(numeric) ? numeric : null;
 }
 
 function shortText(value, max = 120) {

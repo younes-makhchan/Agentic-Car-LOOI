@@ -103,11 +103,6 @@ export class VisionScenarioManager {
     });
     this.face?.setVisionIndicator?.(true, "following");
     this.face?.startFollow?.();
-    this.eventBus?.publish?.("vision_follow_target_set", {
-      label: target.label,
-      trackId: target.id ?? target.trackId,
-      mode
-    }, { source: "vision", priority: 3 });
 
     return result(started?.ok === false ? "rejected" : "completed", started?.ok !== false, `Started following ${target.label}.`, {
       scenario: "follow_object",
