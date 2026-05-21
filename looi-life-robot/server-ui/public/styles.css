@@ -1132,6 +1132,47 @@ body {
   background-color: rgba(255, 189, 89, 0.96);
 }
 
+.looi-thinking-indicator {
+  position: absolute;
+  z-index: 35;
+  right: clamp(8px, 1.4vw, 24px);
+  top: 50%;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(6px, 0.7vw, 10px);
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(-50%);
+  transition: opacity 160ms ease;
+}
+
+.looi-thinking-indicator[hidden] {
+  display: none;
+}
+
+.looi-eye-system.is-thinking .looi-thinking-indicator {
+  opacity: 1;
+}
+
+.looi-thinking-indicator span {
+  width: clamp(7px, 0.8vw, 12px);
+  height: clamp(18px, 2vw, 34px);
+  border-radius: 999px;
+  background: #bdf3ff;
+  box-shadow: 0 0 10px rgba(95, 245, 255, 0.65);
+  opacity: 0.3;
+  transform-origin: center;
+  animation: looiThinkingTick 900ms ease-in-out infinite;
+}
+
+.looi-thinking-indicator span:nth-child(2) {
+  animation-delay: 120ms;
+}
+
+.looi-thinking-indicator span:nth-child(3) {
+  animation-delay: 240ms;
+}
+
 @keyframes looiVisionPulse {
   from {
     transform: scale(0.96);
@@ -1141,6 +1182,19 @@ body {
   to {
     transform: scale(1.04);
     opacity: 1;
+  }
+}
+
+@keyframes looiThinkingTick {
+  0%,
+  100% {
+    opacity: 0.28;
+    transform: scaleY(0.65);
+  }
+
+  45% {
+    opacity: 1;
+    transform: scaleY(1);
   }
 }
 

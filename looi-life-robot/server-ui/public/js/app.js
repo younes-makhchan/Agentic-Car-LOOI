@@ -3148,6 +3148,8 @@ function updateLocalBrainUi() {
 }
 
 function updateGeminiLiveUi(status = geminiLiveRuntime?.getStatus?.() ?? {}) {
+  face?.setThinking?.(Boolean(status.thinking && !status.audioPlaying));
+
   const state = status.running
     ? status.connected
       ? "connected"

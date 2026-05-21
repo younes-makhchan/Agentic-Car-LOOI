@@ -73,6 +73,7 @@ export class GeminiLiveRuntime {
       connected: false,
       micStreaming: false,
       audioPlaying: false,
+      thinking: false,
       lastInputTranscript: "",
       lastOutputTranscript: "",
       lastToolCall: "",
@@ -142,6 +143,7 @@ export class GeminiLiveRuntime {
       connecting: true,
       connected: false,
       setupComplete: false,
+      thinking: false,
       lastError: "",
       latencyMs: null,
       startedAt: this.now(),
@@ -203,6 +205,7 @@ export class GeminiLiveRuntime {
         connecting: false,
         connected: false,
         micStreaming: false,
+        thinking: false,
         lastError: error.message
       });
       this.cleanupTransport();
@@ -225,6 +228,7 @@ export class GeminiLiveRuntime {
       connected: false,
       micStreaming: false,
       audioPlaying: false,
+      thinking: false,
       setupComplete: false
     });
     this.log(`Gemini Live stopped: ${reason}`);
@@ -236,6 +240,7 @@ export class GeminiLiveRuntime {
     this.pendingToolCalls.clear();
     this.patchStatus({
       audioPlaying: false,
+      thinking: false,
       lastToolResult: `interrupted:${reason}`
     });
   }
@@ -358,7 +363,8 @@ export class GeminiLiveRuntime {
             connected: false,
             running: false,
             micStreaming: false,
-            audioPlaying: false
+            audioPlaying: false,
+            thinking: false
           });
           this.lifeEngine?.setListening?.(false);
         }
@@ -522,7 +528,7 @@ export class GeminiLiveRuntime {
       "";
 
     if (inputText) {
-      this.patchStatus({ lastInputTranscript: inputText });
+      this.patchStatus({ lastInputTranscript: inputText, thinking: true });
       this.eventBus?.publish?.("gemini_live_input_transcript", {
         text: inputText
       }, {
@@ -751,6 +757,7 @@ export class GeminiLiveRuntime {
     this.lifeEngine?.setSpeaking?.(true);
     this.patchStatus({
       audioPlaying: true,
+      thinking: false,
       lastAudioAt: this.now(),
       outputAudioState: this.outputAudioContext?.state ?? "",
       lastAudioDebug: `queued ${samples.length} samples @ ${rate}Hz (${Math.round(buffer.duration * 1000)}ms), context=${this.outputAudioContext?.state ?? "unknown"}`
@@ -795,7 +802,7 @@ export class GeminiLiveRuntime {
     this.nextOutputTime = this.outputAudioContext?.currentTime ?? 0;
     this.face?.setSpeaking?.(false);
     this.lifeEngine?.setSpeaking?.(false);
-    this.patchStatus({ audioPlaying: false });
+    this.patchStatus({ audioPlaying: false, thinking: false });
     this.log(`Gemini Live audio interrupted: ${reason}`);
   }
 

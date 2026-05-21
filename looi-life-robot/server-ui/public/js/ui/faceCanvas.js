@@ -3,6 +3,7 @@ const FACE_STATE = {
   intensity: 1,
   eyeDirection: "center",
   speaking: false,
+  thinking: false,
   sleeping: false,
   autoBlinkTimer: 0,
   autoGlanceTimer: 0,
@@ -70,6 +71,7 @@ export function initFaceCanvas(element) {
   }
 
   FACE_STATE.tellingVisualState = "idle";
+  FACE_STATE.thinking = false;
   rootRef.replaceChildren(createEyeDom());
   rootRef.classList.add("looi-eye-system");
   rootRef.classList.remove(
@@ -90,7 +92,8 @@ export function initFaceCanvas(element) {
     "is-tell-opening",
     "is-telling",
     "is-tell-finishing",
-    "is-kissing"
+    "is-kissing",
+    "is-thinking"
   );
   rootRef.setAttribute("role", "img");
   rootRef.setAttribute("aria-label", "LOOI animated robot eyes");
@@ -239,6 +242,7 @@ export function setSpeaking(isSpeaking) {
   eyesRef.classList.toggle("is-speaking", FACE_STATE.speaking);
 
   if (FACE_STATE.speaking) {
+    setThinking(false);
     clearMomentaryAnimations();
     window.clearTimeout(FACE_STATE.kissTimer);
     rootRef?.classList.remove("is-kissing");
@@ -249,6 +253,26 @@ export function setSpeaking(isSpeaking) {
   }
 
   scheduleNextBlink();
+}
+
+export function setThinking(isThinking) {
+  const nextThinking = Boolean(isThinking);
+
+  if (FACE_STATE.thinking === nextThinking) {
+    return;
+  }
+
+  FACE_STATE.thinking = nextThinking;
+
+  if (!rootRef) {
+    return;
+  }
+
+  rootRef.classList.toggle("is-thinking", FACE_STATE.thinking);
+  const indicator = rootRef.querySelector(".looi-thinking-indicator");
+  if (indicator) {
+    indicator.hidden = !FACE_STATE.thinking;
+  }
 }
 
 export function setMouthOpen() {
@@ -674,7 +698,8 @@ export function createFaceController(element) {
     stopFollow,
     showPhoto,
     dismissPhoto,
-    setVisionIndicator
+    setVisionIndicator,
+    setThinking
   };
 }
 
@@ -843,6 +868,16 @@ function createEyeDom() {
     <span class="looi-vision-indicator__handle"></span>
   `;
 
+  const thinkingIndicator = document.createElement("div");
+  thinkingIndicator.className = "looi-thinking-indicator";
+  thinkingIndicator.hidden = true;
+  thinkingIndicator.setAttribute("aria-hidden", "true");
+  thinkingIndicator.innerHTML = `
+    <span></span>
+    <span></span>
+    <span></span>
+  `;
+
   const eyes = document.createElement("div");
   eyes.className = "looi-eyes";
   eyes.append(createEye(), createEye());
@@ -872,6 +907,7 @@ function createEyeDom() {
     preview,
     cameraIcon,
     visionIndicator,
+    thinkingIndicator,
     eyes
   );
   return fragment;

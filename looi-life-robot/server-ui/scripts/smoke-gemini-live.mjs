@@ -256,6 +256,14 @@ assert.equal(sentVideoFrame, true);
 assert.equal(sentMessages.at(-1).realtimeInput.video.mimeType, "image/jpeg");
 assert.equal(sentMessages.at(-1).realtimeInput.video.data, "aGVsbG8=");
 
+fakeTransport.emit({
+  serverContent: {
+    inputTranscription: { text: "are you there" }
+  }
+});
+await wait(5);
+assert.equal(runtime.getStatus().thinking, true);
+
 const pcm = float32ToPcm16(new Float32Array([0, 0.2, -0.2, 0.1]));
 const audioData = arrayBufferToBase64(pcm.buffer);
 fakeTransport.emit({
@@ -276,6 +284,7 @@ fakeTransport.emit({
   }
 });
 await wait(5);
+assert.equal(runtime.getStatus().thinking, false);
 assert.equal(runtime.getStatus().setupComplete, true);
 assert.equal(runtime.getStatus().lastInputTranscript, "move backward more");
 assert.equal(runtime.getStatus().lastOutputTranscript, "I can move back a little.");
