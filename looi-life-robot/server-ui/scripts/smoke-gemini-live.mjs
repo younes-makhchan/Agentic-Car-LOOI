@@ -610,6 +610,36 @@ assert.equal(stops.includes("gemini_tool_call_cancelled"), false);
 heldActionResolve?.();
 await wait(5);
 
+const cancelsBeforeFollow = stops.filter((entry) => entry === "cancel:gemini_tool_call_cancelled").length;
+holdNextAction = true;
+fakeTransport.emit({
+  toolCall: {
+    functionCalls: [
+      {
+        id: "cancel_follow",
+        name: "run_scenario",
+        args: {
+          name: "follow_target",
+          label: "bottle"
+        }
+      }
+    ]
+  }
+});
+await wait(5);
+fakeTransport.emit({
+  toolCallCancellation: {
+    ids: ["cancel_follow"]
+  }
+});
+await wait(5);
+assert.equal(
+  stops.filter((entry) => entry === "cancel:gemini_tool_call_cancelled").length,
+  cancelsBeforeFollow
+);
+heldActionResolve?.();
+await wait(5);
+
 const mappedUnknown = geminiFunctionCallToAction({
   id: "unknown_scenario",
   name: "run_scenario",

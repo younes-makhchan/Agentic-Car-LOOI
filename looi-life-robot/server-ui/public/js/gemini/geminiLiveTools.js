@@ -36,6 +36,7 @@ export const GEMINI_LIVE_SYSTEM_INSTRUCTION = [
   "<follow_rules>",
   "Follow starts only when the latest user intent explicitly asks to follow, track, or keep looking at an object.",
   "Use run_scenario name follow_target with a concrete label. Resolve 'it', 'this', or 'that' from recentObjectReference, activeTarget, or the most recent visible object.",
+  "If activeTarget already matches the requested label and follow state is active, do not call follow_target again.",
   "Use run_scenario name stop_following only when the latest user intent explicitly says stop following, stop tracking, cancel, never mind, or stop.",
   "While follow is active, answer questions normally from activeTarget metadata. If the user explicitly asks for another scenario, call that scenario; the runtime exits follow first.",
   "Normal conversation while following must not stop, restart, change follow mode, take pictures, or run body movement scenarios.",

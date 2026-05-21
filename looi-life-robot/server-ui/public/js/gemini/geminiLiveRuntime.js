@@ -700,6 +700,11 @@ export class GeminiLiveRuntime {
       return;
     }
 
+    if (cancelled.every(shouldKeepLocalToolRunningAfterGeminiCancellation)) {
+      this.log(`GEMINI STEP 7 tool cancellation ignored for persistent local tool: ${ids.join(", ")}`, "warn");
+      return;
+    }
+
     this.interruptAudio("gemini_tool_call_cancelled");
     await this.toolExecutor?.cancelActiveScenario?.("gemini_tool_call_cancelled");
     this.log(`GEMINI STEP 7 tool cancellation: ${ids.join(", ")}`, "warn");
@@ -1597,6 +1602,10 @@ function safeStringify(value) {
   } catch (_error) {
     return String(value);
   }
+}
+
+function shouldKeepLocalToolRunningAfterGeminiCancellation(entry = {}) {
+  return entry.action?.type === "run_scenario" && entry.action?.args?.name === "follow_target";
 }
 
 function stripDataUrlPrefix(value) {

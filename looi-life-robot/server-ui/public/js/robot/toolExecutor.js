@@ -5,6 +5,7 @@ import {
   normalizeRunScenarioName
 } from "../embodiment/scenarioCatalog.js";
 import { PRIORITY_LEVELS } from "../embodiment/priorityScheduler.js";
+import { canonicalObjectLabel } from "../vision/objectLabelUtils.js";
 
 const PHYSICAL_ACTIONS = new Set(["run_scenario", "stop"]);
 const ACTION_TYPES = new Set(["run_scenario", "stop"]);
@@ -205,11 +206,29 @@ export class ToolExecutor {
     }
 
     if (normalizedArgs.name === "follow_target") {
-      const lifecyclePrelude = await this.runLifecycleExitsBeforeScenario(normalizedArgs.name, action, {
-        physical: false
-      });
-      if (lifecyclePrelude) {
-        return lifecyclePrelude;
+      const activeFollow = this.getActiveFollowRequestState(normalizedArgs);
+
+      if (activeFollow.sameTarget && activeFollow.sameMode) {
+        const alreadyActive = this.buildAlreadyActiveScenarioResult(normalizedArgs.name, action, {
+          physical: false,
+          message: `Already following ${activeFollow.activeLabel}.`,
+          detail: {
+            targetLabel: activeFollow.activeLabel,
+            mode: activeFollow.activeMode
+          }
+        });
+        if (alreadyActive) {
+          return alreadyActive;
+        }
+      }
+
+      if (!activeFollow.sameTarget) {
+        const lifecyclePrelude = await this.runLifecycleExitsBeforeScenario(normalizedArgs.name, action, {
+          physical: false
+        });
+        if (lifecyclePrelude) {
+          return lifecyclePrelude;
+        }
       }
 
       return this.executeFollowTargetScenario({
@@ -240,6 +259,13 @@ export class ToolExecutor {
         physical: false,
         message: `Scenario is not implemented: ${normalizedArgs.name}`
       });
+    }
+
+    const alreadyActive = this.buildAlreadyActiveScenarioResult(scenario.name, action, {
+      physical: scenarioUsesMotion(scenario)
+    });
+    if (alreadyActive) {
+      return alreadyActive;
     }
 
     const requiresCamera = scenarioRequiresCamera(scenario);
@@ -333,6 +359,59 @@ export class ToolExecutor {
     }
 
     return null;
+  }
+
+  buildAlreadyActiveScenarioResult(scenarioName, action = {}, {
+    physical = false,
+    message = "",
+    detail = {}
+  } = {}) {
+    const activeLifecycle = getActiveScenarioLifecycles(this.scenarioLifecycleContext())
+      .find((lifecycle) => lifecycle.name === scenarioName);
+
+    if (!activeLifecycle) {
+      return null;
+    }
+
+    this.log(`STEP 4 SCENARIO_ALREADY_ACTIVE ${scenarioName}`);
+    return this.buildResult("completed", {
+      action,
+      executed: true,
+      physical,
+      message: message || `Scenario already active: ${scenarioName}.`,
+      detail: {
+        scenario: scenarioName,
+        activeScenario: activeLifecycle.name,
+        alreadyActive: true,
+        ...detail
+      }
+    });
+  }
+
+  getActiveFollowRequestState(args = {}) {
+    const requestedLabel = canonicalObjectLabel(args.label);
+    const requestedMode = normalizeFollowMode(args.mode);
+    const controllerStatus = this.followTargetController?.getStatus?.() ?? {};
+    const visionStatus = this.visionState?.getStatus?.() ?? {};
+    const activeTarget = this.visionState?.getActiveTarget?.() ?? visionStatus.activeTarget ?? null;
+    const activeLabel = canonicalObjectLabel(controllerStatus.targetLabel ?? activeTarget?.label);
+    const activeMode = normalizeFollowMode(controllerStatus.mode);
+    const running = Boolean(
+      this.followTargetController?.isRunning?.() ||
+      controllerStatus.running ||
+      (visionStatus.scenario?.active && visionStatus.scenario?.type === "follow_object")
+    );
+    const sameTarget = Boolean(running && requestedLabel && activeLabel && requestedLabel === activeLabel);
+
+    return {
+      running,
+      sameTarget,
+      sameMode: sameTarget && requestedMode === activeMode,
+      requestedLabel,
+      requestedMode,
+      activeLabel,
+      activeMode
+    };
   }
 
   async executeLifecycleExitScenario(activeLifecycle, nextScenarioName, action = {}) {
@@ -977,6 +1056,10 @@ function normalizeShortText(value, maxLength) {
   }
 
   return value.trim().slice(0, maxLength);
+}
+
+function normalizeFollowMode(mode) {
+  return ["gentle", "curious", "cautious"].includes(mode) ? mode : "gentle";
 }
 
 function stopCommandQueueMotion(commandQueue, reason) {

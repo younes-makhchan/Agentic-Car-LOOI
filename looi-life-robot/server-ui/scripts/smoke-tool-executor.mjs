@@ -422,6 +422,18 @@ const secondDrinkingScenario = await executor.executeBridgeAction({
 });
 assert.equal(secondDrinkingScenario.status, "completed");
 assert.equal(drinkingActive, true);
+const routesBeforeDuplicateDrink = routedSequences.length;
+const duplicateDrinkingScenario = await executor.executeBridgeAction({
+  id: "scenario_drinking_duplicate",
+  source: "gemini_live",
+  type: "run_scenario",
+  args: { name: "drinking" }
+});
+assert.equal(duplicateDrinkingScenario.status, "completed");
+assert.equal(duplicateDrinkingScenario.executed, true);
+assert.equal(duplicateDrinkingScenario.detail.alreadyActive, true);
+assert.equal(drinkingActive, true);
+assert.equal(routedSequences.length, routesBeforeDuplicateDrink);
 const routesBeforeDirectFinishDrink = routedSequences.length;
 const directFinishDrink = await executor.executeBridgeAction({
   id: "scenario_direct_finish_drink",
@@ -518,11 +530,15 @@ assert.equal(tellingActive, false);
 const followStarted = [];
 const followStops = [];
 let followRunning = false;
+let followTargetLabel = "";
+let followMode = "gentle";
 executor.setVisionControllers({
   visionScenarioManager: {
     async startFollowTarget(payload) {
       followStarted.push(payload);
       followRunning = true;
+      followTargetLabel = payload.label;
+      followMode = payload.mode ?? "gentle";
       return {
         status: "completed",
         executed: true,
@@ -533,6 +549,7 @@ executor.setVisionControllers({
     stopFollowing(reason) {
       followStops.push(reason);
       followRunning = false;
+      followTargetLabel = "";
       return { ok: true, reason };
     }
   },
@@ -540,8 +557,16 @@ executor.setVisionControllers({
     isRunning() {
       return followRunning;
     },
+    getStatus() {
+      return {
+        running: followRunning,
+        targetLabel: followTargetLabel,
+        mode: followMode
+      };
+    },
     stop(reason) {
       followRunning = false;
+      followTargetLabel = "";
       return { ok: true, reason };
     }
   }
@@ -554,6 +579,32 @@ const followScenario = await executor.executeBridgeAction({
 });
 assert.equal(followScenario.status, "completed");
 assert.equal(followStarted.at(-1).label, "bottle");
+
+const followStartsBeforeDuplicate = followStarted.length;
+const followStopsBeforeDuplicate = followStops.length;
+const duplicateFollowScenario = await executor.executeBridgeAction({
+  id: "follow_duplicate",
+  source: "gemini_live",
+  type: "run_scenario",
+  args: { name: "follow_target", label: "bottle", mode: "gentle" }
+});
+assert.equal(duplicateFollowScenario.status, "completed");
+assert.equal(duplicateFollowScenario.executed, true);
+assert.equal(duplicateFollowScenario.detail.alreadyActive, true);
+assert.equal(followStarted.length, followStartsBeforeDuplicate);
+assert.equal(followStops.length, followStopsBeforeDuplicate);
+assert.equal(followRunning, true);
+
+const followModeUpdate = await executor.executeBridgeAction({
+  id: "follow_mode_update",
+  source: "gemini_live",
+  type: "run_scenario",
+  args: { name: "follow_target", label: "bottle", mode: "curious" }
+});
+assert.equal(followModeUpdate.status, "completed");
+assert.equal(followStarted.length, followStartsBeforeDuplicate + 1);
+assert.equal(followStops.length, followStopsBeforeDuplicate);
+assert.equal(followMode, "curious");
 
 const activeFollowStopsBefore = followStops.length;
 const activeFollowStop = await executor.executeBridgeAction({
