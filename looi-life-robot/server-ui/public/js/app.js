@@ -2649,7 +2649,9 @@ async function startLocalBrainProductionMode() {
     localBrainEnabled: true,
     localMotionArmed: true,
     localCameraAllowed: true,
-    localSpeechAllowed: true
+    localSpeechAllowed: true,
+    followModeArmed: true,
+    allowFollowMovement: true
   });
 
   lifeEventsEnabled = true;
