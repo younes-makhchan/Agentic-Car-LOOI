@@ -48,6 +48,111 @@ export class CommandQueue {
     return this.enqueueItem(safeCommand);
   }
 
+  sendRealtimeMotion({
+    linear = 0,
+    angular = 0,
+    durationMs = 300,
+    rampMs,
+    label = "realtime_motion",
+    log = true,
+    record = true
+  } = {}) {
+    const safeCommand = {
+      kind: "motion",
+      label,
+      linear: clamp(linear, -this.maxSpeed, this.maxSpeed),
+      angular: clamp(angular, -this.maxSpeed, this.maxSpeed),
+      durationMs: clamp(durationMs, MIN_DURATION_MS, this.maxDurationMs),
+      rampMs: clamp(rampMs ?? 120, 0, MAX_RAMP_MS)
+    };
+
+    if (!this.robotClient?.isConnected()) {
+      const error = new Error("ESP32 is not connected.");
+      if (record) {
+        this.recordCommand(safeCommand, "rejected");
+      }
+      if (log) {
+        this.log(`Rejected ${safeCommand.label}: ${error.message}`, "warn");
+      }
+      return Promise.reject(error);
+    }
+
+    try {
+      const messageId = this.robotClient.sendMotion({
+        linear: safeCommand.linear,
+        angular: safeCommand.angular,
+        durationMs: safeCommand.durationMs,
+        rampMs: safeCommand.rampMs,
+        label: safeCommand.label
+      });
+
+      if (record) {
+        this.recordCommand(safeCommand, "started");
+      }
+      if (log) {
+        this.log(
+          `STEP 5 REALTIME_MOTION_SENT ${safeCommand.label}: linear=${safeCommand.linear.toFixed(2)} angular=${safeCommand.angular.toFixed(2)} duration=${safeCommand.durationMs}ms ramp=${Math.round(safeCommand.rampMs)}ms`
+        );
+      }
+
+      return Promise.resolve({
+        label: safeCommand.label,
+        kind: safeCommand.kind,
+        durationMs: safeCommand.durationMs,
+        rampMs: safeCommand.rampMs,
+        realtime: true,
+        messageId
+      });
+    } catch (error) {
+      if (record) {
+        this.recordCommand(safeCommand, "rejected");
+      }
+      if (log) {
+        this.log(`Rejected ${safeCommand.label}: ${error.message}`, "warn");
+      }
+      return Promise.reject(error);
+    }
+  }
+
+  sendRealtimeStop(reason = "realtime_stop", { log = true, record = true } = {}) {
+    const stopCommand = {
+      kind: "stop",
+      label: reason,
+      reason,
+      linear: 0,
+      angular: 0,
+      durationMs: 0,
+      rampMs: 0
+    };
+
+    try {
+      if (this.robotClient?.isConnected()) {
+        this.robotClient.stop(reason);
+      }
+
+      if (record) {
+        this.recordCommand(stopCommand, "stopped");
+      }
+      if (log) {
+        this.log(`STEP 5 REALTIME_STOP ${reason}`);
+      }
+
+      return Promise.resolve({
+        label: reason,
+        kind: "stop",
+        realtime: true
+      });
+    } catch (error) {
+      if (record) {
+        this.recordCommand(stopCommand, "rejected");
+      }
+      if (log) {
+        this.log(`Realtime stop failed (${reason}): ${error.message}`, "warn");
+      }
+      return Promise.reject(error);
+    }
+  }
+
   enqueueSequence(commands, label = "sequence") {
     if (!Array.isArray(commands) || commands.length === 0) {
       return Promise.resolve([]);

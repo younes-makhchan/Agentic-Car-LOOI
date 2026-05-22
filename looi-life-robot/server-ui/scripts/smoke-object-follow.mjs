@@ -48,12 +48,15 @@ function detectionResult(offsetMs, detections) {
 function createVisionRuntime({ policy = {} } = {}) {
   const events = [];
   const motions = [];
-  const scenarioCalls = [];
   const tracker = new ObjectTracker({ maxLostMs: 2000 });
   const visionState = new VisionState();
   const commandQueue = {
     isBusy: () => false,
     getQueueLength: () => 0,
+    sendRealtimeMotion: async (motion) => {
+      motions.push({ ...motion, realtime: true });
+      return motion;
+    },
     enqueueMotion: async (motion) => {
       motions.push(motion);
       return motion;
@@ -76,22 +79,12 @@ function createVisionRuntime({ policy = {} } = {}) {
     },
     cancel() {}
   };
-  const scenarioRunner = (name, args = {}) => {
-    scenarioCalls.push({ name, args });
-    return Promise.resolve({
-      status: "completed",
-      executed: true,
-      physical: true,
-      message: `scenario ${name} completed`
-    });
-  };
   const controller = new FollowTargetController({
     visionState,
     objectTracker: tracker,
     commandQueue,
     eventBus,
     voiceOutput,
-    scenarioRunner,
     lifeEngine: { getState: () => ({ obstacle: false, stopRespectUntil: 0 }) },
     getPolicy: () => ({
       localMotionArmed: false,
@@ -104,7 +97,7 @@ function createVisionRuntime({ policy = {} } = {}) {
     })
   });
 
-  return { tracker, visionState, controller, commandQueue, eventBus, voiceOutput, events, motions, scenarioCalls };
+  return { tracker, visionState, controller, commandQueue, eventBus, voiceOutput, events, motions };
 }
 
 function updateVision({ tracker, visionState }, result) {
@@ -149,14 +142,20 @@ function updateVision({ tracker, visionState }, result) {
 
 {
   const runtime = createVisionRuntime();
-  assert.equal(runtime.controller.computeScenarioForTarget({ label: "apple", centerX: 0.2 }), "look_left");
-  assert.equal(runtime.controller.computeScenarioForTarget({ label: "apple", centerX: 0.8 }), "look_right");
-  assert.equal(runtime.controller.computeScenarioForTarget({ label: "apple", centerX: 0.5, distance: "far" }), null);
+  const leftSteering = runtime.controller.computeSteeringForTarget({ label: "apple", centerX: 0.2 });
+  const rightSteering = runtime.controller.computeSteeringForTarget({ label: "apple", centerX: 0.8 });
+  const centeredSteering = runtime.controller.computeSteeringForTarget({ label: "apple", centerX: 0.5, distance: "far" });
+  assert.equal(leftSteering.direction, "left");
+  assert.ok(leftSteering.angular < 0);
+  assert.equal(rightSteering.direction, "right");
+  assert.ok(rightSteering.angular > 0);
+  assert.equal(centeredSteering.centered, true);
+  assert.equal(centeredSteering.angular, 0);
 
   updateVision(runtime, detectionResult(0, [detection("apple", 0.2)]));
   runtime.controller.start({ label: "apple" });
   runtime.controller.tick();
-  assert.equal(runtime.scenarioCalls.length, 0, "disarmed follow must not run steering scenarios");
+  assert.equal(runtime.motions.length, 0, "disarmed follow must not send steering motion");
   runtime.controller.stop("test_stop");
 }
 
@@ -171,10 +170,29 @@ function updateVision({ tracker, visionState }, result) {
   updateVision(runtime, detectionResult(0, [detection("apple", 0.2)]));
   runtime.controller.start({ label: "apple" });
   runtime.controller.tick();
-  assert.equal(runtime.scenarioCalls.length, 1);
-  assert.equal(runtime.scenarioCalls[0].name, "look_left");
-  assert.equal(runtime.scenarioCalls[0].args.source, "vision_follow");
-  assert.equal(runtime.scenarioCalls[0].args.targetLabel, "apple");
+  assert.equal(runtime.motions.length, 1);
+  assert.equal(runtime.motions[0].label, "roboflow_follow_turn_left");
+  assert.equal(runtime.motions[0].linear, 0);
+  assert.ok(runtime.motions[0].angular < 0);
+  assert.equal(runtime.motions[0].durationMs, 480);
+  assert.equal(runtime.motions[0].rampMs, 90);
+  assert.equal(runtime.motions[0].realtime, true);
+  runtime.controller.stop("test_stop");
+}
+
+{
+  const runtime = createVisionRuntime({
+    policy: {
+      localMotionArmed: true,
+      followModeArmed: true,
+      allowFollowMovement: true
+    }
+  });
+  updateVision(runtime, detectionResult(0, [detection("apple", 0.5)]));
+  runtime.controller.start({ label: "apple" });
+  runtime.controller.followMotionActive = true;
+  runtime.controller.tick();
+  assert.ok(runtime.events.some((event) => event.type === "motion_stop" && event.reason === "follow_target_centered"));
   runtime.controller.stop("test_stop");
 }
 

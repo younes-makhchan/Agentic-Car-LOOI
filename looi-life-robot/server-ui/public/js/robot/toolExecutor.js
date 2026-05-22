@@ -9,7 +9,6 @@ import { canonicalObjectLabel } from "../vision/objectLabelUtils.js";
 
 const PHYSICAL_ACTIONS = new Set(["run_scenario", "stop"]);
 const ACTION_TYPES = new Set(["run_scenario", "stop"]);
-const VISION_FOLLOW_SCENARIOS = new Set(["look_left", "look_right"]);
 
 // Browser-only execution layer. It never talks to ESP32 directly for movement.
 export class ToolExecutor {
@@ -179,7 +178,7 @@ export class ToolExecutor {
 
   async executeRunScenario(args = {}, action = {}) {
     const normalizedArgs = normalizeRunScenarioArgs(args, {
-      allowInternalScenario: action.source === "local" || action.source === "vision_follow"
+      allowInternalScenario: action.source === "local"
     });
 
     if (!normalizedArgs.name) {
@@ -194,16 +193,6 @@ export class ToolExecutor {
     this.log(
       `STEP 4 RUN_SCENARIO name=${normalizedArgs.name} label=${normalizedArgs.label || "none"} mode=${normalizedArgs.mode}`
     );
-
-    if (action.source === "vision_follow" && !VISION_FOLLOW_SCENARIOS.has(normalizedArgs.name)) {
-      return this.buildResult("rejected", {
-        action,
-        executed: false,
-        physical: false,
-        message: `Vision follow can only run steering scenarios, not ${normalizedArgs.name}.`,
-        detail: { scenario: normalizedArgs.name }
-      });
-    }
 
     if (normalizedArgs.name === "follow_target") {
       const activeFollow = this.getActiveFollowRequestState(normalizedArgs);
@@ -307,10 +296,6 @@ export class ToolExecutor {
   }
 
   async runLifecycleExitsBeforeScenario(nextScenarioName, action = {}, { physical = false } = {}) {
-    if (action.source === "vision_follow") {
-      return null;
-    }
-
     const activeLifecycles = getActiveScenarioLifecycles(this.scenarioLifecycleContext());
     const executedExits = new Set();
 
@@ -875,8 +860,7 @@ export class ToolExecutor {
   isLocalAction(action = {}) {
     return action?.source === "local_brain" ||
       action?.source === "local" ||
-      action?.source === "gemini_live" ||
-      action?.source === "vision_follow";
+      action?.source === "gemini_live";
   }
 
   policyLabel(action = {}) {

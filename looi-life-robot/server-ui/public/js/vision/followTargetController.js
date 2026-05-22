@@ -2,6 +2,12 @@ import { canonicalObjectLabel } from "./objectLabelUtils.js";
 
 const FOLLOW_MODES = new Set(["cautious", "gentle", "curious"]);
 const FOLLOW_POSITION_LOG_INTERVAL_MS = 600;
+const FOLLOW_CENTER_X = 0.5;
+const FOLLOW_CENTER_DEADBAND = 0.035;
+const FOLLOW_STEER_GAIN = 0.9;
+const FOLLOW_COMMAND_DURATION_MS = 480;
+const FOLLOW_COMMAND_REFRESH_MS = 220;
+const FOLLOW_RAMP_MS = 90;
 
 export class FollowTargetController {
   constructor({
@@ -9,10 +15,7 @@ export class FollowTargetController {
     objectTracker,
     lifeEngine,
     commandQueue,
-    safetyGate,
     eventBus,
-    voiceOutput,
-    scenarioRunner,
     getPolicy,
     logger,
     tickMs = 200,
@@ -22,10 +25,7 @@ export class FollowTargetController {
     this.objectTracker = objectTracker;
     this.lifeEngine = lifeEngine;
     this.commandQueue = commandQueue;
-    this.safetyGate = safetyGate;
     this.eventBus = eventBus;
-    this.voiceOutput = voiceOutput;
-    this.scenarioRunner = scenarioRunner;
     this.getPolicy = getPolicy;
     this.logger = logger;
     this.tickMs = clampNumber(tickMs, 100, 1000, 200);
@@ -35,12 +35,12 @@ export class FollowTargetController {
     this.targetTrackId = null;
     this.mode = "gentle";
     this.timer = null;
-    this.lastMoveAt = 0;
+    this.lastSteeringAt = 0;
     this.lastSeenAt = null;
-    this.lastStopAt = 0;
     this.lostAnnounced = false;
     this.paused = false;
-    this.lastScenarioName = null;
+    this.lastSteering = null;
+    this.followMotionActive = false;
     this.lastPositionLogAt = 0;
   }
 
@@ -60,6 +60,9 @@ export class FollowTargetController {
     this.running = true;
     this.paused = false;
     this.lostAnnounced = false;
+    this.lastSteeringAt = 0;
+    this.lastSteering = null;
+    this.followMotionActive = false;
     this.lastSeenAt = Date.now();
     this.visionState?.setActiveTarget?.({
       label: this.targetLabel,
@@ -98,7 +101,8 @@ export class FollowTargetController {
     }, { source: "vision" });
     this.targetLabel = null;
     this.targetTrackId = null;
-    this.lastScenarioName = null;
+    this.lastSteering = null;
+    this.followMotionActive = false;
     this.log(`[roboflow] follow stopped reason=${reason}`);
     return {
       ok: true,
@@ -151,39 +155,35 @@ export class FollowTargetController {
       reason: "target_visible"
     });
 
-    const scenarioName = this.computeScenarioForTarget(track);
-    this.logTargetPosition(track, scenarioName);
-    if (!scenarioName) {
-      this.lastScenarioName = null;
+    const steering = this.computeSteeringForTarget(track);
+    this.logTargetPosition(track, steering);
+    this.lastSteering = steering;
+
+    if (steering.centered) {
+      this.stopMotion("follow_target_centered");
       return this.getStatus();
     }
 
     const permission = this.canMove();
     if (!permission.allowed) {
-      this.log(`[roboflow] follow scenario held target=${track.label} scenario=${scenarioName} reason=${permission.reason}`, "debug");
+      this.handleMovementBlocked(permission.reason);
+      this.log(`[roboflow] follow steering held target=${track.label} direction=${steering.direction} reason=${permission.reason}`, "debug");
       return {
         ...this.getStatus(),
-        scenarioHeldReason: permission.reason
+        steeringHeldReason: permission.reason
       };
     }
 
     const now = Date.now();
-    if (now - this.lastMoveAt < 420) {
+    if (now - this.lastSteeringAt < FOLLOW_COMMAND_REFRESH_MS) {
       return this.getStatus();
     }
 
-    this.lastMoveAt = now;
-    this.lastScenarioName = scenarioName;
-    this.runFollowScenario(scenarioName, track);
-    this.eventBus?.publish?.("vision_follow_scenario", {
-      target: this.getTarget(),
-      scenario: scenarioName,
-      centerX: track.centerX,
-      position: track.position
-    }, { source: "vision" });
+    this.lastSteeringAt = now;
+    this.sendSteeringCommand(steering, track);
     return {
       ...this.getStatus(),
-      lastScenario: scenarioName
+      lastSteering: steering
     };
   }
 
@@ -203,11 +203,12 @@ export class FollowTargetController {
       mode: this.mode,
       tickMs: this.tickMs,
       lostTimeoutMs: this.lostTimeoutMs,
-      lastMoveAt: this.lastMoveAt,
+      lastSteeringAt: this.lastSteeringAt,
       lastSeenAt: this.lastSeenAt,
       lostAnnounced: this.lostAnnounced,
       paused: this.paused,
-      lastScenarioName: this.lastScenarioName,
+      lastSteering: this.lastSteering,
+      followMotionActive: this.followMotionActive,
       motionAllowed: this.canMove().allowed
     };
   }
@@ -216,7 +217,7 @@ export class FollowTargetController {
     return Boolean(this.running);
   }
 
-  setRobotInterfaces({ commandQueue, lifeEngine, scenarioRunner } = {}) {
+  setRobotInterfaces({ commandQueue, lifeEngine } = {}) {
     if (commandQueue) {
       this.commandQueue = commandQueue;
     }
@@ -224,27 +225,45 @@ export class FollowTargetController {
     if (lifeEngine) {
       this.lifeEngine = lifeEngine;
     }
-
-    if (scenarioRunner) {
-      this.scenarioRunner = scenarioRunner;
-    }
   }
 
-  computeScenarioForTarget(track = {}) {
-    const centerX = Number(track.centerX ?? 0.5);
+  computeSteeringForTarget(track = {}) {
+    const centerX = clampNumber(track.centerX, 0, 1, FOLLOW_CENTER_X);
+    const errorX = centerX - FOLLOW_CENTER_X;
+    const absErrorX = Math.abs(errorX);
+    const policy = this.policy();
+    const maxAngular = clampNumber(policy.maxObjectFollowSpeed, 0.03, 0.4, 0.18);
 
-    if (centerX < 0.42) {
-      return "look_left";
+    if (absErrorX <= FOLLOW_CENTER_DEADBAND) {
+      return {
+        centered: true,
+        direction: "centered",
+        centerX,
+        targetCenterX: FOLLOW_CENTER_X,
+        errorX,
+        absErrorX,
+        angular: 0,
+        maxAngular,
+        deadband: FOLLOW_CENTER_DEADBAND
+      };
     }
 
-    if (centerX > 0.58) {
-      return "look_right";
-    }
+    const angular = clampNumber(errorX * FOLLOW_STEER_GAIN, -maxAngular, maxAngular, 0);
 
-    return null;
+    return {
+      centered: false,
+      direction: errorX < 0 ? "left" : "right",
+      centerX,
+      targetCenterX: FOLLOW_CENTER_X,
+      errorX,
+      absErrorX,
+      angular,
+      maxAngular,
+      deadband: FOLLOW_CENTER_DEADBAND
+    };
   }
 
-  logTargetPosition(track = {}, scenarioName = null) {
+  logTargetPosition(track = {}, steering = null) {
     const now = Date.now();
     if (now - this.lastPositionLogAt < FOLLOW_POSITION_LOG_INTERVAL_MS) {
       return;
@@ -261,39 +280,35 @@ export class FollowTargetController {
       formatPixel(bbox.width),
       formatPixel(bbox.height)
     ].join(",");
-    const steering = scenarioName ?? "centered";
+    const direction = steering?.direction ?? "centered";
+    const angular = Number.isFinite(Number(steering?.angular)) ? Number(steering.angular) : 0;
 
     this.log(
-      `[roboflow] follow target position label=${track.label ?? this.targetLabel ?? "unknown"} track=${track.id ?? this.targetTrackId ?? "none"} center=(${formatNumber(centerX)},${formatNumber(centerY)}) offsetX=${formatNumber(offsetX)} position=${track.position ?? "unknown"} vertical=${track.verticalPosition ?? "unknown"} distance=${track.distance ?? "unknown"} area=${formatNumber(track.areaRatio)} bbox=(${bboxText}) steering=${steering}`,
+      `[roboflow] follow target position label=${track.label ?? this.targetLabel ?? "unknown"} track=${track.id ?? this.targetTrackId ?? "none"} center=(${formatNumber(centerX)},${formatNumber(centerY)}) targetX=${formatNumber(FOLLOW_CENTER_X)} errorX=${formatNumber(offsetX)} area=${formatNumber(track.areaRatio)} bbox=(${bboxText}) steering=${direction} angular=${formatNumber(angular)}`,
       "debug"
     );
   }
 
-  runFollowScenario(name, track = {}) {
-    if (typeof this.scenarioRunner !== "function") {
-      this.log(`[roboflow] follow scenario skipped scenario=${name} reason=scenario_runner_unavailable`, "warn");
+  sendSteeringCommand(steering, track = {}) {
+    const command = {
+      linear: 0,
+      angular: steering.angular,
+      durationMs: FOLLOW_COMMAND_DURATION_MS,
+      rampMs: FOLLOW_RAMP_MS,
+      label: `roboflow_follow_turn_${steering.direction}`,
+      log: false
+    };
+    const sender = this.commandQueue?.sendRealtimeMotion ?? this.commandQueue?.enqueueMotion;
+
+    if (typeof sender !== "function") {
+      this.log("[roboflow] follow steering skipped reason=motion_sender_unavailable", "warn");
       return;
     }
 
-    this.log(`[roboflow] follow scenario ${name} target=${track.label ?? this.targetLabel} centerX=${formatNumber(track.centerX)}`);
-    const result = this.scenarioRunner(name, {
-      source: "vision_follow",
-      reason: `roboflow_follow:${name}`,
-      targetLabel: track.label ?? this.targetLabel,
-      trackId: track.id ?? this.targetTrackId ?? null
-    });
-
-    Promise.resolve(result).then((scenarioResult) => {
-      if (!scenarioResult || scenarioResult.status === "completed") {
-        return;
-      }
-
-      this.log(
-        `[roboflow] follow scenario not executed scenario=${name} status=${scenarioResult.status} message=${scenarioResult.message ?? ""}`,
-        "warn"
-      );
-    }).catch((error) => {
-      this.log(`[roboflow] follow scenario failed scenario=${name} error=${error.message}`, "warn");
+    this.followMotionActive = true;
+    Promise.resolve(sender.call(this.commandQueue, command)).catch((error) => {
+      this.followMotionActive = false;
+      this.log(`[roboflow] follow steering failed target=${track.label ?? this.targetLabel} error=${error.message}`, "warn");
     });
   }
 
@@ -392,22 +407,38 @@ export class FollowTargetController {
       return { allowed: false, reason: "obstacle_active" };
     }
 
-    if (this.commandQueue?.isBusy?.() || Number(this.commandQueue?.getQueueLength?.() ?? 0) > 1) {
+    if (this.isCommandQueueBusy()) {
       return { allowed: false, reason: "command_queue_busy" };
     }
 
     return { allowed: true, reason: "ok" };
   }
 
-  stopMotion(reason) {
-    const now = Date.now();
-    if (now - this.lastStopAt < 500) {
+  isCommandQueueBusy() {
+    return Boolean(this.commandQueue?.isBusy?.()) || Number(this.commandQueue?.getQueueLength?.() ?? 0) > 0;
+  }
+
+  handleMovementBlocked(reason) {
+    if (reason === "command_queue_busy") {
       return;
     }
 
-    this.lastStopAt = now;
-    const stop = this.commandQueue?.stopMotion ?? this.commandQueue?.cancelMotion;
-    stop?.call?.(this.commandQueue, reason)?.catch?.((error) => {
+    this.stopMotion(`follow_blocked:${reason}`, { allowWhileCommandBusy: true });
+  }
+
+  stopMotion(reason, { allowWhileCommandBusy = false } = {}) {
+    if (!this.followMotionActive) {
+      return;
+    }
+
+    if (this.isCommandQueueBusy() && !allowWhileCommandBusy) {
+      this.followMotionActive = false;
+      return;
+    }
+
+    this.followMotionActive = false;
+    const stop = this.commandQueue?.sendRealtimeStop ?? this.commandQueue?.stopMotion ?? this.commandQueue?.cancelMotion;
+    stop?.call?.(this.commandQueue, reason, { log: false })?.catch?.((error) => {
       this.log(`Follow stop failed: ${error.message}`, "warn");
     });
   }

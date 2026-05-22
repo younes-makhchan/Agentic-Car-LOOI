@@ -638,25 +638,6 @@ assert.equal(routedSequences.length, routesBeforeFollowExit + 1);
 assert.equal(routedSequences.at(-1).action.args.scenario, "back_up");
 assert.equal(followStops.at(-1), "before:back_up");
 
-const visionFollowTurn = await executor.executeBridgeAction({
-  id: "vision_follow_left",
-  source: "vision_follow",
-  type: "run_scenario",
-  args: { name: "look_left" }
-});
-assert.equal(visionFollowTurn.status, "completed");
-assert.equal(routedSequences.at(-1).action.source, "vision_follow");
-assert.equal(routedSequences.at(-1).action.args.scenario, "look_left");
-
-const rejectedVisionFollowScenario = await executor.executeBridgeAction({
-  id: "vision_follow_bad",
-  source: "vision_follow",
-  type: "run_scenario",
-  args: { name: "take_picture" }
-});
-assert.equal(rejectedVisionFollowScenario.status, "rejected");
-assert.match(rejectedVisionFollowScenario.message, /only run steering scenarios/i);
-
 executor.getRuntimeContext = () => ({
   geminiLive: { lastInputTranscript: "stop following it" }
 });

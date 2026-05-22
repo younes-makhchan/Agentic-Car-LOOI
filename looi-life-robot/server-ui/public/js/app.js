@@ -1445,8 +1445,6 @@ async function init() {
     lifeEngine,
     commandQueue,
     eventBus: localEventBus,
-    voiceOutput,
-    scenarioRunner: runScenarioFromVisionFollow,
     getPolicy: getExecutionPolicy,
     lostTimeoutMs: brainPolicy.followLostTimeoutMs,
     logger: (message, level = "info") => log(message, level)
@@ -3311,25 +3309,6 @@ async function runScenarioFromUi(name, args = {}) {
   });
   updateEmbodimentUi();
   return result;
-}
-
-async function runScenarioFromVisionFollow(name, args = {}) {
-  if (!toolExecutor?.executeBridgeAction) {
-    log(`[roboflow] follow scenario skipped ${name}: tool executor unavailable`, "warn");
-    return null;
-  }
-
-  return toolExecutor.executeBridgeAction({
-    id: `roboflow_follow_${name}_${Date.now()}`,
-    source: "vision_follow",
-    type: "run_scenario",
-    args: {
-      name,
-      targetLabel: args.targetLabel ?? "",
-      trackId: args.trackId ?? null
-    },
-    reason: args.reason ?? `roboflow_follow:${name}`
-  });
 }
 
 function requestPoseScenario(name, { minIntervalMs = 650 } = {}) {
