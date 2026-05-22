@@ -482,6 +482,8 @@ let robotMotionActive = false;
 let lastRobotCommandAt = 0;
 let lastRobotAngular = 0;
 let lastRobotCommandText = "held";
+let lastMotionDebugSignature = "";
+let lastMotionDebugAt = 0;
 
 init();
 
@@ -498,19 +500,21 @@ async function init() {
 function bindEvents() {
   ui.startBack.addEventListener("click", () => start("environment"));
   ui.startFront.addEventListener("click", () => start("user"));
-  ui.stop.addEventListener("click", stop);
+  ui.stop.addEventListener("click", () => stop());
   globalThis.addEventListener("beforeunload", () => {
     if (robotMotionActive) {
       robotClient?.stop?.("follow_demo_page_unload");
     }
   });
   ui.robotConnectToggle.addEventListener("change", () => {
+    log(`ESP32 connection switch ${ui.robotConnectToggle.checked ? "on" : "off"}.`, "info");
     setRobotConnection(ui.robotConnectToggle.checked).catch((error) => {
       log(`ESP32 connection switch failed: ${error.message}`);
       syncRobotUi();
     });
   });
   ui.robotMotionToggle.addEventListener("change", () => {
+    log(`ESP32 movement switch ${ui.robotMotionToggle.checked ? "armed" : "held"}.`, ui.robotMotionToggle.checked ? "warn" : "info");
     if (!ui.robotMotionToggle.checked) {
       holdRobotMotion("movement_switch_off");
     }
@@ -560,6 +564,9 @@ function initRobotClient() {
     log(`ESP32 error: ${error.message ?? "unknown"}`);
     syncRobotUi();
   });
+  robotClient.onAck((message = {}) => {
+    log(`ESP32 ack cmd=${message.cmd ?? "unknown"} label=${message.label ?? message.motion_label ?? "--"}`, "info");
+  });
   syncRobotUi();
 }
 
@@ -571,13 +578,16 @@ async function setRobotConnection(connected) {
   ui.robotConnectToggle.disabled = true;
   try {
     if (connected) {
+      log(`ESP32 connect requested url=${ui.esp32Url.value.trim() || config.defaultEsp32WsUrl || PUBLIC_CONFIG.defaultEsp32WsUrl}`, "info");
       await robotClient.connect(ui.esp32Url.value.trim() || config.defaultEsp32WsUrl || PUBLIC_CONFIG.defaultEsp32WsUrl);
+      log("ESP32 connect completed.", "info");
       return;
     }
 
     ui.robotMotionToggle.checked = false;
     await holdRobotMotion("connection_switch_off");
     await robotClient.disconnect();
+    log("ESP32 disconnect completed.", "info");
   } finally {
     ui.robotConnectToggle.disabled = false;
     syncRobotUi();
@@ -605,26 +615,31 @@ function maybeSendRobotMotion({ angular, target, stale, centered }) {
       lastRobotCommandText = "held";
       syncRobotUi();
     }
+    logMotionGate("movement_switch_off", { angular, target, stale, centered });
     return;
   }
 
   if (!robotClient?.isConnected?.()) {
     lastRobotCommandText = "waiting for ESP32";
     syncRobotUi();
+    logMotionGate("esp32_not_connected", { angular, target, stale, centered });
     return;
   }
 
   if (!target) {
+    logMotionGate("no_target", { angular, target, stale, centered });
     holdRobotMotion("no_target");
     return;
   }
 
   if (stale) {
+    logMotionGate("stale_frame", { angular, target, stale, centered });
     holdRobotMotion("stale_frame");
     return;
   }
 
   if (centered || Math.abs(angular) < 0.001) {
+    logMotionGate("centered", { angular, target, stale, centered });
     holdRobotMotion("centered");
     return;
   }
@@ -633,6 +648,7 @@ function maybeSendRobotMotion({ angular, target, stale, centered }) {
   const signChanged = Math.sign(angular) !== Math.sign(lastRobotAngular) && Math.abs(lastRobotAngular) > 0.001;
   const changedEnough = Math.abs(angular - lastRobotAngular) > 0.008;
   if (now - lastRobotCommandAt < ROBOT_COMMAND_INTERVAL_MS && !signChanged && !changedEnough) {
+    logMotionGate("throttled", { angular, target, stale, centered, sinceLastMs: now - lastRobotCommandAt });
     return;
   }
 
@@ -642,6 +658,15 @@ function maybeSendRobotMotion({ angular, target, stale, centered }) {
   robotMotionActive = true;
   lastRobotCommandText = `${direction} ${signed(angular, 3)}`;
   syncRobotUi();
+  logMotionGate("sending_motion", {
+    angular,
+    target,
+    stale,
+    centered,
+    direction,
+    durationMs: ROBOT_COMMAND_DURATION_MS,
+    rampMs: ROBOT_COMMAND_RAMP_MS
+  }, { force: true, level: "info" });
 
   commandQueue?.sendRealtimeMotion?.({
     linear: 0,
@@ -649,11 +674,14 @@ function maybeSendRobotMotion({ angular, target, stale, centered }) {
     durationMs: ROBOT_COMMAND_DURATION_MS,
     rampMs: ROBOT_COMMAND_RAMP_MS,
     label: `follow_demo_turn_${direction}`,
-    log: false,
-    record: false
+    log: true,
+    record: true
+  })?.then?.((result) => {
+    log(`ESP32 realtime motion accepted messageId=${result?.messageId ?? "--"} angular=${signed(angular, 3)} direction=${direction}`, "info");
   })?.catch?.((error) => {
     lastRobotCommandText = `send failed: ${error.message}`;
     syncRobotUi();
+    log(`ESP32 realtime motion failed: ${error.message}`, "warn");
   });
 }
 
@@ -664,18 +692,54 @@ function holdRobotMotion(reason = "held") {
   lastRobotCommandAt = 0;
   lastRobotCommandText = reason.replaceAll("_", " ");
   syncRobotUi();
+  logMotionGate(`hold:${reason}`, { shouldSendStop }, { force: shouldSendStop, level: shouldSendStop ? "info" : "debug" });
 
   if (!shouldSendStop) {
     return Promise.resolve();
   }
 
   return commandQueue?.sendRealtimeStop?.(reason, {
-    log: false,
-    record: false
+    log: true,
+    record: true
   })?.catch?.((error) => {
     lastRobotCommandText = `stop failed: ${error.message}`;
     syncRobotUi();
+    log(`ESP32 realtime stop failed: ${error.message}`, "warn");
   }) ?? Promise.resolve();
+}
+
+function logMotionGate(reason, detail = {}, { force = false, level = "debug" } = {}) {
+  const target = detail.target;
+  const signature = [
+    reason,
+    target?.label ?? "none",
+    roundForLog(target?.centerX),
+    roundForLog(detail.angular),
+    Boolean(detail.stale),
+    Boolean(detail.centered),
+    roundForLog(detail.sinceLastMs)
+  ].join("|");
+  const now = performance.now();
+  if (!force && signature === lastMotionDebugSignature && now - lastMotionDebugAt < 1000) {
+    return;
+  }
+
+  lastMotionDebugSignature = signature;
+  lastMotionDebugAt = now;
+  log(`motion gate=${reason} ${JSON.stringify({
+    movementArmed: Boolean(ui.robotMotionToggle.checked),
+    esp32Connected: Boolean(robotClient?.isConnected?.()),
+    target: target ? {
+      label: target.label,
+      centerX: roundForLog(target.centerX),
+      confidence: roundForLog(target.confidence)
+    } : null,
+    angular: roundForLog(detail.angular),
+    stale: Boolean(detail.stale),
+    centered: Boolean(detail.centered),
+    sinceLastMs: roundForLog(detail.sinceLastMs),
+    direction: detail.direction ?? null
+  })}`, level);
 }
 
 function selectedRoboflowConfig() {
@@ -708,7 +772,10 @@ function syncWorkflowOptions() {
 }
 
 async function start(facingMode) {
-  stop();
+  stop({
+    disableRobotMotionSwitch: false,
+    reason: "camera_restart"
+  });
   latestResult = null;
   latestDetectionReceivedAt = 0;
 
@@ -754,9 +821,11 @@ async function start(facingMode) {
   }
 }
 
-function stop() {
-  ui.robotMotionToggle.checked = false;
-  holdRobotMotion("demo_stop");
+function stop({ disableRobotMotionSwitch = true, reason = "demo_stop" } = {}) {
+  if (disableRobotMotionSwitch) {
+    ui.robotMotionToggle.checked = false;
+  }
+  holdRobotMotion(reason);
   cancelAnimationFrame(animationFrame);
   animationFrame = 0;
   if (videoFrameCallbackHandle && typeof ui.video.cancelVideoFrameCallback === "function") {
@@ -922,10 +991,6 @@ function logDetectionSummary(result) {
   log(`detections=${result.detections?.length ?? 0} age=${age} ${objects}`);
 }
 
-function log(message) {
-  console.debug("[follow-latency-demo]", message);
-}
-
 function signed(value, digits) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) {
@@ -934,8 +999,18 @@ function signed(value, digits) {
   return `${numeric >= 0 ? "+" : ""}${numeric.toFixed(digits)}`;
 }
 
+function roundForLog(value, digits = 3) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? Number(numeric.toFixed(digits)) : null;
+}
+
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, Number(value) || 0));
+}
+
+function log(message, level = "debug") {
+  const method = ["debug", "info", "warn", "error"].includes(level) ? level : "debug";
+  console[method]("[follow-latency-demo]", message);
 }
 </script>
 </body>
