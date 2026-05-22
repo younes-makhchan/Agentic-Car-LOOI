@@ -157,6 +157,12 @@ select {
   font: inherit;
 }
 
+input[type="checkbox"] {
+  width: 22px;
+  height: 22px;
+  accent-color: var(--cyan);
+}
+
 button {
   min-height: 44px;
   padding: 10px 12px;
@@ -206,6 +212,27 @@ input[type="range"] {
   border-radius: 18px;
   background: var(--panel-strong);
   border: 1px solid var(--line);
+}
+
+.switch-row {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: rgba(4, 13, 11, 0.54);
+}
+
+.switch-row span {
+  font-size: 0.92rem;
+  color: var(--text);
+}
+
+.switch-row strong {
+  color: var(--muted);
+  font-size: 0.82rem;
+  text-align: right;
 }
 
 .row {
@@ -259,9 +286,9 @@ input[type="range"] {
   <section class="hero">
     <h1>Follow Latency Debug</h1>
     <p>
-      This page does not move the robot. It shows the camera stream, Roboflow boxes,
-      detection age, errorX, and the angular command that the follow controller would send.
-      Use it on mobile to see whether stale boxes are driving late corrections.
+      This page shows the camera stream, Roboflow boxes, detection age, errorX, and
+      the angular command that the follow controller would send. It can also send
+      the command to ESP32 when the connection and movement switches are both on.
     </p>
   </section>
 
@@ -311,6 +338,23 @@ input[type="range"] {
         </select>
       </label>
 
+      <label>
+        <span>ESP32 URL</span>
+        <input id="esp32Url" type="text" autocomplete="off" />
+      </label>
+
+      <label class="switch-row">
+        <input id="robotConnectToggle" type="checkbox" />
+        <span>ESP32 connection</span>
+        <strong id="robotConnectLabel">Disconnected</strong>
+      </label>
+
+      <label class="switch-row">
+        <input id="robotMotionToggle" type="checkbox" />
+        <span>Move ESP32 from demo</span>
+        <strong id="robotMotionLabel">Held</strong>
+      </label>
+
       <div class="control-grid">
         <label>
           <span>Rotation speed cap</span>
@@ -333,6 +377,14 @@ input[type="range"] {
         <div class="row">
           <span>Detector</span>
           <strong id="detectorState">stopped</strong>
+        </div>
+        <div class="row">
+          <span>ESP32</span>
+          <strong id="robotState">disconnected</strong>
+        </div>
+        <div class="row">
+          <span>Robot command</span>
+          <strong id="robotCommandState">held</strong>
         </div>
         <div class="row">
           <span>Workflow</span>
@@ -368,9 +420,14 @@ input[type="range"] {
 import { PUBLIC_CONFIG } from "./js/config.js";
 import { ObjectDetectorEngine } from "./js/vision/objectDetectorEngine.js";
 import { canonicalObjectLabel } from "./js/vision/objectLabelUtils.js";
+import { ESP32Client } from "./js/robot/esp32Client.js";
+import { CommandQueue } from "./js/robot/commandQueue.js";
 
 const CENTER_X = 0.5;
 const STEER_GAIN = 0.9;
+const ROBOT_COMMAND_INTERVAL_MS = 160;
+const ROBOT_COMMAND_DURATION_MS = 280;
+const ROBOT_COMMAND_RAMP_MS = 70;
 
 const ui = {
   video: document.getElementById("video"),
@@ -380,6 +437,11 @@ const ui = {
   stop: document.getElementById("stop"),
   targetLabel: document.getElementById("targetLabel"),
   workflow: document.getElementById("workflow"),
+  esp32Url: document.getElementById("esp32Url"),
+  robotConnectToggle: document.getElementById("robotConnectToggle"),
+  robotConnectLabel: document.getElementById("robotConnectLabel"),
+  robotMotionToggle: document.getElementById("robotMotionToggle"),
+  robotMotionLabel: document.getElementById("robotMotionLabel"),
   speed: document.getElementById("speed"),
   speedValue: document.getElementById("speedValue"),
   tolerance: document.getElementById("tolerance"),
@@ -391,6 +453,8 @@ const ui = {
   detectionAge: document.getElementById("detectionAge"),
   decision: document.getElementById("decision"),
   detectorState: document.getElementById("detectorState"),
+  robotState: document.getElementById("robotState"),
+  robotCommandState: document.getElementById("robotCommandState"),
   workflowState: document.getElementById("workflowState"),
   targetCenter: document.getElementById("targetCenter"),
   labels: document.getElementById("labels"),
@@ -407,16 +471,23 @@ const cameraInput = {
 
 let config = { ...PUBLIC_CONFIG };
 let detector = null;
+let robotClient = null;
+let commandQueue = null;
 let latestResult = null;
 let latestDetectionReceivedAt = 0;
 let latestVideoFrameAt = 0;
 let animationFrame = 0;
 let videoFrameCallbackHandle = 0;
+let robotMotionActive = false;
+let lastRobotCommandAt = 0;
+let lastRobotAngular = 0;
+let lastRobotCommandText = "held";
 
 init();
 
 async function init() {
   config = await loadConfig();
+  initRobotClient();
   syncWorkflowOptions();
   updateControlLabels();
   bindEvents();
@@ -428,6 +499,23 @@ function bindEvents() {
   ui.startBack.addEventListener("click", () => start("environment"));
   ui.startFront.addEventListener("click", () => start("user"));
   ui.stop.addEventListener("click", stop);
+  globalThis.addEventListener("beforeunload", () => {
+    if (robotMotionActive) {
+      robotClient?.stop?.("follow_demo_page_unload");
+    }
+  });
+  ui.robotConnectToggle.addEventListener("change", () => {
+    setRobotConnection(ui.robotConnectToggle.checked).catch((error) => {
+      log(`ESP32 connection switch failed: ${error.message}`);
+      syncRobotUi();
+    });
+  });
+  ui.robotMotionToggle.addEventListener("change", () => {
+    if (!ui.robotMotionToggle.checked) {
+      holdRobotMotion("movement_switch_off");
+    }
+    syncRobotUi();
+  });
   [ui.speed, ui.tolerance, ui.maxAge].forEach((input) => {
     input.addEventListener("input", updateControlLabels);
   });
@@ -453,6 +541,141 @@ async function loadConfig() {
     log(`Using fallback config: ${error.message}`);
     return { ...PUBLIC_CONFIG };
   }
+}
+
+function initRobotClient() {
+  ui.esp32Url.value = config.defaultEsp32WsUrl || PUBLIC_CONFIG.defaultEsp32WsUrl || "ws://192.168.4.1:81";
+  robotClient = new ESP32Client({
+    url: ui.esp32Url.value,
+    logger: (message, level = "info") => log(`${level}: ${message}`)
+  });
+  commandQueue = new CommandQueue({
+    robotClient,
+    maxSpeed: 0.12,
+    maxDurationMs: 1000,
+    logger: (message, level = "info") => log(`${level}: ${message}`)
+  });
+  robotClient.onStatus(syncRobotUi);
+  robotClient.onError((error) => {
+    log(`ESP32 error: ${error.message ?? "unknown"}`);
+    syncRobotUi();
+  });
+  syncRobotUi();
+}
+
+async function setRobotConnection(connected) {
+  if (!robotClient) {
+    initRobotClient();
+  }
+
+  ui.robotConnectToggle.disabled = true;
+  try {
+    if (connected) {
+      await robotClient.connect(ui.esp32Url.value.trim() || config.defaultEsp32WsUrl || PUBLIC_CONFIG.defaultEsp32WsUrl);
+      return;
+    }
+
+    ui.robotMotionToggle.checked = false;
+    await holdRobotMotion("connection_switch_off");
+    await robotClient.disconnect();
+  } finally {
+    ui.robotConnectToggle.disabled = false;
+    syncRobotUi();
+  }
+}
+
+function syncRobotUi() {
+  const status = robotClient?.getStatus?.() ?? {};
+  const connected = Boolean(status.connected);
+  const state = status.state ?? "disconnected";
+  ui.robotConnectToggle.checked = connected || state === "connecting";
+  ui.robotConnectLabel.textContent = connected ? "Connected" : state === "connecting" ? "Connecting" : "Disconnected";
+  ui.robotState.textContent = state;
+  ui.robotState.className = connected ? "status-good" : state === "connecting" ? "status-warn" : "status-bad";
+  ui.robotMotionLabel.textContent = ui.robotMotionToggle.checked
+    ? connected ? "Armed" : "Waiting"
+    : "Held";
+  ui.robotMotionLabel.className = ui.robotMotionToggle.checked && connected ? "status-warn" : "";
+  ui.robotCommandState.textContent = lastRobotCommandText;
+}
+
+function maybeSendRobotMotion({ angular, target, stale, centered }) {
+  if (!ui.robotMotionToggle.checked) {
+    if (!robotMotionActive) {
+      lastRobotCommandText = "held";
+      syncRobotUi();
+    }
+    return;
+  }
+
+  if (!robotClient?.isConnected?.()) {
+    lastRobotCommandText = "waiting for ESP32";
+    syncRobotUi();
+    return;
+  }
+
+  if (!target) {
+    holdRobotMotion("no_target");
+    return;
+  }
+
+  if (stale) {
+    holdRobotMotion("stale_frame");
+    return;
+  }
+
+  if (centered || Math.abs(angular) < 0.001) {
+    holdRobotMotion("centered");
+    return;
+  }
+
+  const now = performance.now();
+  const signChanged = Math.sign(angular) !== Math.sign(lastRobotAngular) && Math.abs(lastRobotAngular) > 0.001;
+  const changedEnough = Math.abs(angular - lastRobotAngular) > 0.008;
+  if (now - lastRobotCommandAt < ROBOT_COMMAND_INTERVAL_MS && !signChanged && !changedEnough) {
+    return;
+  }
+
+  const direction = angular < 0 ? "left" : "right";
+  lastRobotCommandAt = now;
+  lastRobotAngular = angular;
+  robotMotionActive = true;
+  lastRobotCommandText = `${direction} ${signed(angular, 3)}`;
+  syncRobotUi();
+
+  commandQueue?.sendRealtimeMotion?.({
+    linear: 0,
+    angular,
+    durationMs: ROBOT_COMMAND_DURATION_MS,
+    rampMs: ROBOT_COMMAND_RAMP_MS,
+    label: `follow_demo_turn_${direction}`,
+    log: false,
+    record: false
+  })?.catch?.((error) => {
+    lastRobotCommandText = `send failed: ${error.message}`;
+    syncRobotUi();
+  });
+}
+
+function holdRobotMotion(reason = "held") {
+  const shouldSendStop = robotMotionActive;
+  robotMotionActive = false;
+  lastRobotAngular = 0;
+  lastRobotCommandAt = 0;
+  lastRobotCommandText = reason.replaceAll("_", " ");
+  syncRobotUi();
+
+  if (!shouldSendStop) {
+    return Promise.resolve();
+  }
+
+  return commandQueue?.sendRealtimeStop?.(reason, {
+    log: false,
+    record: false
+  })?.catch?.((error) => {
+    lastRobotCommandText = `stop failed: ${error.message}`;
+    syncRobotUi();
+  }) ?? Promise.resolve();
 }
 
 function selectedRoboflowConfig() {
@@ -532,6 +755,8 @@ async function start(facingMode) {
 }
 
 function stop() {
+  ui.robotMotionToggle.checked = false;
+  holdRobotMotion("demo_stop");
   cancelAnimationFrame(animationFrame);
   animationFrame = 0;
   if (videoFrameCallbackHandle && typeof ui.video.cancelVideoFrameCallback === "function") {
@@ -637,6 +862,8 @@ function render() {
   } else {
     setDecision(angular < 0 ? "turn left" : "turn right", "status-warn");
   }
+
+  maybeSendRobotMotion({ angular, target, stale, centered });
 }
 
 function drawDetections(ctx, detections, target, result, canvasWidth, canvasHeight, dpr, stale) {
