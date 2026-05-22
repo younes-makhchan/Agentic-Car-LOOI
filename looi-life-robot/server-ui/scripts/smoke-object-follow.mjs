@@ -369,39 +369,51 @@ function updateVision({ tracker, visionState }, result) {
 
 {
   const engine = new ObjectDetectorEngine();
+  const workflowStatus = await engine.setWorkflowId("rf-detr-2");
+  assert.equal(workflowStatus.workflowId, "rf-detr-2");
+  assert.ok(workflowStatus.workflowOptions.includes("rf-detr-2"));
+  const wrtcParams = engine.buildWrtcParams();
+  assert.equal(wrtcParams.workflowId, "rf-detr-2");
+  assert.equal(wrtcParams.realtimeProcessing, true);
+  assert.equal(wrtcParams.realtime_processing, true);
+  const frameReceivedAt = new Date(Date.now() - 250).toISOString();
   const result = engine.normalizeDetections([
     {
+      video_metadata: {
+        frame_id: 12,
+        received_at: frameReceivedAt
+      },
       predictions: {
         image: {
           width: 2048,
           height: 1272
         },
         predictions: [
-        {
-          width: 1280,
-          height: 1054,
+          {
+            width: 1280,
+            height: 1054,
             x: 1157,
             y: 593,
             confidence: 0.9685842394828796,
             class_id: 1,
             class: "person",
-          detection_id: "24c15c43-0671-4ca5-8edc-7abdbbf27116",
-          parent_id: "image"
-        },
-        {
-          width: 1260,
-          height: 1040,
-          x: 1155,
-          y: 595,
-          confidence: 0.7685842394828796,
-          class_id: 1,
-          class: "person",
-          detection_id: "duplicate-person",
-          parent_id: "image"
-        },
-        {
-          width: 788,
-          height: 437,
+            detection_id: "24c15c43-0671-4ca5-8edc-7abdbbf27116",
+            parent_id: "image"
+          },
+          {
+            width: 1260,
+            height: 1040,
+            x: 1155,
+            y: 595,
+            confidence: 0.7685842394828796,
+            class_id: 1,
+            class: "person",
+            detection_id: "duplicate-person",
+            parent_id: "image"
+          },
+          {
+            width: 788,
+            height: 437,
             x: 1329,
             y: 1043.5,
             confidence: 0.9630815386772156,
@@ -417,6 +429,9 @@ function updateVision({ tracker, visionState }, result) {
 
   assert.equal(result.frameWidth, 2048);
   assert.equal(result.frameHeight, 1272);
+  assert.equal(result.timestamp, frameReceivedAt);
+  assert.equal(result.videoMetadata.frame_id, 12);
+  assert.ok(result.frameAgeMs >= 0);
   assert.equal(result.detections.length, 2);
   assert.equal(result.detections[0].label, "person");
   assert.equal(Math.round(result.detections[0].bbox.x), 517);

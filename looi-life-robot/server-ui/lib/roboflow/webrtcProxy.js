@@ -2,11 +2,16 @@ import { InferenceHTTPClient, WorkflowError } from "@roboflow/inference-sdk";
 
 const DEFAULT_SERVER_URL = "https://serverless.roboflow.com";
 const DEFAULT_API_BASE_URL = "https://api.roboflow.com";
+const DEFAULT_WORKFLOW_IDS = ["rf-detr", "rf-detr-2"];
 
 export function getRoboflowWebrtcEnv(env = process.env) {
   const apiKey = String(env.ROBOFLOW_API_KEY || "").trim();
   const workspace = String(env.ROBOFLOW_WORKSPACE || "").trim();
   const workflowId = String(env.ROBOFLOW_WORKFLOW_ID || "").trim();
+  const workflowOptions = uniqueStrings([
+    workflowId,
+    ...parseCsv(env.ROBOFLOW_WORKFLOW_IDS || env.ROBOFLOW_WORKFLOW_OPTIONS || DEFAULT_WORKFLOW_IDS.join(","))
+  ]);
   const workflowSpec = parseJsonObject(env.ROBOFLOW_WORKFLOW_SPEC);
 
   return {
@@ -15,6 +20,7 @@ export function getRoboflowWebrtcEnv(env = process.env) {
     apiKey,
     workspace,
     workflowId,
+    workflowOptions,
     workflowSpec,
     imageInputName: optionalString(env.ROBOFLOW_IMAGE_INPUT_NAME) || "image",
     streamOutputNames: parseCsv(env.ROBOFLOW_STREAM_OUTPUT_NAMES || ""),
@@ -34,6 +40,7 @@ export function publicRoboflowWebrtcConfig(config = getRoboflowWebrtcEnv()) {
     configured: config.configured,
     workspace: config.workspace,
     workflowId: config.workflowId,
+    workflowOptions: config.workflowOptions,
     hasWorkflowSpec: Boolean(config.workflowSpec),
     imageInputName: config.imageInputName,
     streamOutputNames: config.streamOutputNames,
@@ -78,7 +85,11 @@ export async function initializeRoboflowWebrtcWorker(body = {}, env = process.en
       requestedPlan: optionalString(wrtcParams.requestedPlan) || config.requestedPlan,
       requestedRegion: optionalString(wrtcParams.requestedRegion) || config.requestedRegion,
       realtimeProcessing:
-        typeof wrtcParams.realtimeProcessing === "boolean" ? wrtcParams.realtimeProcessing : true
+        typeof wrtcParams.realtime_processing === "boolean"
+          ? wrtcParams.realtime_processing
+          : typeof wrtcParams.realtimeProcessing === "boolean"
+            ? wrtcParams.realtimeProcessing
+            : true
     }
   });
 }
@@ -148,6 +159,10 @@ function parseCsv(value = "") {
     .split(",")
     .map((entry) => entry.trim())
     .filter(Boolean);
+}
+
+function uniqueStrings(values = []) {
+  return [...new Set(values.map((value) => String(value || "").trim()).filter(Boolean))];
 }
 
 function parseJsonObject(value) {

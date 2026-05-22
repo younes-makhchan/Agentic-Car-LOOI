@@ -18,6 +18,7 @@ export const PUBLIC_CONFIG = {
     configured: false,
     workspace: "",
     workflowId: "",
+    workflowOptions: ["rf-detr", "rf-detr-2"],
     hasWorkflowSpec: false,
     imageInputName: "image",
     streamOutputNames: [],

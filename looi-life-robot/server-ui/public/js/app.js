@@ -178,6 +178,7 @@ const ui = {
   cameraLastObservation: document.getElementById("cameraLastObservation"),
   startObjectDetectionButton: document.getElementById("startObjectDetectionButton"),
   stopObjectDetectionButton: document.getElementById("stopObjectDetectionButton"),
+  objectRoboflowWorkflowSelect: document.getElementById("objectRoboflowWorkflowSelect"),
   objectRoboflowGpuPlanSelect: document.getElementById("objectRoboflowGpuPlanSelect"),
   objectMaxResultsInput: document.getElementById("objectMaxResultsInput"),
   objectCategoryAllowlistInput: document.getElementById("objectCategoryAllowlistInput"),
@@ -189,6 +190,7 @@ const ui = {
   followErrorXToleranceValue: document.getElementById("followErrorXToleranceValue"),
   objectDetectorState: document.getElementById("objectDetectorState"),
   objectDetectorModel: document.getElementById("objectDetectorModel"),
+  objectDetectorWorkflow: document.getElementById("objectDetectorWorkflow"),
   objectDetectorQuality: document.getElementById("objectDetectorQuality"),
   objectDetectorGpuPlan: document.getElementById("objectDetectorGpuPlan"),
   objectDetectorParams: document.getElementById("objectDetectorParams"),
@@ -1116,6 +1118,12 @@ ui.stopObjectDetectionButton?.addEventListener("click", () => {
   objectDetectorEngine?.stop?.();
   followTargetController?.stop?.("object_detector_stopped");
   updateVisionUi();
+});
+ui.objectRoboflowWorkflowSelect?.addEventListener("change", () => {
+  setRoboflowWorkflowFromUi().catch((error) => {
+    log(`Roboflow workflow switch failed: ${error.message}`, "warn");
+    updateVisionUi();
+  });
 });
 ui.objectRoboflowGpuPlanSelect?.addEventListener("change", () => {
   setRoboflowGpuPlanFromUi().catch((error) => {
@@ -3905,6 +3913,30 @@ async function startObjectDetectionFromUi() {
   return status;
 }
 
+async function setRoboflowWorkflowFromUi() {
+  if (!objectDetectorEngine?.setWorkflowId) {
+    return null;
+  }
+
+  const workflowId = ui.objectRoboflowWorkflowSelect?.value?.trim();
+  if (!workflowId) {
+    return null;
+  }
+
+  const wasRunning = Boolean(objectDetectorEngine.isRunning?.());
+  const status = await objectDetectorEngine.setWorkflowId(workflowId, {
+    restart: true
+  });
+  log(
+    wasRunning
+      ? `Roboflow workflow changed to ${workflowId}. Detector restarted.`
+      : `Roboflow workflow changed to ${workflowId}. It will apply on next detector start.`,
+    wasRunning ? "warn" : "info"
+  );
+  updateVisionUi();
+  return status;
+}
+
 async function setRoboflowGpuPlanFromUi() {
   if (!objectDetectorEngine?.setRequestedPlan) {
     return null;
@@ -4031,6 +4063,19 @@ function updateVisionUi() {
   }
   if (ui.objectDetectorModel) {
     ui.objectDetectorModel.textContent = detectorStatus.modelName ?? "--";
+  }
+  if (ui.objectRoboflowWorkflowSelect && detectorStatus.workflowId) {
+    syncSelectOptions(ui.objectRoboflowWorkflowSelect, detectorStatus.workflowOptions, detectorStatus.workflowId);
+  }
+  if (
+    ui.objectRoboflowWorkflowSelect &&
+    detectorStatus.workflowId &&
+    document.activeElement !== ui.objectRoboflowWorkflowSelect
+  ) {
+    setSelectValue(ui.objectRoboflowWorkflowSelect, detectorStatus.workflowId);
+  }
+  if (ui.objectDetectorWorkflow) {
+    ui.objectDetectorWorkflow.textContent = detectorStatus.workflowId ?? "--";
   }
   if (ui.objectDetectorQuality) {
     ui.objectDetectorQuality.textContent = [
@@ -4711,6 +4756,29 @@ function setSelectValue(select, value, label = value) {
     select.append(new Option(label, value));
   }
   select.value = value;
+}
+
+function syncSelectOptions(select, values = [], currentValue = "") {
+  if (!select) {
+    return;
+  }
+
+  const previousValue = select.value;
+  const nextValues = [...new Set([currentValue, ...(Array.isArray(values) ? values : [])]
+    .map((value) => String(value || "").trim())
+    .filter(Boolean))];
+  nextValues.forEach((value) => {
+    const exists = [...select.options].some((option) => option.value === value);
+    if (!exists) {
+      select.append(new Option(value, value));
+    }
+  });
+
+  if (previousValue && nextValues.includes(previousValue)) {
+    select.value = previousValue;
+  } else if (currentValue) {
+    select.value = currentValue;
+  }
 }
 
 function formatMaybe(value, formatter = String) {

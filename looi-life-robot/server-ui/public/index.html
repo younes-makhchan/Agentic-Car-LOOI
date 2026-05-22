@@ -748,6 +748,13 @@
               </div>
             </div>
             <div class="slider-grid">
+              <label class="slider-field" for="objectRoboflowWorkflowSelect">
+                <span>Roboflow workflow</span>
+                <select id="objectRoboflowWorkflowSelect">
+                  <option value="rf-detr">rf-detr</option>
+                  <option value="rf-detr-2">rf-detr-2</option>
+                </select>
+              </label>
               <label class="slider-field" for="objectRoboflowGpuPlanSelect">
                 <span>Roboflow GPU</span>
                 <select id="objectRoboflowGpuPlanSelect">
@@ -788,6 +795,10 @@
               <div class="status-row">
                 <span>Model</span>
                 <strong id="objectDetectorModel">--</strong>
+              </div>
+              <div class="status-row">
+                <span>Workflow</span>
+                <strong id="objectDetectorWorkflow">--</strong>
               </div>
               <div class="status-row">
                 <span>Quality</span>

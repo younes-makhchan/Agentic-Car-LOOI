@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>LOOI Follow Latency Demo</title>
+<style>
+:root {
+  color-scheme: dark;
+  --bg: #07100e;
+  --panel: rgba(10, 24, 21, 0.84);
+  --panel-strong: rgba(13, 34, 30, 0.92);
+  --line: rgba(139, 231, 202, 0.2);
+  --text: #e8fff6;
+  --muted: #96b8ad;
+  --good: #6ff0a8;
+  --warn: #ffd166;
+  --bad: #ff6f91;
+  --cyan: #75e6ff;
+}
+
+* { box-sizing: border-box; }
+
+html,
+body {
+  width: 100%;
+  min-height: 100%;
+  margin: 0;
+  background:
+    radial-gradient(circle at 15% 12%, rgba(117, 230, 255, 0.16), transparent 32%),
+    radial-gradient(circle at 88% 0%, rgba(111, 240, 168, 0.12), transparent 34%),
+    linear-gradient(145deg, #04100d, var(--bg));
+  color: var(--text);
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+body {
+  padding: clamp(12px, 3vw, 28px);
+}
+
+main {
+  width: min(1160px, 100%);
+  margin: 0 auto;
+  display: grid;
+  gap: 16px;
+}
+
+.hero {
+  display: grid;
+  gap: 8px;
+}
+
+h1,
+p {
+  margin: 0;
+}
+
+h1 {
+  font-size: clamp(1.6rem, 7vw, 3.6rem);
+  line-height: 0.92;
+  letter-spacing: -0.06em;
+}
+
+.hero p {
+  max-width: 70ch;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.65fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.stage,
+.panel {
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  background: var(--panel);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.28);
+  overflow: hidden;
+}
+
+.video-shell {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  min-height: 280px;
+  background: #020504;
+}
+
+video,
+canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+video {
+  object-fit: contain;
+}
+
+canvas {
+  pointer-events: none;
+}
+
+.stage-footer {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  background: var(--line);
+}
+
+.metric {
+  display: grid;
+  gap: 5px;
+  padding: 12px;
+  background: rgba(5, 14, 12, 0.92);
+}
+
+.metric span {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.metric strong {
+  font-size: clamp(1rem, 4vw, 1.55rem);
+  font-variant-numeric: tabular-nums;
+}
+
+.panel {
+  padding: 14px;
+  display: grid;
+  gap: 14px;
+}
+
+.button-row,
+.control-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.button-row {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+button,
+input,
+select {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(4, 13, 11, 0.92);
+  color: var(--text);
+  font: inherit;
+}
+
+button {
+  min-height: 44px;
+  padding: 10px 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+button.primary {
+  border-color: rgba(117, 230, 255, 0.58);
+  background: linear-gradient(135deg, rgba(117, 230, 255, 0.28), rgba(111, 240, 168, 0.18));
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+label {
+  display: grid;
+  gap: 7px;
+}
+
+label span {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+label strong {
+  font-variant-numeric: tabular-nums;
+}
+
+input[type="text"],
+select {
+  min-height: 44px;
+  padding: 0 12px;
+}
+
+input[type="range"] {
+  width: 100%;
+  accent-color: var(--cyan);
+}
+
+.readout {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 18px;
+  background: var(--panel-strong);
+  border: 1px solid var(--line);
+}
+
+.row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 7px;
+  border-bottom: 1px solid rgba(139, 231, 202, 0.12);
+}
+
+.row:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.row span {
+  color: var(--muted);
+}
+
+.row strong {
+  text-align: right;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+
+.status-good { color: var(--good); }
+.status-warn { color: var(--warn); }
+.status-bad { color: var(--bad); }
+
+@media (max-width: 820px) {
+  body {
+    padding: 10px;
+  }
+
+  .layout {
+    grid-template-columns: 1fr;
+  }
+
+  .video-shell {
+    min-height: 58vh;
+  }
+
+  .stage-footer {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+</style>
+</head>
+<body>
+<main>
+  <section class="hero">
+    <h1>Follow Latency Debug</h1>
+    <p>
+      This page does not move the robot. It shows the camera stream, Roboflow boxes,
+      detection age, errorX, and the angular command that the follow controller would send.
+      Use it on mobile to see whether stale boxes are driving late corrections.
+    </p>
+  </section>
+
+  <section class="layout">
+    <div class="stage">
+      <div class="video-shell">
+        <video id="video" autoplay playsinline muted></video>
+        <canvas id="overlay"></canvas>
+      </div>
+      <div class="stage-footer">
+        <div class="metric">
+          <span>errorX</span>
+          <strong id="errorX">--</strong>
+        </div>
+        <div class="metric">
+          <span>angular output</span>
+          <strong id="angular">--</strong>
+        </div>
+        <div class="metric">
+          <span>detection age</span>
+          <strong id="detectionAge">--</strong>
+        </div>
+        <div class="metric">
+          <span>decision</span>
+          <strong id="decision">idle</strong>
+        </div>
+      </div>
+    </div>
+
+    <aside class="panel">
+      <div class="button-row">
+        <button id="startBack" class="primary" type="button">Start Back</button>
+        <button id="startFront" type="button">Start Front</button>
+        <button id="stop" type="button">Stop</button>
+      </div>
+
+      <label>
+        <span>Target label</span>
+        <input id="targetLabel" type="text" value="bottle" autocomplete="off" />
+      </label>
+
+      <label>
+        <span>Roboflow workflow</span>
+        <select id="workflow">
+          <option value="rf-detr">rf-detr</option>
+          <option value="rf-detr-2">rf-detr-2</option>
+        </select>
+      </label>
+
+      <div class="control-grid">
+        <label>
+          <span>Rotation speed cap</span>
+          <strong id="speedValue">0.030</strong>
+          <input id="speed" type="range" min="0.001" max="0.120" step="0.001" value="0.030" />
+        </label>
+        <label>
+          <span>ErrorX tolerance</span>
+          <strong id="toleranceValue">0.050</strong>
+          <input id="tolerance" type="range" min="0.005" max="0.200" step="0.005" value="0.050" />
+        </label>
+        <label>
+          <span>Max detection age to act</span>
+          <strong id="maxAgeValue">350 ms</strong>
+          <input id="maxAge" type="range" min="80" max="1500" step="10" value="350" />
+        </label>
+      </div>
+
+      <div class="readout">
+        <div class="row">
+          <span>Detector</span>
+          <strong id="detectorState">stopped</strong>
+        </div>
+        <div class="row">
+          <span>Workflow</span>
+          <strong id="workflowState">--</strong>
+        </div>
+        <div class="row">
+          <span>Center target</span>
+          <strong>0.500 fixed</strong>
+        </div>
+        <div class="row">
+          <span>Target centerX</span>
+          <strong id="targetCenter">--</strong>
+        </div>
+        <div class="row">
+          <span>Visible labels</span>
+          <strong id="labels">--</strong>
+        </div>
+        <div class="row">
+          <span>Video frame callback</span>
+          <strong id="videoFrameAge">--</strong>
+        </div>
+        <div class="row">
+          <span>Last box time</span>
+          <strong id="lastBoxTime">--</strong>
+        </div>
+      </div>
+
+    </aside>
+  </section>
+</main>
+
+<script type="module">
+import { PUBLIC_CONFIG } from "./js/config.js";
+import { ObjectDetectorEngine } from "./js/vision/objectDetectorEngine.js";
+import { canonicalObjectLabel } from "./js/vision/objectLabelUtils.js";
+
+const CENTER_X = 0.5;
+const STEER_GAIN = 0.9;
+
+const ui = {
+  video: document.getElementById("video"),
+  overlay: document.getElementById("overlay"),
+  startBack: document.getElementById("startBack"),
+  startFront: document.getElementById("startFront"),
+  stop: document.getElementById("stop"),
+  targetLabel: document.getElementById("targetLabel"),
+  workflow: document.getElementById("workflow"),
+  speed: document.getElementById("speed"),
+  speedValue: document.getElementById("speedValue"),
+  tolerance: document.getElementById("tolerance"),
+  toleranceValue: document.getElementById("toleranceValue"),
+  maxAge: document.getElementById("maxAge"),
+  maxAgeValue: document.getElementById("maxAgeValue"),
+  errorX: document.getElementById("errorX"),
+  angular: document.getElementById("angular"),
+  detectionAge: document.getElementById("detectionAge"),
+  decision: document.getElementById("decision"),
+  detectorState: document.getElementById("detectorState"),
+  workflowState: document.getElementById("workflowState"),
+  targetCenter: document.getElementById("targetCenter"),
+  labels: document.getElementById("labels"),
+  videoFrameAge: document.getElementById("videoFrameAge"),
+  lastBoxTime: document.getElementById("lastBoxTime")
+};
+
+const cameraInput = {
+  stream: null,
+  isRunning() {
+    return Boolean(this.stream?.getVideoTracks?.().some((track) => track.readyState === "live"));
+  }
+};
+
+let config = { ...PUBLIC_CONFIG };
+let detector = null;
+let latestResult = null;
+let latestDetectionReceivedAt = 0;
+let latestVideoFrameAt = 0;
+let animationFrame = 0;
+let videoFrameCallbackHandle = 0;
+
+init();
+
+async function init() {
+  config = await loadConfig();
+  syncWorkflowOptions();
+  updateControlLabels();
+  bindEvents();
+  render();
+  log(`Config loaded. Roboflow configured=${Boolean(config.roboflowWebrtc?.configured)}.`);
+}
+
+function bindEvents() {
+  ui.startBack.addEventListener("click", () => start("environment"));
+  ui.startFront.addEventListener("click", () => start("user"));
+  ui.stop.addEventListener("click", stop);
+  [ui.speed, ui.tolerance, ui.maxAge].forEach((input) => {
+    input.addEventListener("input", updateControlLabels);
+  });
+  ui.workflow.addEventListener("change", () => {
+    if (!detector) {
+      log(`Workflow selected: ${ui.workflow.value}`);
+      return;
+    }
+    detector.setWorkflowId?.(ui.workflow.value, { restart: true })
+      ?.then?.(() => log(`Workflow switched to ${ui.workflow.value}. Detector restarted.`))
+      ?.catch?.((error) => log(`workflow switch failed: ${error.message}`));
+  });
+}
+
+async function loadConfig() {
+  try {
+    const response = await fetch("/api/config", { cache: "no-store" });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    return { ...PUBLIC_CONFIG, ...(await response.json()) };
+  } catch (error) {
+    log(`Using fallback config: ${error.message}`);
+    return { ...PUBLIC_CONFIG };
+  }
+}
+
+function selectedRoboflowConfig() {
+  const workflowId = String(ui.workflow.value || "").trim();
+  return {
+    ...config.roboflowWebrtc,
+    workflowId: workflowId || config.roboflowWebrtc?.workflowId || "",
+    hasWorkflowSpec: false
+  };
+}
+
+function syncWorkflowOptions() {
+  const currentWorkflow = config.roboflowWebrtc?.workflowId || ui.workflow.value;
+  const options = [
+    currentWorkflow,
+    ...(Array.isArray(config.roboflowWebrtc?.workflowOptions) ? config.roboflowWebrtc.workflowOptions : []),
+    "rf-detr",
+    "rf-detr-2"
+  ];
+  [...new Set(options.map((value) => String(value || "").trim()).filter(Boolean))]
+    .forEach((value) => {
+      if (![...ui.workflow.options].some((option) => option.value === value)) {
+        ui.workflow.append(new Option(value, value));
+      }
+    });
+  if (currentWorkflow) {
+    ui.workflow.value = currentWorkflow;
+  }
+  ui.workflowState.textContent = ui.workflow.value || "--";
+}
+
+async function start(facingMode) {
+  stop();
+  latestResult = null;
+  latestDetectionReceivedAt = 0;
+
+  try {
+    cameraInput.stream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode,
+        width: { ideal: 640 },
+        height: { ideal: 480 }
+      },
+      audio: false
+    });
+    ui.video.srcObject = cameraInput.stream;
+    await ui.video.play();
+    startVideoFrameProbe();
+
+    detector = new ObjectDetectorEngine({
+      videoElement: ui.video,
+      cameraInput,
+      proxyUrl: config.roboflowWebrtcProxyUrl,
+      turnConfigUrl: config.roboflowWebrtcTurnConfigUrl,
+      terminateUrl: config.roboflowWebrtcTerminateUrl,
+      roboflowConfig: selectedRoboflowConfig(),
+      maxResults: config.objectDetectorMaxResults ?? 12,
+      logger: (message, level = "info") => log(`${level}: ${message}`)
+    });
+    detector.onDetections((result) => {
+      latestResult = result;
+      latestDetectionReceivedAt = performance.now();
+      logDetectionSummary(result);
+      render();
+    });
+    detector.onStatus((status) => {
+      ui.detectorState.textContent = status.running ? "running" : status.starting ? "starting" : status.ready ? "ready" : "stopped";
+      ui.workflowState.textContent = status.workflowId || ui.workflow.value || "--";
+    });
+    detector.onError((message) => log(`detector error: ${message}`));
+    await detector.start();
+    animationFrame = requestAnimationFrame(renderLoop);
+  } catch (error) {
+    log(`start failed: ${error.message}`);
+    stop();
+  }
+}
+
+function stop() {
+  cancelAnimationFrame(animationFrame);
+  animationFrame = 0;
+  if (videoFrameCallbackHandle && typeof ui.video.cancelVideoFrameCallback === "function") {
+    ui.video.cancelVideoFrameCallback(videoFrameCallbackHandle);
+    videoFrameCallbackHandle = 0;
+  }
+  detector?.stop?.();
+  detector = null;
+  cameraInput.stream?.getTracks?.().forEach((track) => track.stop());
+  cameraInput.stream = null;
+  ui.video.srcObject = null;
+  latestResult = null;
+  latestDetectionReceivedAt = 0;
+  ui.detectorState.textContent = "stopped";
+  ui.workflowState.textContent = ui.workflow.value || "--";
+  render();
+}
+
+function startVideoFrameProbe() {
+  if (typeof ui.video.requestVideoFrameCallback !== "function") {
+    ui.videoFrameAge.textContent = "unsupported";
+    return;
+  }
+
+  const onFrame = (_now, metadata = {}) => {
+    latestVideoFrameAt = performance.now();
+    const captureTime = Number(metadata.captureTime);
+    const receiveTime = Number(metadata.receiveTime);
+    const frameAge = Number.isFinite(captureTime) ? performance.now() - captureTime : 0;
+    const receiveLag = Number.isFinite(captureTime) && Number.isFinite(receiveTime)
+      ? receiveTime - captureTime
+      : null;
+    ui.videoFrameAge.textContent = Number.isFinite(frameAge) && frameAge > 0
+      ? `${Math.round(frameAge)} ms${receiveLag !== null ? ` recv ${Math.round(receiveLag)} ms` : ""}`
+      : "live";
+    videoFrameCallbackHandle = ui.video.requestVideoFrameCallback(onFrame);
+  };
+
+  videoFrameCallbackHandle = ui.video.requestVideoFrameCallback(onFrame);
+}
+
+function renderLoop() {
+  render();
+  animationFrame = requestAnimationFrame(renderLoop);
+}
+
+function render() {
+  const canvas = ui.overlay;
+  const rect = ui.video.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  const width = Math.max(1, Math.round(rect.width * dpr));
+  const height = Math.max(1, Math.round(rect.height * dpr));
+  if (canvas.width !== width || canvas.height !== height) {
+    canvas.width = width;
+    canvas.height = height;
+  }
+
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, width, height);
+  ctx.lineWidth = 2 * dpr;
+  ctx.strokeStyle = "rgba(117,230,255,0.92)";
+  ctx.setLineDash([8 * dpr, 8 * dpr]);
+  ctx.beginPath();
+  ctx.moveTo(width * CENTER_X, 0);
+  ctx.lineTo(width * CENTER_X, height);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  const targetLabel = canonicalObjectLabel(ui.targetLabel.value) || "";
+  const detections = latestResult?.detections ?? [];
+  const target = pickTarget(detections, targetLabel);
+  const localReceiveAgeMs = latestDetectionReceivedAt ? performance.now() - latestDetectionReceivedAt : null;
+  const frameAgeMs = Number.isFinite(Number(latestResult?.frameReceivedAtMs))
+    ? Date.now() - Number(latestResult.frameReceivedAtMs)
+    : localReceiveAgeMs;
+  const tolerance = Number(ui.tolerance.value);
+  const maxAngular = Number(ui.speed.value);
+  const maxAgeMs = Number(ui.maxAge.value);
+  const stale = frameAgeMs === null || frameAgeMs > maxAgeMs;
+  const errorX = target ? target.centerX - CENTER_X : null;
+  const centered = errorX !== null && Math.abs(errorX) <= tolerance;
+  const angular = errorX === null || centered || stale
+    ? 0
+    : clamp(errorX * STEER_GAIN, -maxAngular, maxAngular);
+
+  drawDetections(ctx, detections, target, latestResult, width, height, dpr, stale);
+
+  ui.labels.textContent = [...new Set(detections.map((detection) => detection.label))].join(", ") || "--";
+  ui.targetCenter.textContent = target ? target.centerX.toFixed(3) : "--";
+  ui.errorX.textContent = errorX === null ? "--" : signed(errorX, 3);
+  ui.angular.textContent = signed(angular, 3);
+  ui.detectionAge.textContent = frameAgeMs === null ? "--" : `${Math.round(frameAgeMs)} ms`;
+  ui.lastBoxTime.textContent = latestDetectionReceivedAt
+    ? `local ${Math.round((performance.now() - latestDetectionReceivedAt) / 1000)}s · frame ${frameAgeMs === null ? "--" : `${Math.round(frameAgeMs)}ms`}`
+    : "--";
+
+  if (!target) {
+    setDecision("no target", "status-warn");
+  } else if (stale) {
+    setDecision("hold stale", "status-bad");
+  } else if (centered) {
+    setDecision("centered", "status-good");
+  } else {
+    setDecision(angular < 0 ? "turn left" : "turn right", "status-warn");
+  }
+}
+
+function drawDetections(ctx, detections, target, result, canvasWidth, canvasHeight, dpr, stale) {
+  const frameWidth = Number(result?.frameWidth || ui.video.videoWidth || 1);
+  const frameHeight = Number(result?.frameHeight || ui.video.videoHeight || 1);
+  const scale = Math.min(canvasWidth / frameWidth, canvasHeight / frameHeight);
+  const drawWidth = frameWidth * scale;
+  const drawHeight = frameHeight * scale;
+  const offsetX = (canvasWidth - drawWidth) / 2;
+  const offsetY = (canvasHeight - drawHeight) / 2;
+
+  detections.forEach((detection) => {
+    const box = detection.bbox || {};
+    const x = offsetX + Number(box.x || 0) * scale;
+    const y = offsetY + Number(box.y || 0) * scale;
+    const w = Number(box.width || 0) * scale;
+    const h = Number(box.height || 0) * scale;
+    const isTarget = target && detection === target;
+    ctx.strokeStyle = isTarget ? (stale ? "rgba(255,111,145,0.95)" : "rgba(111,240,168,0.95)") : "rgba(117,230,255,0.72)";
+    ctx.fillStyle = isTarget ? "rgba(111,240,168,0.2)" : "rgba(117,230,255,0.12)";
+    ctx.lineWidth = (isTarget ? 3 : 2) * dpr;
+    ctx.beginPath();
+    ctx.rect(x, y, w, h);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = "rgba(2,5,4,0.82)";
+    ctx.fillRect(x, Math.max(0, y - 24 * dpr), Math.min(220 * dpr, Math.max(95 * dpr, w)), 24 * dpr);
+    ctx.fillStyle = "#e8fff6";
+    ctx.font = `${12 * dpr}px ui-monospace, Menlo, monospace`;
+    ctx.fillText(`${detection.label} ${(Number(detection.confidence || 0) * 100).toFixed(0)}%`, x + 6 * dpr, Math.max(14 * dpr, y - 7 * dpr));
+  });
+}
+
+function pickTarget(detections, label) {
+  const candidates = detections.filter((detection) => !label || detection.label === label);
+  return candidates.sort((a, b) => Number(b.confidence || 0) - Number(a.confidence || 0))[0] ?? null;
+}
+
+function updateControlLabels() {
+  ui.speedValue.textContent = Number(ui.speed.value).toFixed(3);
+  ui.toleranceValue.textContent = Number(ui.tolerance.value).toFixed(3);
+  ui.maxAgeValue.textContent = `${Math.round(Number(ui.maxAge.value))} ms`;
+}
+
+function setDecision(text, className) {
+  ui.decision.textContent = text;
+  ui.decision.className = className;
+}
+
+function logDetectionSummary(result) {
+  const age = latestDetectionReceivedAt ? 0 : "--";
+  const objects = (result.detections ?? [])
+    .slice(0, 5)
+    .map((detection) => `${detection.label}:${Number(detection.centerX).toFixed(2)}`)
+    .join(" ");
+  log(`detections=${result.detections?.length ?? 0} age=${age} ${objects}`);
+}
+
+function log(message) {
+  console.debug("[follow-latency-demo]", message);
+}
+
+function signed(value, digits) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return "--";
+  }
+  return `${numeric >= 0 ? "+" : ""}${numeric.toFixed(digits)}`;
+}
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, Number(value) || 0));
+}
+</script>
+</body>
+</html>

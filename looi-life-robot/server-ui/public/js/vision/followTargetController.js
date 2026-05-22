@@ -134,11 +134,11 @@ export class FollowTargetController {
     }
 
     const track = this.resolveTrack();
-    const targetVisibleNow = Boolean(track && track.visible && !track.lostAt);
+    const lostForMs = this.computeLostForMs(track);
+    const targetVisibleNow = Boolean(track && track.visible && !track.lostAt && lostForMs < FOLLOW_STALE_GRACE_MS);
 
     if (!targetVisibleNow) {
-      const lostForMs = this.computeLostForMs(track);
-      if (track?.lostAt && lostForMs < FOLLOW_STALE_GRACE_MS) {
+      if (track?.visible && lostForMs < this.lostTimeoutMs) {
         this.handleTargetStale(track, lostForMs);
         return this.getStatus();
       }

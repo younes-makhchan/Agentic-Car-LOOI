@@ -227,6 +227,36 @@ export class ObjectDetectorEngine {
     };
   }
 
+  async setWorkflowId(value, { restart = false } = {}) {
+    const workflowId = normalizeWorkflowId(value, this.roboflowConfig.workflowId);
+    if (!workflowId || workflowId === this.roboflowConfig.workflowId) {
+      return {
+        ...this.getStatus(),
+        restartRequired: false
+      };
+    }
+
+    const restartRequired = Boolean(this.running || this.starting);
+    this.roboflowConfig = {
+      ...this.roboflowConfig,
+      workflowId,
+      workflowOptions: uniqueStrings([workflowId, ...this.roboflowConfig.workflowOptions]),
+      hasWorkflowSpec: false
+    };
+    this.modelName = formatRoboflowModelName(this.roboflowConfig);
+    this.log(`workflow set ${workflowId}${restartRequired ? " restart_required=true" : ""}`, restartRequired ? "warn" : "info");
+    this.emitStatus();
+
+    if (restart && restartRequired) {
+      return this.restart(`workflow:${workflowId}`);
+    }
+
+    return {
+      ...this.getStatus(),
+      restartRequired
+    };
+  }
+
   async restart(reason = "detector_restart") {
     const shouldStart = Boolean(this.running || this.starting);
     this.running = false;
@@ -277,6 +307,8 @@ export class ObjectDetectorEngine {
       configured: Boolean(this.roboflowConfig.configured),
       workspace: this.roboflowConfig.workspace,
       workflowId: this.roboflowConfig.workflowId,
+      workflowOptions: [...this.roboflowConfig.workflowOptions],
+      hasWorkflowSpec: Boolean(this.roboflowConfig.hasWorkflowSpec),
       requestedPlan: this.roboflowConfig.requestedPlan,
       requestedRegion: this.roboflowConfig.requestedRegion,
       pipelineId: this.pipelineId,
@@ -303,7 +335,8 @@ export class ObjectDetectorEngine {
       imageInputName: this.roboflowConfig.imageInputName || "image",
       streamOutputNames: this.roboflowConfig.streamOutputNames,
       dataOutputNames: this.roboflowConfig.dataOutputNames,
-      realtimeProcessing: true
+      realtimeProcessing: true,
+      realtime_processing: true
     };
 
     if (!this.roboflowConfig.hasWorkflowSpec) {
@@ -343,6 +376,14 @@ export class ObjectDetectorEngine {
 
   handleWebrtcData(data) {
     const result = this.normalizeRoboflowData(data);
+    if (this.isOutOfOrderResult(result)) {
+      this.log(
+        `dropped out-of-order frame frame=${result.videoMetadata?.frame_id ?? "unknown"} ageMs=${formatAgeMs(result.frameAgeMs)}`,
+        "debug"
+      );
+      return;
+    }
+
     this.lastDetectionAt = Date.now();
     this.lastResult = result;
     this.lastError = Array.isArray(data?.errors) && data.errors.length ? data.errors.join("; ") : null;
@@ -357,6 +398,8 @@ export class ObjectDetectorEngine {
       ? data.serialized_output_data
       : data;
     const predictionSource = extractPredictionSource(root);
+    const videoMetadata = extractVideoMetadata(data, root, predictionSource.root);
+    const timestamp = normalizeFrameTimestamp(videoMetadata) ?? new Date().toISOString();
     const predictions = predictionSource.predictions
       .map((prediction) => normalizeRoboflowPrediction(prediction, predictionSource.root, this.videoElement))
       .filter(Boolean)
@@ -369,12 +412,32 @@ export class ObjectDetectorEngine {
       .sort((a, b) => b.confidence - a.confidence);
 
     return {
-      timestamp: new Date().toISOString(),
+      timestamp,
+      receivedAt: new Date().toISOString(),
+      frameReceivedAtMs: Date.parse(timestamp),
+      frameAgeMs: computeFrameAgeMs(timestamp),
+      videoMetadata,
       frameWidth: frameSize.width,
       frameHeight: frameSize.height,
       provider: "roboflow_webrtc",
       detections: suppressDuplicateDetections(detections).slice(0, this.maxResults)
     };
+  }
+
+  isOutOfOrderResult(result = {}) {
+    const nextFrameId = Number(result.videoMetadata?.frame_id);
+    const previousFrameId = Number(this.lastResult?.videoMetadata?.frame_id);
+    if (Number.isFinite(nextFrameId) && Number.isFinite(previousFrameId)) {
+      return nextFrameId < previousFrameId;
+    }
+
+    const nextFrameMs = Number(result.frameReceivedAtMs);
+    const previousFrameMs = Number(this.lastResult?.frameReceivedAtMs);
+    if (!Number.isFinite(nextFrameMs) || !Number.isFinite(previousFrameMs)) {
+      return false;
+    }
+
+    return nextFrameMs < previousFrameMs;
   }
 
   waitForNextResult(timeoutMs) {
@@ -468,6 +531,21 @@ function extractPredictionSource(root = {}) {
   }
 
   return { root, predictions: [] };
+}
+
+function extractVideoMetadata(...candidates) {
+  for (const candidate of candidates) {
+    if (!candidate || typeof candidate !== "object") {
+      continue;
+    }
+
+    const metadata = candidate.video_metadata ?? candidate.videoMetadata;
+    if (metadata && typeof metadata === "object") {
+      return { ...metadata };
+    }
+  }
+
+  return null;
 }
 
 function collectPredictionContainers(value, containers = [], seen = new Set()) {
@@ -675,6 +753,21 @@ function measureBoxOverlap(a = {}, b = {}) {
   };
 }
 
+function normalizeFrameTimestamp(videoMetadata) {
+  const receivedAt = videoMetadata?.received_at ?? videoMetadata?.receivedAt;
+  const time = Date.parse(receivedAt);
+  return Number.isFinite(time) ? new Date(time).toISOString() : null;
+}
+
+function computeFrameAgeMs(timestamp) {
+  const time = Date.parse(timestamp);
+  return Number.isFinite(time) ? Math.max(0, Date.now() - time) : null;
+}
+
+function formatAgeMs(value) {
+  return Number.isFinite(Number(value)) ? String(Math.round(Number(value))) : "unknown";
+}
+
 function extractFrameSize(root = {}, detections = [], videoElement = null) {
   const image = root.image || root.input_image || root.predictions?.image || root.output?.image || {};
   const width = numberOrNull(image.width ?? root.image_width ?? root.width);
@@ -716,12 +809,15 @@ function normalizeAllowlist(list) {
 function normalizeRoboflowConfig(config = {}) {
   const streamOutputNames = normalizeNameList(config.streamOutputNames, []);
   const dataOutputNames = normalizeNameList(config.dataOutputNames, ["predictions"]);
+  const workflowId = String(config.workflowId || "").trim();
+  const workflowOptions = uniqueStrings([workflowId, ...normalizeNameList(config.workflowOptions, ["rf-detr", "rf-detr-2"])]);
 
   return {
     enabled: config.enabled !== false,
     configured: Boolean(config.configured),
     workspace: String(config.workspace || "").trim(),
-    workflowId: String(config.workflowId || "").trim(),
+    workflowId,
+    workflowOptions,
     hasWorkflowSpec: Boolean(config.hasWorkflowSpec),
     imageInputName: String(config.imageInputName || "image").trim() || "image",
     streamOutputNames,
@@ -734,6 +830,11 @@ function normalizeRoboflowConfig(config = {}) {
 }
 
 function normalizeRequestedPlan(value, fallback = "") {
+  const text = String(value || "").trim();
+  return text || fallback;
+}
+
+function normalizeWorkflowId(value, fallback = "") {
   const text = String(value || "").trim();
   return text || fallback;
 }
@@ -752,6 +853,10 @@ function normalizeNameList(value, fallback = []) {
     return value.split(",").map((entry) => entry.trim()).filter(Boolean);
   }
   return fallback;
+}
+
+function uniqueStrings(values = []) {
+  return [...new Set(values.map((value) => String(value || "").trim()).filter(Boolean))];
 }
 
 function cloneMediaStream(stream) {
