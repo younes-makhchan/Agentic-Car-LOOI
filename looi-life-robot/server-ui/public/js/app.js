@@ -42,6 +42,7 @@ import { VisionScenarioManager } from "./vision/visionScenarioManager.js";
 const DEFAULT_SPEED = 0.2;
 const DEFAULT_DURATION_MS = 400;
 const LOCAL_VISION_SIZE_STORAGE_KEY = "looi.localVisionWidgetSizePx.v2";
+const FOLLOW_TUNING_STORAGE_KEY = "looi.followTuning.v1";
 const LOCAL_VISION_SIZE_MIN = 70;
 const LOCAL_VISION_SIZE_MAX = 220;
 const LOCAL_VISION_SIZE_STEP = 10;
@@ -180,6 +181,12 @@ const ui = {
   objectRoboflowGpuPlanSelect: document.getElementById("objectRoboflowGpuPlanSelect"),
   objectMaxResultsInput: document.getElementById("objectMaxResultsInput"),
   objectCategoryAllowlistInput: document.getElementById("objectCategoryAllowlistInput"),
+  followRotationSpeedSlider: document.getElementById("followRotationSpeedSlider"),
+  followRotationSpeedValue: document.getElementById("followRotationSpeedValue"),
+  followCenterXSlider: document.getElementById("followCenterXSlider"),
+  followCenterXValue: document.getElementById("followCenterXValue"),
+  followErrorXToleranceSlider: document.getElementById("followErrorXToleranceSlider"),
+  followErrorXToleranceValue: document.getElementById("followErrorXToleranceValue"),
   objectDetectorState: document.getElementById("objectDetectorState"),
   objectDetectorModel: document.getElementById("objectDetectorModel"),
   objectDetectorQuality: document.getElementById("objectDetectorQuality"),
@@ -197,6 +204,8 @@ const ui = {
   activeFollowTarget: document.getElementById("activeFollowTarget"),
   followScenarioState: document.getElementById("followScenarioState"),
   followControllerState: document.getElementById("followControllerState"),
+  followCurrentErrorX: document.getElementById("followCurrentErrorX"),
+  followSteeringState: document.getElementById("followSteeringState"),
   followModeArmedToggle: document.getElementById("followModeArmedToggle"),
   allowFollowMovementToggle: document.getElementById("allowFollowMovementToggle"),
   localBrainState: document.getElementById("localBrainState"),
@@ -1122,6 +1131,15 @@ ui.objectCategoryAllowlistInput?.addEventListener("change", () => {
   objectDetectorEngine?.setCategoryAllowlist?.(ui.objectCategoryAllowlistInput.value);
   updateVisionUi();
 });
+[
+  ui.followRotationSpeedSlider,
+  ui.followCenterXSlider,
+  ui.followErrorXToleranceSlider
+].forEach((slider) => {
+  slider?.addEventListener("input", () => {
+    applyFollowTuningFromUi();
+  });
+});
 ui.setFollowTargetButton?.addEventListener("click", () => {
   const label = ui.followTargetLabelInput?.value?.trim();
   if (!label) {
@@ -1143,6 +1161,7 @@ init();
 
 async function init() {
   activeConfig = await loadPublicConfig();
+  const savedFollowTuning = loadFollowTuningSettings();
   brainPolicy = clampBrainPolicy({
     ...createDefaultBrainPolicy(),
     localBrainEnabled: activeConfig.localBrainDefaultEnabled ?? true,
@@ -1161,10 +1180,23 @@ async function init() {
       activeConfig.followLostTimeoutMs ??
       PUBLIC_CONFIG.followLostTimeoutMs ??
       2000,
+    followTargetCenterX:
+      activeConfig.followTargetCenterX ??
+      PUBLIC_CONFIG.followTargetCenterX ??
+      0.5,
+    followCenterDeadband:
+      activeConfig.followCenterDeadband ??
+      PUBLIC_CONFIG.followCenterDeadband ??
+      0.035,
+    followSteerGain:
+      activeConfig.followSteerGain ??
+      PUBLIC_CONFIG.followSteerGain ??
+      0.9,
     maxObjectFollowSpeed:
       activeConfig.maxObjectFollowSpeed ??
       PUBLIC_CONFIG.maxObjectFollowSpeed ??
       0.18,
+    ...savedFollowTuning,
     eventThoughtCooldownMs:
       activeConfig.speechGateEventCooldownMs ??
       PUBLIC_CONFIG.speechGateEventCooldownMs ??
@@ -3052,6 +3084,7 @@ function updateLocalBrainUi() {
   if (ui.allowFollowMovementToggle) {
     ui.allowFollowMovementToggle.checked = Boolean(brainPolicy.allowFollowMovement);
   }
+  updateFollowTuningUi();
 
   ui.localBrainState.textContent = geminiPrimaryActive
     ? geminiStatus.connected
@@ -3981,6 +4014,7 @@ function updateVisionUi() {
   const context = getVisionContext();
   const activeTarget = context.activeTarget;
   const followStatus = followTargetController?.getStatus?.() ?? {};
+  updateFollowTuningUi(followStatus);
 
   if (ui.objectMaxResultsInput && detectorStatus.maxResults !== undefined && document.activeElement !== ui.objectMaxResultsInput) {
     ui.objectMaxResultsInput.value = String(detectorStatus.maxResults);
@@ -4056,6 +4090,53 @@ function updateVisionUi() {
       : "stopped";
   }
   drawObjectDetectionOverlays(objectDetectorEngine?.lastResult ?? { detections: [] });
+}
+
+function applyFollowTuningFromUi() {
+  const nextTuning = {
+    maxObjectFollowSpeed: clampNumber(ui.followRotationSpeedSlider?.value, 0.03, 0.4, brainPolicy.maxObjectFollowSpeed),
+    followTargetCenterX: clampNumber(ui.followCenterXSlider?.value, 0.25, 0.75, brainPolicy.followTargetCenterX),
+    followCenterDeadband: clampNumber(ui.followErrorXToleranceSlider?.value, 0.005, 0.2, brainPolicy.followCenterDeadband)
+  };
+
+  patchBrainPolicy(nextTuning);
+  saveFollowTuningSettings(nextTuning);
+  updateFollowTuningUi();
+  updateVisionUi();
+}
+
+function updateFollowTuningUi(followStatus = followTargetController?.getStatus?.() ?? {}) {
+  if (ui.followRotationSpeedSlider) {
+    setInputValue(ui.followRotationSpeedSlider, formatFollowValue(brainPolicy.maxObjectFollowSpeed, 2));
+  }
+  if (ui.followRotationSpeedValue) {
+    ui.followRotationSpeedValue.textContent = formatFollowValue(brainPolicy.maxObjectFollowSpeed, 2);
+  }
+  if (ui.followCenterXSlider) {
+    setInputValue(ui.followCenterXSlider, formatFollowValue(brainPolicy.followTargetCenterX, 2));
+  }
+  if (ui.followCenterXValue) {
+    ui.followCenterXValue.textContent = formatFollowValue(brainPolicy.followTargetCenterX, 2);
+  }
+  if (ui.followErrorXToleranceSlider) {
+    setInputValue(ui.followErrorXToleranceSlider, formatFollowValue(brainPolicy.followCenterDeadband, 3));
+  }
+  if (ui.followErrorXToleranceValue) {
+    ui.followErrorXToleranceValue.textContent = formatFollowValue(brainPolicy.followCenterDeadband, 3);
+  }
+
+  if (ui.followCurrentErrorX) {
+    const errorX = followStatus.lastSteering?.errorX;
+    ui.followCurrentErrorX.textContent = Number.isFinite(Number(errorX))
+      ? formatSignedFollowValue(errorX, 3)
+      : "--";
+  }
+  if (ui.followSteeringState) {
+    const steering = followStatus.lastSteering;
+    ui.followSteeringState.textContent = steering
+      ? `${steering.direction} · angular ${formatSignedFollowValue(steering.angular, 2)} · tolerance ${formatFollowValue(steering.deadband, 3)}`
+      : "--";
+  }
 }
 
 function renderDetectedObjects(container, detections = []) {
@@ -4237,6 +4318,9 @@ function getExecutionPolicy() {
     followModeArmed: brainPolicy.followModeArmed,
     allowFollowMovement: brainPolicy.allowFollowMovement,
     followLostTimeoutMs: brainPolicy.followLostTimeoutMs,
+    followTargetCenterX: brainPolicy.followTargetCenterX,
+    followCenterDeadband: brainPolicy.followCenterDeadband,
+    followSteerGain: brainPolicy.followSteerGain,
     maxObjectFollowSpeed: brainPolicy.maxObjectFollowSpeed,
     simulatorMode,
     robotConnected: Boolean(robotClient?.isConnected?.()),
@@ -4516,6 +4600,47 @@ function applyLocalVisionWidgetSize(value, { persist = true } = {}) {
   }
 }
 
+function loadFollowTuningSettings() {
+  try {
+    const stored = globalThis.localStorage?.getItem?.(FOLLOW_TUNING_STORAGE_KEY);
+    if (!stored) {
+      return {};
+    }
+
+    return normalizeStoredFollowTuning(JSON.parse(stored));
+  } catch {
+    return {};
+  }
+}
+
+function saveFollowTuningSettings(settings = {}) {
+  try {
+    globalThis.localStorage?.setItem?.(
+      FOLLOW_TUNING_STORAGE_KEY,
+      JSON.stringify(normalizeStoredFollowTuning(settings))
+    );
+  } catch {
+    // Tuning still applies for this session if browser storage is blocked.
+  }
+}
+
+function normalizeStoredFollowTuning(settings = {}) {
+  const source = settings && typeof settings === "object" ? settings : {};
+  const normalized = {};
+
+  if (Number.isFinite(Number(source.maxObjectFollowSpeed))) {
+    normalized.maxObjectFollowSpeed = clampNumber(source.maxObjectFollowSpeed, 0.03, 0.4, 0.18);
+  }
+  if (Number.isFinite(Number(source.followTargetCenterX))) {
+    normalized.followTargetCenterX = clampNumber(source.followTargetCenterX, 0.25, 0.75, 0.5);
+  }
+  if (Number.isFinite(Number(source.followCenterDeadband))) {
+    normalized.followCenterDeadband = clampNumber(source.followCenterDeadband, 0.005, 0.2, 0.035);
+  }
+
+  return normalized;
+}
+
 function setInputValue(element, value) {
   if (!element || document.activeElement === element) {
     return;
@@ -4546,6 +4671,20 @@ function clampNumber(value, min, max, fallback) {
 
 function formatNumber(value) {
   return Number(value).toFixed(2);
+}
+
+function formatFollowValue(value, digits = 2) {
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) ? numericValue.toFixed(digits) : "--";
+}
+
+function formatSignedFollowValue(value, digits = 2) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) {
+    return "--";
+  }
+
+  return `${numericValue >= 0 ? "+" : ""}${numericValue.toFixed(digits)}`;
 }
 
 function formatRoboflowGpuPlan(value) {

@@ -764,6 +764,21 @@
                 <span>Category allowlist</span>
                 <input id="objectCategoryAllowlistInput" type="text" placeholder="optional: person,bottle,cup,cell phone" />
               </label>
+              <label class="slider-field" for="followRotationSpeedSlider">
+                <span>Follow rotation speed</span>
+                <strong id="followRotationSpeedValue">0.18</strong>
+                <input id="followRotationSpeedSlider" type="range" min="0.03" max="0.40" step="0.01" value="0.18" />
+              </label>
+              <label class="slider-field" for="followCenterXSlider">
+                <span>Follow center X</span>
+                <strong id="followCenterXValue">0.50</strong>
+                <input id="followCenterXSlider" type="range" min="0.25" max="0.75" step="0.01" value="0.50" />
+              </label>
+              <label class="slider-field" for="followErrorXToleranceSlider">
+                <span>ErrorX tolerance</span>
+                <strong id="followErrorXToleranceValue">0.035</strong>
+                <input id="followErrorXToleranceSlider" type="range" min="0.005" max="0.200" step="0.005" value="0.035" />
+              </label>
             </div>
             <div class="status-grid">
               <div class="status-row">
@@ -830,6 +845,14 @@
               <div class="status-row">
                 <span>Controller</span>
                 <strong id="followControllerState">stopped</strong>
+              </div>
+              <div class="status-row">
+                <span>Current errorX</span>
+                <strong id="followCurrentErrorX">--</strong>
+              </div>
+              <div class="status-row">
+                <span>Steering</span>
+                <strong id="followSteeringState">--</strong>
               </div>
             </div>
           </div>

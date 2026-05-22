@@ -2,9 +2,9 @@ import { canonicalObjectLabel } from "./objectLabelUtils.js";
 
 const FOLLOW_MODES = new Set(["cautious", "gentle", "curious"]);
 const FOLLOW_POSITION_LOG_INTERVAL_MS = 600;
-const FOLLOW_CENTER_X = 0.5;
-const FOLLOW_CENTER_DEADBAND = 0.035;
-const FOLLOW_STEER_GAIN = 0.9;
+const DEFAULT_FOLLOW_CENTER_X = 0.5;
+const DEFAULT_FOLLOW_CENTER_DEADBAND = 0.035;
+const DEFAULT_FOLLOW_STEER_GAIN = 0.9;
 const FOLLOW_COMMAND_DURATION_MS = 480;
 const FOLLOW_COMMAND_REFRESH_MS = 220;
 const FOLLOW_RAMP_MS = 90;
@@ -207,6 +207,7 @@ export class FollowTargetController {
       lastSeenAt: this.lastSeenAt,
       lostAnnounced: this.lostAnnounced,
       paused: this.paused,
+      tuning: this.getTuning(),
       lastSteering: this.lastSteering,
       followMotionActive: this.followMotionActive,
       motionAllowed: this.canMove().allowed
@@ -228,38 +229,48 @@ export class FollowTargetController {
   }
 
   computeSteeringForTarget(track = {}) {
-    const centerX = clampNumber(track.centerX, 0, 1, FOLLOW_CENTER_X);
-    const errorX = centerX - FOLLOW_CENTER_X;
+    const tuning = this.getTuning();
+    const centerX = clampNumber(track.centerX, 0, 1, tuning.targetCenterX);
+    const errorX = centerX - tuning.targetCenterX;
     const absErrorX = Math.abs(errorX);
-    const policy = this.policy();
-    const maxAngular = clampNumber(policy.maxObjectFollowSpeed, 0.03, 0.4, 0.18);
 
-    if (absErrorX <= FOLLOW_CENTER_DEADBAND) {
+    if (absErrorX <= tuning.centerDeadband) {
       return {
         centered: true,
         direction: "centered",
         centerX,
-        targetCenterX: FOLLOW_CENTER_X,
+        targetCenterX: tuning.targetCenterX,
         errorX,
         absErrorX,
         angular: 0,
-        maxAngular,
-        deadband: FOLLOW_CENTER_DEADBAND
+        maxAngular: tuning.maxAngular,
+        deadband: tuning.centerDeadband
       };
     }
 
-    const angular = clampNumber(errorX * FOLLOW_STEER_GAIN, -maxAngular, maxAngular, 0);
+    const angular = clampNumber(errorX * tuning.steerGain, -tuning.maxAngular, tuning.maxAngular, 0);
 
     return {
       centered: false,
       direction: errorX < 0 ? "left" : "right",
       centerX,
-      targetCenterX: FOLLOW_CENTER_X,
+      targetCenterX: tuning.targetCenterX,
       errorX,
       absErrorX,
       angular,
-      maxAngular,
-      deadband: FOLLOW_CENTER_DEADBAND
+      maxAngular: tuning.maxAngular,
+      deadband: tuning.centerDeadband
+    };
+  }
+
+  getTuning() {
+    const policy = this.policy();
+
+    return {
+      targetCenterX: clampNumber(policy.followTargetCenterX, 0.25, 0.75, DEFAULT_FOLLOW_CENTER_X),
+      centerDeadband: clampNumber(policy.followCenterDeadband, 0.005, 0.2, DEFAULT_FOLLOW_CENTER_DEADBAND),
+      steerGain: clampNumber(policy.followSteerGain, 0.05, 2.5, DEFAULT_FOLLOW_STEER_GAIN),
+      maxAngular: clampNumber(policy.maxObjectFollowSpeed, 0.03, 0.4, 0.18)
     };
   }
 
@@ -272,7 +283,6 @@ export class FollowTargetController {
     this.lastPositionLogAt = now;
     const centerX = clampNumber(track.centerX, 0, 1, 0.5);
     const centerY = clampNumber(track.centerY, 0, 1, 0.5);
-    const offsetX = centerX - 0.5;
     const bbox = track.bbox && typeof track.bbox === "object" ? track.bbox : {};
     const bboxText = [
       formatPixel(bbox.x),
@@ -282,9 +292,12 @@ export class FollowTargetController {
     ].join(",");
     const direction = steering?.direction ?? "centered";
     const angular = Number.isFinite(Number(steering?.angular)) ? Number(steering.angular) : 0;
+    const targetCenterX = Number.isFinite(Number(steering?.targetCenterX))
+      ? Number(steering.targetCenterX)
+      : this.getTuning().targetCenterX;
 
     this.log(
-      `[roboflow] follow target position label=${track.label ?? this.targetLabel ?? "unknown"} track=${track.id ?? this.targetTrackId ?? "none"} center=(${formatNumber(centerX)},${formatNumber(centerY)}) targetX=${formatNumber(FOLLOW_CENTER_X)} errorX=${formatNumber(offsetX)} area=${formatNumber(track.areaRatio)} bbox=(${bboxText}) steering=${direction} angular=${formatNumber(angular)}`,
+      `[roboflow] follow target position label=${track.label ?? this.targetLabel ?? "unknown"} track=${track.id ?? this.targetTrackId ?? "none"} center=(${formatNumber(centerX)},${formatNumber(centerY)}) targetX=${formatNumber(targetCenterX)} errorX=${formatNumber(centerX - targetCenterX)} area=${formatNumber(track.areaRatio)} bbox=(${bboxText}) steering=${direction} angular=${formatNumber(angular)}`,
       "debug"
     );
   }
@@ -464,6 +477,9 @@ export class FollowTargetController {
       allowFollowMovement: false,
       localSpeechAllowed: true,
       robotConnected: false,
+      followTargetCenterX: DEFAULT_FOLLOW_CENTER_X,
+      followCenterDeadband: DEFAULT_FOLLOW_CENTER_DEADBAND,
+      followSteerGain: DEFAULT_FOLLOW_STEER_GAIN,
       maxObjectFollowSpeed: 0.18,
       ...(typeof this.getPolicy === "function" ? this.getPolicy() : {})
     };
