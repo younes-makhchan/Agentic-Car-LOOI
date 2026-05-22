@@ -213,6 +213,12 @@ function compareTrackQuality(a, b) {
     return a.visible ? -1 : 1;
   }
 
+  const aFresh = !a.lostAt;
+  const bFresh = !b.lostAt;
+  if (aFresh !== bFresh) {
+    return aFresh ? -1 : 1;
+  }
+
   if (a.confidence !== b.confidence) {
     return b.confidence - a.confidence;
   }

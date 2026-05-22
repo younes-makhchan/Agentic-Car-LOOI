@@ -40,7 +40,7 @@ export const PUBLIC_CONFIG = {
   followTargetCenterX: 0.5,
   followCenterDeadband: 0.035,
   followSteerGain: 0.9,
-  maxObjectFollowSpeed: 0.18,
+  maxObjectFollowSpeed: 0.06,
   alwaysListeningDefault: false,
   audioLevelMonitorDefault: false,
   wakeNamesDefault: ["looi", "louie", "lui", "robot"],

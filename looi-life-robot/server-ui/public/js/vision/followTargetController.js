@@ -5,9 +5,11 @@ const FOLLOW_POSITION_LOG_INTERVAL_MS = 600;
 const DEFAULT_FOLLOW_CENTER_X = 0.5;
 const DEFAULT_FOLLOW_CENTER_DEADBAND = 0.035;
 const DEFAULT_FOLLOW_STEER_GAIN = 0.9;
-const FOLLOW_COMMAND_DURATION_MS = 480;
-const FOLLOW_COMMAND_REFRESH_MS = 220;
-const FOLLOW_RAMP_MS = 90;
+const DEFAULT_MAX_FOLLOW_ANGULAR = 0.06;
+const FOLLOW_STALE_GRACE_MS = 700;
+const FOLLOW_COMMAND_DURATION_MS = 280;
+const FOLLOW_COMMAND_REFRESH_MS = 160;
+const FOLLOW_RAMP_MS = 70;
 
 export class FollowTargetController {
   constructor({
@@ -42,6 +44,7 @@ export class FollowTargetController {
     this.lastSteering = null;
     this.followMotionActive = false;
     this.lastPositionLogAt = 0;
+    this.lastStaleLogAt = 0;
   }
 
   start({ label, trackId = null, mode = "gentle" } = {}) {
@@ -135,6 +138,11 @@ export class FollowTargetController {
 
     if (!targetVisibleNow) {
       const lostForMs = this.computeLostForMs(track);
+      if (track?.lostAt && lostForMs < FOLLOW_STALE_GRACE_MS) {
+        this.handleTargetStale(track, lostForMs);
+        return this.getStatus();
+      }
+
       this.handleTargetLost(lostForMs);
       return this.getStatus();
     }
@@ -270,7 +278,7 @@ export class FollowTargetController {
       targetCenterX: clampNumber(policy.followTargetCenterX, 0.25, 0.75, DEFAULT_FOLLOW_CENTER_X),
       centerDeadband: clampNumber(policy.followCenterDeadband, 0.005, 0.2, DEFAULT_FOLLOW_CENTER_DEADBAND),
       steerGain: clampNumber(policy.followSteerGain, 0.05, 2.5, DEFAULT_FOLLOW_STEER_GAIN),
-      maxAngular: clampNumber(policy.maxObjectFollowSpeed, 0.03, 0.4, 0.18)
+      maxAngular: clampNumber(policy.maxObjectFollowSpeed, 0.005, 0.12, DEFAULT_MAX_FOLLOW_ANGULAR)
     };
   }
 
@@ -353,6 +361,29 @@ export class FollowTargetController {
     }, { source: "vision", priority: 4 });
   }
 
+  handleTargetStale(track = {}, lostForMs = 0) {
+    this.stopMotion("follow_target_stale_frame");
+    this.visionState?.setScenario?.({
+      active: true,
+      type: "follow_object",
+      targetLabel: track.label ?? this.targetLabel,
+      targetTrackId: this.targetTrackId,
+      state: "following",
+      lostSince: null,
+      reason: "target_frame_stale"
+    });
+    const now = Date.now();
+    if (now - this.lastStaleLogAt < FOLLOW_POSITION_LOG_INTERVAL_MS) {
+      return;
+    }
+
+    this.lastStaleLogAt = now;
+    this.log(
+      `[roboflow] follow holding stale target label=${track.label ?? this.targetLabel ?? "object"} track=${track.id ?? this.targetTrackId ?? "none"} staleForMs=${Math.round(lostForMs)}`,
+      "debug"
+    );
+  }
+
   setTarget(labelOrTrack) {
     if (typeof labelOrTrack === "string") {
       this.targetLabel = canonicalObjectLabel(labelOrTrack);
@@ -369,22 +400,30 @@ export class FollowTargetController {
   }
 
   resolveTrack() {
+    let trackById = null;
+
     if (this.targetTrackId) {
-      const byId = this.objectTracker?.getTrackById?.(this.targetTrackId);
-      if (byId) {
-        return byId;
+      trackById = this.objectTracker?.getTrackById?.(this.targetTrackId);
+      if (isFreshTrack(trackById)) {
+        return trackById;
       }
     }
 
     if (this.targetLabel) {
       const byLabel = this.objectTracker?.findBestTrackByLabel?.(this.targetLabel);
       if (byLabel) {
+        if (trackById && byLabel.id !== trackById.id && isFreshTrack(byLabel)) {
+          this.log(
+            `[roboflow] follow switched track label=${byLabel.label} from=${trackById.id ?? "none"} to=${byLabel.id ?? "none"} reason=stale_duplicate_track`,
+            "debug"
+          );
+        }
         this.targetTrackId = byLabel.id ?? byLabel.trackId ?? this.targetTrackId;
         return byLabel;
       }
     }
 
-    return null;
+    return trackById ?? null;
   }
 
   computeLostForMs(track) {
@@ -480,7 +519,7 @@ export class FollowTargetController {
       followTargetCenterX: DEFAULT_FOLLOW_CENTER_X,
       followCenterDeadband: DEFAULT_FOLLOW_CENTER_DEADBAND,
       followSteerGain: DEFAULT_FOLLOW_STEER_GAIN,
-      maxObjectFollowSpeed: 0.18,
+      maxObjectFollowSpeed: DEFAULT_MAX_FOLLOW_ANGULAR,
       ...(typeof this.getPolicy === "function" ? this.getPolicy() : {})
     };
   }
@@ -505,4 +544,8 @@ function formatNumber(value) {
 function formatPixel(value) {
   const numeric = Number(value);
   return Number.isFinite(numeric) ? String(Math.round(numeric)) : "unknown";
+}
+
+function isFreshTrack(track) {
+  return Boolean(track && track.visible && !track.lostAt);
 }

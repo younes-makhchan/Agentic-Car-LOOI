@@ -1195,7 +1195,7 @@ async function init() {
     maxObjectFollowSpeed:
       activeConfig.maxObjectFollowSpeed ??
       PUBLIC_CONFIG.maxObjectFollowSpeed ??
-      0.18,
+      0.06,
     ...savedFollowTuning,
     eventThoughtCooldownMs:
       activeConfig.speechGateEventCooldownMs ??
@@ -4094,7 +4094,7 @@ function updateVisionUi() {
 
 function applyFollowTuningFromUi() {
   const nextTuning = {
-    maxObjectFollowSpeed: clampNumber(ui.followRotationSpeedSlider?.value, 0.03, 0.4, brainPolicy.maxObjectFollowSpeed),
+    maxObjectFollowSpeed: clampNumber(ui.followRotationSpeedSlider?.value, 0.005, 0.12, brainPolicy.maxObjectFollowSpeed),
     followTargetCenterX: clampNumber(ui.followCenterXSlider?.value, 0.25, 0.75, brainPolicy.followTargetCenterX),
     followCenterDeadband: clampNumber(ui.followErrorXToleranceSlider?.value, 0.005, 0.2, brainPolicy.followCenterDeadband)
   };
@@ -4107,10 +4107,10 @@ function applyFollowTuningFromUi() {
 
 function updateFollowTuningUi(followStatus = followTargetController?.getStatus?.() ?? {}) {
   if (ui.followRotationSpeedSlider) {
-    setInputValue(ui.followRotationSpeedSlider, formatFollowValue(brainPolicy.maxObjectFollowSpeed, 2));
+    setInputValue(ui.followRotationSpeedSlider, formatFollowValue(brainPolicy.maxObjectFollowSpeed, 3));
   }
   if (ui.followRotationSpeedValue) {
-    ui.followRotationSpeedValue.textContent = formatFollowValue(brainPolicy.maxObjectFollowSpeed, 2);
+    ui.followRotationSpeedValue.textContent = formatFollowValue(brainPolicy.maxObjectFollowSpeed, 3);
   }
   if (ui.followCenterXSlider) {
     setInputValue(ui.followCenterXSlider, formatFollowValue(brainPolicy.followTargetCenterX, 2));
@@ -4629,7 +4629,7 @@ function normalizeStoredFollowTuning(settings = {}) {
   const normalized = {};
 
   if (Number.isFinite(Number(source.maxObjectFollowSpeed))) {
-    normalized.maxObjectFollowSpeed = clampNumber(source.maxObjectFollowSpeed, 0.03, 0.4, 0.18);
+    normalized.maxObjectFollowSpeed = clampNumber(source.maxObjectFollowSpeed, 0.005, 0.12, 0.06);
   }
   if (Number.isFinite(Number(source.followTargetCenterX))) {
     normalized.followTargetCenterX = clampNumber(source.followTargetCenterX, 0.25, 0.75, 0.5);

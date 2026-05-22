@@ -363,16 +363,17 @@ export class ObjectDetectorEngine {
       .filter((detection) => !this.categoryAllowlist.length || this.categoryAllowlist.includes(detection.label));
     const frameSize = extractFrameSize(predictionSource.root, predictions, this.videoElement);
 
+    const detections = predictions
+      .map((detection) => finalizeDetection(detection, frameSize.width, frameSize.height))
+      .filter(Boolean)
+      .sort((a, b) => b.confidence - a.confidence);
+
     return {
       timestamp: new Date().toISOString(),
       frameWidth: frameSize.width,
       frameHeight: frameSize.height,
       provider: "roboflow_webrtc",
-      detections: predictions
-        .map((detection) => finalizeDetection(detection, frameSize.width, frameSize.height))
-        .filter(Boolean)
-        .sort((a, b) => b.confidence - a.confidence)
-        .slice(0, this.maxResults)
+      detections: suppressDuplicateDetections(detections).slice(0, this.maxResults)
     };
   }
 
@@ -627,6 +628,50 @@ function finalizeDetection(detection, frameWidth, frameHeight) {
     position: centerX < 0.4 ? "left" : centerX > 0.6 ? "right" : "center",
     verticalPosition: centerY < 0.4 ? "top" : centerY > 0.6 ? "bottom" : "middle",
     distance: areaRatio > 0.18 ? "near" : areaRatio < 0.05 ? "far" : "medium"
+  };
+}
+
+function suppressDuplicateDetections(detections = []) {
+  const kept = [];
+
+  detections.forEach((detection) => {
+    const duplicate = kept.some((existing) => {
+      if (existing.label !== detection.label) {
+        return false;
+      }
+
+      const overlap = measureBoxOverlap(existing.bbox, detection.bbox);
+      return overlap.iou >= 0.55 || overlap.smallerOverlap >= 0.8;
+    });
+
+    if (!duplicate) {
+      kept.push(detection);
+    }
+  });
+
+  return kept;
+}
+
+function measureBoxOverlap(a = {}, b = {}) {
+  const ax1 = Number(a.x ?? 0);
+  const ay1 = Number(a.y ?? 0);
+  const ax2 = ax1 + Number(a.width ?? 0);
+  const ay2 = ay1 + Number(a.height ?? 0);
+  const bx1 = Number(b.x ?? 0);
+  const by1 = Number(b.y ?? 0);
+  const bx2 = bx1 + Number(b.width ?? 0);
+  const by2 = by1 + Number(b.height ?? 0);
+  const intersectionWidth = Math.max(0, Math.min(ax2, bx2) - Math.max(ax1, bx1));
+  const intersectionHeight = Math.max(0, Math.min(ay2, by2) - Math.max(ay1, by1));
+  const intersection = intersectionWidth * intersectionHeight;
+  const areaA = Math.max(0, ax2 - ax1) * Math.max(0, ay2 - ay1);
+  const areaB = Math.max(0, bx2 - bx1) * Math.max(0, by2 - by1);
+  const union = areaA + areaB - intersection;
+  const smaller = Math.min(areaA, areaB);
+
+  return {
+    iou: union > 0 ? intersection / union : 0,
+    smallerOverlap: smaller > 0 ? intersection / smaller : 0
   };
 }
 

@@ -92,7 +92,7 @@ function createVisionRuntime({ policy = {} } = {}) {
       allowFollowMovement: false,
       robotConnected: true,
       localSpeechAllowed: true,
-      maxObjectFollowSpeed: 0.18,
+      maxObjectFollowSpeed: 0.06,
       ...policy
     })
   });
@@ -174,9 +174,45 @@ function updateVision({ tracker, visionState }, result) {
   assert.equal(runtime.motions[0].label, "roboflow_follow_turn_left");
   assert.equal(runtime.motions[0].linear, 0);
   assert.ok(runtime.motions[0].angular < 0);
-  assert.equal(runtime.motions[0].durationMs, 480);
-  assert.equal(runtime.motions[0].rampMs, 90);
+  assert.equal(runtime.motions[0].durationMs, 280);
+  assert.equal(runtime.motions[0].rampMs, 70);
   assert.equal(runtime.motions[0].realtime, true);
+  runtime.controller.stop("test_stop");
+}
+
+{
+  const runtime = createVisionRuntime({
+    policy: {
+      localMotionArmed: true,
+      followModeArmed: true,
+      allowFollowMovement: true
+    }
+  });
+  const first = updateVision(runtime, detectionResult(0, [detection("apple", 0.2)]));
+  runtime.controller.start({ label: "apple", trackId: first[0].id });
+  updateVision(runtime, detectionResult(200, []));
+  const duplicate = updateVision(runtime, detectionResult(300, [detection("apple", 0.82)]));
+  const resolved = runtime.controller.resolveTrack();
+  assert.equal(resolved.id, duplicate.find((track) => track.visible && !track.lostAt)?.id);
+  assert.equal(runtime.controller.getTarget().trackId, resolved.id);
+  runtime.controller.stop("test_stop");
+}
+
+{
+  const runtime = createVisionRuntime({
+    policy: {
+      localMotionArmed: true,
+      followModeArmed: true,
+      allowFollowMovement: true
+    }
+  });
+  updateVision(runtime, detectionResult(0, [detection("apple", 0.2)]));
+  runtime.controller.start({ label: "apple" });
+  runtime.controller.followMotionActive = true;
+  updateVision(runtime, detectionResult(200, []));
+  runtime.controller.tick();
+  assert.equal(runtime.visionState.getStatus().scenario.state, "following");
+  assert.equal(runtime.events.some((event) => event.type === "vision_target_lost"), false);
   runtime.controller.stop("test_stop");
 }
 
@@ -341,20 +377,31 @@ function updateVision({ tracker, visionState }, result) {
           height: 1272
         },
         predictions: [
-          {
-            width: 1280,
-            height: 1054,
+        {
+          width: 1280,
+          height: 1054,
             x: 1157,
             y: 593,
             confidence: 0.9685842394828796,
             class_id: 1,
             class: "person",
-            detection_id: "24c15c43-0671-4ca5-8edc-7abdbbf27116",
-            parent_id: "image"
-          },
-          {
-            width: 788,
-            height: 437,
+          detection_id: "24c15c43-0671-4ca5-8edc-7abdbbf27116",
+          parent_id: "image"
+        },
+        {
+          width: 1260,
+          height: 1040,
+          x: 1155,
+          y: 595,
+          confidence: 0.7685842394828796,
+          class_id: 1,
+          class: "person",
+          detection_id: "duplicate-person",
+          parent_id: "image"
+        },
+        {
+          width: 788,
+          height: 437,
             x: 1329,
             y: 1043.5,
             confidence: 0.9630815386772156,
