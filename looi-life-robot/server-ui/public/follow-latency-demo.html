@@ -357,9 +357,19 @@ input[type="range"] {
 
       <div class="control-grid">
         <label>
-          <span>Rotation speed cap</span>
-          <strong id="speedValue">0.080</strong>
-          <input id="speed" type="range" min="0" max="0.5" step="0.005" value="0.080" />
+          <span>Constant rotation speed</span>
+          <strong id="speedValue">0.050</strong>
+          <input id="speed" type="range" min="0" max="0.5" step="0.001" value="0.050" />
+        </label>
+        <label>
+          <span>Command duration</span>
+          <strong id="commandDurationValue">160 ms</strong>
+          <input id="commandDuration" type="range" min="50" max="600" step="10" value="160" />
+        </label>
+        <label>
+          <span>Command interval</span>
+          <strong id="commandIntervalValue">90 ms</strong>
+          <input id="commandInterval" type="range" min="40" max="300" step="10" value="90" />
         </label>
         <label>
           <span>ErrorX tolerance</span>
@@ -385,6 +395,10 @@ input[type="range"] {
         <div class="row">
           <span>Robot command</span>
           <strong id="robotCommandState">held</strong>
+        </div>
+        <div class="row">
+          <span>Rotation summary</span>
+          <strong id="rotationSummary">held</strong>
         </div>
         <div class="row">
           <span>Workflow</span>
@@ -424,11 +438,7 @@ import { ESP32Client } from "./js/robot/esp32Client.js";
 import { CommandQueue } from "./js/robot/commandQueue.js";
 
 const CENTER_X = 0.5;
-const STEER_GAIN = 0.9;
 const DEMO_MAX_ANGULAR_SPEED = 0.5;
-const ROBOT_COMMAND_INTERVAL_MS = 160;
-const ROBOT_COMMAND_DURATION_MS = 280;
-const ROBOT_COMMAND_RAMP_MS = 70;
 
 const ui = {
   video: document.getElementById("video"),
@@ -445,6 +455,10 @@ const ui = {
   robotMotionLabel: document.getElementById("robotMotionLabel"),
   speed: document.getElementById("speed"),
   speedValue: document.getElementById("speedValue"),
+  commandDuration: document.getElementById("commandDuration"),
+  commandDurationValue: document.getElementById("commandDurationValue"),
+  commandInterval: document.getElementById("commandInterval"),
+  commandIntervalValue: document.getElementById("commandIntervalValue"),
   tolerance: document.getElementById("tolerance"),
   toleranceValue: document.getElementById("toleranceValue"),
   maxAge: document.getElementById("maxAge"),
@@ -456,6 +470,7 @@ const ui = {
   detectorState: document.getElementById("detectorState"),
   robotState: document.getElementById("robotState"),
   robotCommandState: document.getElementById("robotCommandState"),
+  rotationSummary: document.getElementById("rotationSummary"),
   workflowState: document.getElementById("workflowState"),
   targetCenter: document.getElementById("targetCenter"),
   labels: document.getElementById("labels"),
@@ -483,6 +498,7 @@ let robotMotionActive = false;
 let lastRobotCommandAt = 0;
 let lastRobotAngular = 0;
 let lastRobotCommandText = "held";
+let lastRotationSummary = "held";
 let lastMotionDebugSignature = "";
 let lastMotionDebugAt = 0;
 
@@ -521,7 +537,13 @@ function bindEvents() {
     }
     syncRobotUi();
   });
-  [ui.speed, ui.tolerance, ui.maxAge].forEach((input) => {
+  [
+    ui.speed,
+    ui.commandDuration,
+    ui.commandInterval,
+    ui.tolerance,
+    ui.maxAge
+  ].forEach((input) => {
     input.addEventListener("input", updateControlLabels);
   });
   ui.workflow.addEventListener("change", () => {
@@ -609,48 +631,60 @@ function syncRobotUi() {
     : "Held";
   ui.robotMotionLabel.className = ui.robotMotionToggle.checked && connected ? "status-warn" : "";
   ui.robotCommandState.textContent = lastRobotCommandText;
+  ui.rotationSummary.textContent = lastRotationSummary;
 }
 
-function maybeSendRobotMotion({ angular, target, stale, centered }) {
+function getMotionSettings() {
+  return {
+    speed: clamp(ui.speed.value, 0, DEMO_MAX_ANGULAR_SPEED),
+    durationMs: Math.round(clamp(ui.commandDuration.value, 50, 600)),
+    intervalMs: Math.round(clamp(ui.commandInterval.value, 40, 300))
+  };
+}
+
+function maybeSendRobotMotion({ angular, target, stale, centered, settings }) {
   if (!ui.robotMotionToggle.checked) {
     if (!robotMotionActive) {
       lastRobotCommandText = "held";
       syncRobotUi();
     }
-    logMotionGate("movement_switch_off", { angular, target, stale, centered });
+    logMotionGate("movement_switch_off", { angular, target, stale, centered, settings });
     return;
   }
 
   if (!robotClient?.isConnected?.()) {
     lastRobotCommandText = "waiting for ESP32";
     syncRobotUi();
-    logMotionGate("esp32_not_connected", { angular, target, stale, centered });
+    logMotionGate("esp32_not_connected", { angular, target, stale, centered, settings });
     return;
   }
 
   if (!target) {
-    logMotionGate("no_target", { angular, target, stale, centered });
+    logMotionGate("no_target", { angular, target, stale, centered, settings });
     holdRobotMotion("no_target");
     return;
   }
 
   if (stale) {
-    logMotionGate("stale_frame", { angular, target, stale, centered });
+    logMotionGate("stale_frame", { angular, target, stale, centered, settings });
     holdRobotMotion("stale_frame");
     return;
   }
 
   if (centered || Math.abs(angular) < 0.001) {
-    logMotionGate("centered", { angular, target, stale, centered });
-    holdRobotMotion("centered");
+    const reason = centered ? "centered" : "speed_zero";
+    logMotionGate(reason, { angular, target, stale, centered, settings });
+    holdRobotMotion(reason);
     return;
   }
 
   const now = performance.now();
+  const intervalMs = settings?.intervalMs ?? 90;
+  const durationMs = settings?.durationMs ?? 160;
   const signChanged = Math.sign(angular) !== Math.sign(lastRobotAngular) && Math.abs(lastRobotAngular) > 0.001;
   const changedEnough = Math.abs(angular - lastRobotAngular) > 0.008;
-  if (now - lastRobotCommandAt < ROBOT_COMMAND_INTERVAL_MS && !signChanged && !changedEnough) {
-    logMotionGate("throttled", { angular, target, stale, centered, sinceLastMs: now - lastRobotCommandAt });
+  if (now - lastRobotCommandAt < intervalMs && !signChanged && !changedEnough) {
+    logMotionGate("throttled", { angular, target, stale, centered, settings, sinceLastMs: now - lastRobotCommandAt });
     return;
   }
 
@@ -666,15 +700,17 @@ function maybeSendRobotMotion({ angular, target, stale, centered }) {
     stale,
     centered,
     direction,
-    durationMs: ROBOT_COMMAND_DURATION_MS,
-    rampMs: ROBOT_COMMAND_RAMP_MS
+    settings,
+    durationMs,
+    intervalMs,
+    rampMs: 0
   }, { force: true, level: "info" });
 
   commandQueue?.sendRealtimeMotion?.({
     linear: 0,
     angular,
-    durationMs: ROBOT_COMMAND_DURATION_MS,
-    rampMs: ROBOT_COMMAND_RAMP_MS,
+    durationMs,
+    rampMs: 0,
     label: `follow_demo_turn_${direction}`,
     log: true,
     record: true
@@ -693,6 +729,7 @@ function holdRobotMotion(reason = "held") {
   lastRobotAngular = 0;
   lastRobotCommandAt = 0;
   lastRobotCommandText = reason.replaceAll("_", " ");
+  setRotationSummary(`held: ${lastRobotCommandText}`);
   syncRobotUi();
   logMotionGate(`hold:${reason}`, { shouldSendStop }, { force: shouldSendStop, level: shouldSendStop ? "info" : "debug" });
 
@@ -712,6 +749,7 @@ function holdRobotMotion(reason = "held") {
 
 function logMotionGate(reason, detail = {}, { force = false, level = "debug" } = {}) {
   const target = detail.target;
+  const settings = detail.settings ?? getMotionSettings();
   const signature = [
     reason,
     target?.label ?? "none",
@@ -719,7 +757,10 @@ function logMotionGate(reason, detail = {}, { force = false, level = "debug" } =
     roundForLog(detail.angular),
     Boolean(detail.stale),
     Boolean(detail.centered),
-    roundForLog(detail.sinceLastMs)
+    roundForLog(detail.sinceLastMs),
+    roundForLog(settings.speed),
+    roundForLog(settings.durationMs),
+    roundForLog(settings.intervalMs)
   ].join("|");
   const now = performance.now();
   if (!force && signature === lastMotionDebugSignature && now - lastMotionDebugAt < 1000) {
@@ -733,7 +774,10 @@ function logMotionGate(reason, detail = {}, { force = false, level = "debug" } =
     esp32Connected: Boolean(robotClient?.isConnected?.()),
     targetLabel: canonicalObjectLabel(ui.targetLabel.value) || "(any)",
     visibleLabels: [...new Set((latestResult?.detections ?? []).map((detection) => detection.label))],
-    speedCap: roundForLog(ui.speed.value),
+    constantAngularSpeed: roundForLog(settings.speed),
+    durationMs: roundForLog(settings.durationMs),
+    intervalMs: roundForLog(settings.intervalMs),
+    rampMs: 0,
     localDetectionAgeMs: latestDetectionReceivedAt ? roundForLog(performance.now() - latestDetectionReceivedAt) : null,
     remoteFrameAgeMs: Number.isFinite(Number(latestResult?.frameReceivedAtMs))
       ? roundForLog(Date.now() - Number(latestResult.frameReceivedAtMs))
@@ -911,15 +955,15 @@ function render() {
     ? Date.now() - Number(latestResult.frameReceivedAtMs)
     : null;
   const detectionAgeMs = localReceiveAgeMs;
+  const settings = getMotionSettings();
   const tolerance = Number(ui.tolerance.value);
-  const maxAngular = Number(ui.speed.value);
   const maxAgeMs = Number(ui.maxAge.value);
   const stale = detectionAgeMs === null || detectionAgeMs > maxAgeMs;
   const errorX = target ? target.centerX - CENTER_X : null;
   const centered = errorX !== null && Math.abs(errorX) <= tolerance;
   const angular = errorX === null || centered || stale
     ? 0
-    : clamp(errorX * STEER_GAIN, -maxAngular, maxAngular);
+    : Math.sign(errorX) * settings.speed;
 
   drawDetections(ctx, detections, target, latestResult, width, height, dpr, stale);
 
@@ -934,15 +978,23 @@ function render() {
 
   if (!target) {
     setDecision("no target", "status-warn");
+    setRotationSummary("held: no target");
   } else if (stale) {
     setDecision("hold stale", "status-bad");
+    setRotationSummary(`held: stale ${Math.round(detectionAgeMs ?? 0)}ms`);
   } else if (centered) {
     setDecision("centered", "status-good");
+    setRotationSummary(`held: centered errorX=${signed(errorX, 3)}`);
+  } else if (Math.abs(angular) < 0.001) {
+    setDecision("speed zero", "status-warn");
+    setRotationSummary(`held: speed=0 errorX=${signed(errorX, 3)}`);
   } else {
-    setDecision(angular < 0 ? "turn left" : "turn right", "status-warn");
+    const direction = angular < 0 ? "left" : "right";
+    setDecision(`turn ${direction}`, "status-warn");
+    setRotationSummary(`${direction} angular=${signed(angular, 3)} duration=${settings.durationMs}ms every=${settings.intervalMs}ms errorX=${signed(errorX, 3)}`);
   }
 
-  maybeSendRobotMotion({ angular, target, stale, centered });
+  maybeSendRobotMotion({ angular, target, stale, centered, settings });
 }
 
 function drawDetections(ctx, detections, target, result, canvasWidth, canvasHeight, dpr, stale) {
@@ -983,6 +1035,8 @@ function pickTarget(detections, label) {
 
 function updateControlLabels() {
   ui.speedValue.textContent = Number(ui.speed.value).toFixed(3);
+  ui.commandDurationValue.textContent = `${Math.round(Number(ui.commandDuration.value))} ms`;
+  ui.commandIntervalValue.textContent = `${Math.round(Number(ui.commandInterval.value))} ms`;
   ui.toleranceValue.textContent = Number(ui.tolerance.value).toFixed(3);
   ui.maxAgeValue.textContent = `${Math.round(Number(ui.maxAge.value))} ms`;
 }
@@ -990,6 +1044,11 @@ function updateControlLabels() {
 function setDecision(text, className) {
   ui.decision.textContent = text;
   ui.decision.className = className;
+}
+
+function setRotationSummary(text) {
+  lastRotationSummary = text;
+  ui.rotationSummary.textContent = text;
 }
 
 function logDetectionSummary(result) {
