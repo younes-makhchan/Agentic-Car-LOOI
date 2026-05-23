@@ -45,6 +45,7 @@ export class FollowTargetController {
     this.lastMovementHeldReason = null;
     this.lastPositionLogAt = 0;
     this.lastStaleLogAt = 0;
+    this.lastCommandLogAt = 0;
   }
 
   start({ label, trackId = null, mode = "gentle" } = {}) {
@@ -67,6 +68,7 @@ export class FollowTargetController {
     this.lastSteering = null;
     this.followMotionActive = false;
     this.lastMovementHeldReason = null;
+    this.lastCommandLogAt = 0;
     this.lastSeenAt = Date.now();
     this.visionState?.setActiveTarget?.({
       label: this.targetLabel,
@@ -108,6 +110,7 @@ export class FollowTargetController {
     this.lastSteering = null;
     this.followMotionActive = false;
     this.lastMovementHeldReason = null;
+    this.lastCommandLogAt = 0;
     this.log(`[roboflow] follow stopped reason=${reason}`);
     return {
       ok: true,
@@ -325,12 +328,18 @@ export class FollowTargetController {
   }
 
   sendSteeringCommand(steering, track = {}) {
+    const tuning = this.getTuning();
     const command = {
       linear: 0,
       angular: steering.angular,
-      durationMs: this.getTuning().commandDurationMs,
+      durationMs: tuning.commandDurationMs,
       rampMs: 0,
       label: `roboflow_follow_turn_${steering.direction}`,
+      source: "roboflow_follow",
+      targetLabel: track.label ?? this.targetLabel ?? "",
+      direction: steering.direction,
+      followIntervalMs: tuning.commandRefreshMs,
+      followTolerance: tuning.centerDeadband,
       log: false
     };
     const sender = this.commandQueue?.sendRealtimeMotion ?? this.commandQueue?.enqueueMotion;
@@ -341,7 +350,19 @@ export class FollowTargetController {
     }
 
     this.followMotionActive = true;
-    Promise.resolve(sender.call(this.commandQueue, command)).catch((error) => {
+    const shouldLog = Date.now() - this.lastCommandLogAt >= FOLLOW_POSITION_LOG_INTERVAL_MS;
+    if (shouldLog) {
+      this.lastCommandLogAt = Date.now();
+    }
+
+    Promise.resolve(sender.call(this.commandQueue, command)).then(() => {
+      if (shouldLog) {
+        this.log(
+          `[roboflow] follow steering sent target=${track.label ?? this.targetLabel ?? "unknown"} direction=${steering.direction} angular=${formatNumber(command.angular)} duration=${Math.round(command.durationMs)}ms interval=${Math.round(tuning.commandRefreshMs)}ms tolerance=${formatNumber(tuning.centerDeadband)}`,
+          "debug"
+        );
+      }
+    }).catch((error) => {
       this.followMotionActive = false;
       this.log(`[roboflow] follow steering failed target=${track.label ?? this.targetLabel} error=${error.message}`, "warn");
     });
@@ -457,10 +478,6 @@ export class FollowTargetController {
       return { allowed: false, reason: "local_motion_disarmed" };
     }
 
-    if (!policy.followModeArmed) {
-      return { allowed: false, reason: "follow_mode_disarmed" };
-    }
-
     if (!policy.allowFollowMovement) {
       return { allowed: false, reason: "follow_movement_disallowed" };
     }
@@ -526,7 +543,6 @@ export class FollowTargetController {
   policy() {
     return {
       localMotionArmed: false,
-      followModeArmed: false,
       allowFollowMovement: false,
       localSpeechAllowed: true,
       robotConnected: false,

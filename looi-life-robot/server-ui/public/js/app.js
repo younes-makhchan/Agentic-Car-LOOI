@@ -233,7 +233,6 @@ const ui = {
   followControllerState: document.getElementById("followControllerState"),
   followCurrentErrorX: document.getElementById("followCurrentErrorX"),
   followSteeringState: document.getElementById("followSteeringState"),
-  followModeArmedToggle: document.getElementById("followModeArmedToggle"),
   allowFollowMovementToggle: document.getElementById("allowFollowMovementToggle"),
   localBrainState: document.getElementById("localBrainState"),
   localBrainAdapterState: document.getElementById("localBrainAdapterState"),
@@ -680,20 +679,11 @@ ui.localSpeechAllowedToggle.addEventListener("change", () => {
   patchBrainPolicy({ localSpeechAllowed: ui.localSpeechAllowedToggle.checked });
 });
 
-ui.followModeArmedToggle?.addEventListener("change", () => {
-  patchBrainPolicy({ followModeArmed: ui.followModeArmedToggle.checked });
-  log(
-    brainPolicy.followModeArmed
-      ? "Follow Mode armed. Follow movement still requires Local Motion and Allow Follow Movement."
-      : "Follow Mode disarmed."
-  );
-});
-
 ui.allowFollowMovementToggle?.addEventListener("change", () => {
   patchBrainPolicy({ allowFollowMovement: ui.allowFollowMovementToggle.checked });
   log(
     brainPolicy.allowFollowMovement
-      ? "Follow Movement allowed while follow mode and local motion are armed."
+      ? "Follow Movement allowed while local motion is armed."
       : "Follow Movement disabled."
   );
 });
@@ -1201,7 +1191,6 @@ async function init() {
       activeConfig.objectDetectionEnabledDefault ??
       PUBLIC_CONFIG.objectDetectionEnabledDefault ??
       false,
-    followModeArmed: false,
     allowFollowMovement: false,
     followLostTimeoutMs:
       activeConfig.followLostTimeoutMs ??
@@ -2669,7 +2658,6 @@ async function startLocalBrainProductionMode() {
     localMotionArmed: true,
     localCameraAllowed: true,
     localSpeechAllowed: true,
-    followModeArmed: true,
     allowFollowMovement: true
   });
 
@@ -3117,9 +3105,6 @@ function updateLocalBrainUi() {
   ui.localMotionArmedToggle.checked = Boolean(brainPolicy.localMotionArmed);
   ui.localCameraAllowedToggle.checked = Boolean(brainPolicy.localCameraAllowed);
   ui.localSpeechAllowedToggle.checked = Boolean(brainPolicy.localSpeechAllowed);
-  if (ui.followModeArmedToggle) {
-    ui.followModeArmedToggle.checked = Boolean(brainPolicy.followModeArmed);
-  }
   if (ui.allowFollowMovementToggle) {
     ui.allowFollowMovementToggle.checked = Boolean(brainPolicy.allowFollowMovement);
   }
@@ -3362,13 +3347,11 @@ function patchBrainPolicy(partial = {}) {
 function armFollowMovementForScenario({ requestedLabel = "", resolvedLabel = "" } = {}) {
   const wasFullyArmed = Boolean(
     brainPolicy.localMotionArmed &&
-    brainPolicy.followModeArmed &&
     brainPolicy.allowFollowMovement
   );
 
   patchBrainPolicy({
     localMotionArmed: true,
-    followModeArmed: true,
     allowFollowMovement: true
   });
 
@@ -4410,7 +4393,6 @@ function getExecutionPolicy() {
     localCameraAllowed: brainPolicy.localCameraAllowed,
     localSpeechAllowed: brainPolicy.localSpeechAllowed,
     localVisionEnabled: brainPolicy.localVisionEnabled,
-    followModeArmed: brainPolicy.followModeArmed,
     allowFollowMovement: brainPolicy.allowFollowMovement,
     followLostTimeoutMs: brainPolicy.followLostTimeoutMs,
     followTargetCenterX: brainPolicy.followTargetCenterX,

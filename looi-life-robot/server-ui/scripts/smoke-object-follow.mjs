@@ -88,7 +88,6 @@ function createVisionRuntime({ policy = {} } = {}) {
     lifeEngine: { getState: () => ({ obstacle: false, stopRespectUntil: 0 }) },
     getPolicy: () => ({
       localMotionArmed: false,
-      followModeArmed: false,
       allowFollowMovement: false,
       robotConnected: true,
       localSpeechAllowed: true,
@@ -165,7 +164,6 @@ function updateVision({ tracker, visionState }, result) {
   const runtime = createVisionRuntime({
     policy: {
       localMotionArmed: true,
-      followModeArmed: true,
       allowFollowMovement: true
     }
   });
@@ -186,7 +184,6 @@ function updateVision({ tracker, visionState }, result) {
   const runtime = createVisionRuntime({
     policy: {
       localMotionArmed: true,
-      followModeArmed: true,
       allowFollowMovement: true
     }
   });
@@ -204,7 +201,6 @@ function updateVision({ tracker, visionState }, result) {
   const runtime = createVisionRuntime({
     policy: {
       localMotionArmed: true,
-      followModeArmed: true,
       allowFollowMovement: true
     }
   });
@@ -222,7 +218,6 @@ function updateVision({ tracker, visionState }, result) {
   const runtime = createVisionRuntime({
     policy: {
       localMotionArmed: true,
-      followModeArmed: true,
       allowFollowMovement: true
     }
   });
@@ -238,7 +233,6 @@ function updateVision({ tracker, visionState }, result) {
   const runtime = createVisionRuntime({
     policy: {
       localMotionArmed: true,
-      followModeArmed: true,
       allowFollowMovement: true
     }
   });

@@ -61,6 +61,11 @@ export class CommandQueue {
     durationMs = 300,
     rampMs,
     label = "realtime_motion",
+    source = "",
+    targetLabel = "",
+    direction = "",
+    followIntervalMs = null,
+    followTolerance = null,
     log = true,
     record = true
   } = {}) {
@@ -70,7 +75,12 @@ export class CommandQueue {
       linear: clamp(linear, -this.maxSpeed, this.maxSpeed),
       angular: clamp(angular, -this.maxSpeed, this.maxSpeed),
       durationMs: clamp(durationMs, this.minDurationMs, this.maxDurationMs),
-      rampMs: clamp(rampMs ?? 120, 0, MAX_RAMP_MS)
+      rampMs: clamp(rampMs ?? 120, 0, MAX_RAMP_MS),
+      source,
+      targetLabel,
+      direction,
+      followIntervalMs,
+      followTolerance
     };
 
     if (!this.robotClient?.isConnected()) {
@@ -78,6 +88,11 @@ export class CommandQueue {
       if (record) {
         this.recordCommand(safeCommand, "rejected");
       }
+      consoleLogRobotMotion("realtime_rejected", {
+        ...safeCommand,
+        realtime: true,
+        error: error.message
+      }, "warn");
       if (log) {
         this.log(`Rejected ${safeCommand.label}: ${error.message}`, "warn");
       }
@@ -91,6 +106,11 @@ export class CommandQueue {
         durationMs: safeCommand.durationMs,
         rampMs: safeCommand.rampMs,
         label: safeCommand.label
+      });
+      consoleLogRobotMotion("realtime_sent", {
+        ...safeCommand,
+        realtime: true,
+        messageId
       });
 
       if (record) {
@@ -114,6 +134,11 @@ export class CommandQueue {
       if (record) {
         this.recordCommand(safeCommand, "rejected");
       }
+      consoleLogRobotMotion("realtime_rejected", {
+        ...safeCommand,
+        realtime: true,
+        error: error.message
+      }, "warn");
       if (log) {
         this.log(`Rejected ${safeCommand.label}: ${error.message}`, "warn");
       }
@@ -309,6 +334,11 @@ export class CommandQueue {
       const error = new Error("ESP32 is not connected.");
       this.recordCommand(item, "rejected");
       item.rejectOnce(error);
+      consoleLogRobotMotion("queued_rejected", {
+        ...item,
+        realtime: false,
+        error: error.message
+      }, "warn");
       this.log(`Rejected ${item.label}: ${error.message}`, "warn");
       this.clear("disconnected");
       return;
@@ -339,6 +369,10 @@ export class CommandQueue {
           rampMs: item.rampMs,
           label: item.label
         });
+        consoleLogRobotMotion("queued_sent", {
+          ...item,
+          realtime: false
+        });
         this.log(`STEP 5 MOTION_SENT ESP32 gateway: ${item.label}`);
 
         await wait(item.durationMs + COMMAND_BUFFER_MS);
@@ -359,6 +393,11 @@ export class CommandQueue {
     } catch (error) {
       this.recordCommand(item, "rejected");
       item.rejectOnce(error);
+      consoleLogRobotMotion("queued_rejected", {
+        ...item,
+        realtime: false,
+        error: error.message
+      }, "warn");
       this.log(`Rejected ${item.label}: ${error.message}`, "warn");
 
       if (!this.robotClient?.isConnected()) {
@@ -414,6 +453,31 @@ export function wait(ms) {
   return new Promise((resolve) => {
     globalThis.setTimeout(resolve, ms);
   });
+}
+
+function consoleLogRobotMotion(event, command = {}, level = "info") {
+  const payload = {
+    event,
+    label: command.label ?? "motion",
+    linear: Number(command.linear ?? 0),
+    angular: Number(command.angular ?? 0),
+    durationMs: Number(command.durationMs ?? 0),
+    rampMs: Number(command.rampMs ?? 0),
+    realtime: Boolean(command.realtime),
+    messageId: command.messageId ?? null,
+    source: command.source || null,
+    targetLabel: command.targetLabel || null,
+    direction: command.direction || null,
+    followIntervalMs: Number.isFinite(Number(command.followIntervalMs))
+      ? Number(command.followIntervalMs)
+      : null,
+    followTolerance: Number.isFinite(Number(command.followTolerance))
+      ? Number(command.followTolerance)
+      : null,
+    error: command.error ?? null
+  };
+  const method = level === "warn" ? "warn" : "info";
+  globalThis.console?.[method]?.("[LOOI][robot-motion]", payload);
 }
 
 export function clamp(value, min, max) {
