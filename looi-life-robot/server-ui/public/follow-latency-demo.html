@@ -345,21 +345,21 @@ input[type="range"] {
 
       <label class="switch-row">
         <input id="robotConnectToggle" type="checkbox" />
-        <span>ESP32 connection</span>
+        <span>Connect ESP32 only</span>
         <strong id="robotConnectLabel">Disconnected</strong>
       </label>
 
       <label class="switch-row">
         <input id="robotMotionToggle" type="checkbox" />
-        <span>Move ESP32 from demo</span>
+        <span>Send demo movement</span>
         <strong id="robotMotionLabel">Held</strong>
       </label>
 
       <div class="control-grid">
         <label>
           <span>Rotation speed cap</span>
-          <strong id="speedValue">0.030</strong>
-          <input id="speed" type="range" min="0.001" max="0.120" step="0.001" value="0.030" />
+          <strong id="speedValue">0.080</strong>
+          <input id="speed" type="range" min="0" max="0.5" step="0.005" value="0.080" />
         </label>
         <label>
           <span>ErrorX tolerance</span>
@@ -425,6 +425,7 @@ import { CommandQueue } from "./js/robot/commandQueue.js";
 
 const CENTER_X = 0.5;
 const STEER_GAIN = 0.9;
+const DEMO_MAX_ANGULAR_SPEED = 0.5;
 const ROBOT_COMMAND_INTERVAL_MS = 160;
 const ROBOT_COMMAND_DURATION_MS = 280;
 const ROBOT_COMMAND_RAMP_MS = 70;
@@ -551,11 +552,12 @@ function initRobotClient() {
   ui.esp32Url.value = config.defaultEsp32WsUrl || PUBLIC_CONFIG.defaultEsp32WsUrl || "ws://192.168.4.1:81";
   robotClient = new ESP32Client({
     url: ui.esp32Url.value,
+    maxSpeed: DEMO_MAX_ANGULAR_SPEED,
     logger: (message, level = "info") => log(`${level}: ${message}`)
   });
   commandQueue = new CommandQueue({
     robotClient,
-    maxSpeed: 0.12,
+    maxSpeed: DEMO_MAX_ANGULAR_SPEED,
     maxDurationMs: 1000,
     logger: (message, level = "info") => log(`${level}: ${message}`)
   });
@@ -729,6 +731,13 @@ function logMotionGate(reason, detail = {}, { force = false, level = "debug" } =
   log(`motion gate=${reason} ${JSON.stringify({
     movementArmed: Boolean(ui.robotMotionToggle.checked),
     esp32Connected: Boolean(robotClient?.isConnected?.()),
+    targetLabel: canonicalObjectLabel(ui.targetLabel.value) || "(any)",
+    visibleLabels: [...new Set((latestResult?.detections ?? []).map((detection) => detection.label))],
+    speedCap: roundForLog(ui.speed.value),
+    localDetectionAgeMs: latestDetectionReceivedAt ? roundForLog(performance.now() - latestDetectionReceivedAt) : null,
+    remoteFrameAgeMs: Number.isFinite(Number(latestResult?.frameReceivedAtMs))
+      ? roundForLog(Date.now() - Number(latestResult.frameReceivedAtMs))
+      : null,
     target: target ? {
       label: target.label,
       centerX: roundForLog(target.centerX),
@@ -898,13 +907,14 @@ function render() {
   const detections = latestResult?.detections ?? [];
   const target = pickTarget(detections, targetLabel);
   const localReceiveAgeMs = latestDetectionReceivedAt ? performance.now() - latestDetectionReceivedAt : null;
-  const frameAgeMs = Number.isFinite(Number(latestResult?.frameReceivedAtMs))
+  const remoteFrameAgeMs = Number.isFinite(Number(latestResult?.frameReceivedAtMs))
     ? Date.now() - Number(latestResult.frameReceivedAtMs)
-    : localReceiveAgeMs;
+    : null;
+  const detectionAgeMs = localReceiveAgeMs;
   const tolerance = Number(ui.tolerance.value);
   const maxAngular = Number(ui.speed.value);
   const maxAgeMs = Number(ui.maxAge.value);
-  const stale = frameAgeMs === null || frameAgeMs > maxAgeMs;
+  const stale = detectionAgeMs === null || detectionAgeMs > maxAgeMs;
   const errorX = target ? target.centerX - CENTER_X : null;
   const centered = errorX !== null && Math.abs(errorX) <= tolerance;
   const angular = errorX === null || centered || stale
@@ -917,9 +927,9 @@ function render() {
   ui.targetCenter.textContent = target ? target.centerX.toFixed(3) : "--";
   ui.errorX.textContent = errorX === null ? "--" : signed(errorX, 3);
   ui.angular.textContent = signed(angular, 3);
-  ui.detectionAge.textContent = frameAgeMs === null ? "--" : `${Math.round(frameAgeMs)} ms`;
+  ui.detectionAge.textContent = detectionAgeMs === null ? "--" : `${Math.round(detectionAgeMs)} ms`;
   ui.lastBoxTime.textContent = latestDetectionReceivedAt
-    ? `local ${Math.round((performance.now() - latestDetectionReceivedAt) / 1000)}s · frame ${frameAgeMs === null ? "--" : `${Math.round(frameAgeMs)}ms`}`
+    ? `local ${Math.round(detectionAgeMs / 1000)}s · remote ${remoteFrameAgeMs === null ? "--" : `${Math.round(remoteFrameAgeMs)}ms`}`
     : "--";
 
   if (!target) {
