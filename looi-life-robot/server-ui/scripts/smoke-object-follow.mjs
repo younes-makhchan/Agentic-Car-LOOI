@@ -253,6 +253,8 @@ function updateVision({ tracker, visionState }, result) {
 
 {
   const runtime = createVisionRuntime();
+  let armedFollow = null;
+  let disarmedFollow = null;
   updateVision(runtime, detectionResult(0, [detection("apple", 0.5)]));
   const manager = new VisionScenarioManager({
     cameraInput: { isRunning: () => true },
@@ -262,13 +264,23 @@ function updateVision({ tracker, visionState }, result) {
     followTargetController: runtime.controller,
     eventBus: runtime.eventBus,
     getPolicy: () => ({ localVisionEnabled: true }),
+    armFollowMovement: (detail) => {
+      armedFollow = detail;
+    },
+    disarmFollowMovement: (detail) => {
+      disarmedFollow = detail;
+    },
     face: { setVisionIndicator() {} }
   });
   const started = await manager.startFollowTarget({ label: "apple" });
   assert.equal(started.executed, true);
+  assert.equal(armedFollow?.reason, "follow_target_start");
+  assert.equal(armedFollow?.resolvedLabel, "apple");
   assert.equal(runtime.controller.isRunning(), true);
   const stopped = manager.stopScenario("test_stop");
   assert.equal(stopped.executed, true);
+  assert.equal(disarmedFollow?.reason, "test_stop");
+  assert.equal(disarmedFollow?.stopped?.ok, true);
 }
 
 {

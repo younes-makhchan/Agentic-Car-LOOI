@@ -11,6 +11,8 @@ export class VisionScenarioManager {
     face,
     eventBus,
     getPolicy,
+    armFollowMovement,
+    disarmFollowMovement,
     logger
   } = {}) {
     this.cameraInput = cameraInput;
@@ -22,6 +24,8 @@ export class VisionScenarioManager {
     this.face = face;
     this.eventBus = eventBus;
     this.getPolicy = getPolicy;
+    this.armFollowMovement = armFollowMovement;
+    this.disarmFollowMovement = disarmFollowMovement;
     this.logger = logger;
   }
 
@@ -96,6 +100,12 @@ export class VisionScenarioManager {
       aliases: [...getObjectAliases(target.label), ...aliases],
       trackId: target.id ?? target.trackId
     });
+    this.armFollowMovement?.({
+      requestedLabel: targetLabel,
+      resolvedLabel: target.label,
+      trackId: target.id ?? target.trackId,
+      reason: "follow_target_start"
+    });
     const started = this.followTargetController?.start?.({
       label: target.label,
       trackId: target.id ?? target.trackId,
@@ -121,6 +131,10 @@ export class VisionScenarioManager {
     if (stopped?.wasRunning !== false) {
       this.face?.stopFollow?.();
     }
+    this.disarmFollowMovement?.({
+      reason,
+      stopped
+    });
     this.eventBus?.publish?.("vision_follow_stopped", {
       reason,
       stopped

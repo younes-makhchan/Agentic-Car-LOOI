@@ -42,6 +42,7 @@ export class FollowTargetController {
     this.paused = false;
     this.lastSteering = null;
     this.followMotionActive = false;
+    this.lastMovementHeldReason = null;
     this.lastPositionLogAt = 0;
     this.lastStaleLogAt = 0;
   }
@@ -65,6 +66,7 @@ export class FollowTargetController {
     this.lastSteeringAt = 0;
     this.lastSteering = null;
     this.followMotionActive = false;
+    this.lastMovementHeldReason = null;
     this.lastSeenAt = Date.now();
     this.visionState?.setActiveTarget?.({
       label: this.targetLabel,
@@ -105,6 +107,7 @@ export class FollowTargetController {
     this.targetTrackId = null;
     this.lastSteering = null;
     this.followMotionActive = false;
+    this.lastMovementHeldReason = null;
     this.log(`[roboflow] follow stopped reason=${reason}`);
     return {
       ok: true,
@@ -173,6 +176,7 @@ export class FollowTargetController {
 
     const permission = this.canMove();
     if (!permission.allowed) {
+      this.lastMovementHeldReason = permission.reason;
       this.handleMovementBlocked(permission.reason);
       this.log(`[roboflow] follow steering held target=${track.label} direction=${steering.direction} reason=${permission.reason}`, "debug");
       return {
@@ -180,6 +184,7 @@ export class FollowTargetController {
         steeringHeldReason: permission.reason
       };
     }
+    this.lastMovementHeldReason = null;
 
     const now = Date.now();
     const tuning = this.getTuning();
@@ -204,6 +209,8 @@ export class FollowTargetController {
   }
 
   getStatus() {
+    const permission = this.canMove();
+
     return {
       running: this.running,
       targetLabel: this.targetLabel,
@@ -218,7 +225,8 @@ export class FollowTargetController {
       tuning: this.getTuning(),
       lastSteering: this.lastSteering,
       followMotionActive: this.followMotionActive,
-      motionAllowed: this.canMove().allowed
+      motionAllowed: permission.allowed,
+      motionHeldReason: permission.allowed ? null : this.lastMovementHeldReason ?? permission.reason
     };
   }
 

@@ -1527,6 +1527,8 @@ async function init() {
     face,
     eventBus: localEventBus,
     getPolicy: getExecutionPolicy,
+    armFollowMovement: armFollowMovementForScenario,
+    disarmFollowMovement: disarmFollowMovementForScenario,
     logger: (message, level = "info") => log(message, level)
   });
   toolExecutor.setVisionControllers?.({
@@ -3357,6 +3359,36 @@ function patchBrainPolicy(partial = {}) {
   updateLocalBrainUi();
 }
 
+function armFollowMovementForScenario({ requestedLabel = "", resolvedLabel = "" } = {}) {
+  const wasFullyArmed = Boolean(
+    brainPolicy.localMotionArmed &&
+    brainPolicy.followModeArmed &&
+    brainPolicy.allowFollowMovement
+  );
+
+  patchBrainPolicy({
+    localMotionArmed: true,
+    followModeArmed: true,
+    allowFollowMovement: true
+  });
+
+  if (!wasFullyArmed) {
+    const targetText = resolvedLabel || requestedLabel || "target";
+    log(`Follow movement auto-armed for ${targetText}.`, "warn");
+  }
+}
+
+function disarmFollowMovementForScenario({ reason = "follow_stop" } = {}) {
+  if (!brainPolicy.allowFollowMovement) {
+    return;
+  }
+
+  patchBrainPolicy({
+    allowFollowMovement: false
+  });
+  log(`Follow movement disabled after follow exit (${reason}).`, "info");
+}
+
 function getPolicy() {
   return clampBrainPolicy(brainPolicy);
 }
@@ -4157,7 +4189,7 @@ function updateVisionUi() {
   }
   if (ui.followControllerState) {
     ui.followControllerState.textContent = followStatus.running
-      ? `running · motion ${followStatus.motionAllowed ? "allowed" : "held"}`
+      ? `running · motion ${followStatus.motionAllowed ? "allowed" : `held: ${followStatus.motionHeldReason ?? "unknown"}`}`
       : "stopped";
   }
   drawObjectDetectionOverlays(objectDetectorEngine?.lastResult ?? { detections: [] });
