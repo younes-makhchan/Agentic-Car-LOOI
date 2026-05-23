@@ -26,11 +26,7 @@ const FACE_STATE = {
   followVisualState: "idle",
   eatingVisualState: "idle",
   drinkingVisualState: "idle",
-  tellingVisualState: "idle",
-  visionIndicator: {
-    active: false,
-    mode: "detecting"
-  }
+  tellingVisualState: "idle"
 };
 
 const BLINK_TIME_MS = 360;
@@ -646,22 +642,8 @@ export function dismissPhoto() {
 }
 
 export function setVisionIndicator(active, mode = "detecting") {
-  FACE_STATE.visionIndicator = {
-    active: Boolean(active),
-    mode: ["detecting", "searching", "following", "lost"].includes(mode) ? mode : "detecting"
-  };
-
-  if (!rootRef) {
-    return;
-  }
-
-  const indicator = rootRef.querySelector(".looi-vision-indicator");
-  if (!indicator) {
-    return;
-  }
-
-  indicator.hidden = !FACE_STATE.visionIndicator.active;
-  indicator.dataset.mode = FACE_STATE.visionIndicator.mode;
+  void active;
+  void mode;
 }
 
 export function createFaceController(element) {
@@ -860,14 +842,6 @@ function createEyeDom() {
   const kissHeart = document.createElement("div");
   kissHeart.className = "looi-kiss-heart";
 
-  const visionIndicator = document.createElement("div");
-  visionIndicator.className = "looi-vision-indicator";
-  visionIndicator.hidden = true;
-  visionIndicator.innerHTML = `
-    <span class="looi-vision-indicator__lens"></span>
-    <span class="looi-vision-indicator__handle"></span>
-  `;
-
   const thinkingIndicator = document.createElement("div");
   thinkingIndicator.className = "looi-thinking-indicator";
   thinkingIndicator.hidden = true;
@@ -906,7 +880,6 @@ function createEyeDom() {
     followTarget,
     preview,
     cameraIcon,
-    visionIndicator,
     thinkingIndicator,
     eyes
   );

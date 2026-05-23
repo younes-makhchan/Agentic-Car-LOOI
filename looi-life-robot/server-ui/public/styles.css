@@ -1075,63 +1075,6 @@ body {
   pointer-events: none;
 }
 
-.looi-vision-indicator {
-  position: absolute;
-  z-index: 7;
-  right: clamp(58px, 12vw, 160px);
-  top: clamp(58px, 10vh, 120px);
-  width: clamp(42px, 5vw, 68px);
-  height: clamp(42px, 5vw, 68px);
-  opacity: 0.82;
-  pointer-events: none;
-  filter: drop-shadow(0 0 18px rgba(126, 224, 186, 0.45));
-}
-
-.looi-vision-indicator[hidden] {
-  display: none;
-}
-
-.looi-vision-indicator__lens {
-  position: absolute;
-  inset: 4px 10px 13px 4px;
-  border: 3px solid rgba(126, 224, 186, 0.9);
-  border-radius: 50%;
-  background: rgba(5, 8, 16, 0.34);
-}
-
-.looi-vision-indicator__handle {
-  position: absolute;
-  right: 6px;
-  bottom: 8px;
-  width: 42%;
-  height: 4px;
-  border-radius: 999px;
-  background: rgba(126, 224, 186, 0.9);
-  transform: rotate(44deg);
-  transform-origin: center;
-}
-
-.looi-vision-indicator[data-mode="searching"] {
-  animation: looiVisionPulse 900ms ease-in-out infinite alternate;
-}
-
-.looi-vision-indicator[data-mode="following"] {
-  opacity: 1;
-  filter: drop-shadow(0 0 22px rgba(97, 211, 255, 0.58));
-}
-
-.looi-vision-indicator[data-mode="following"] .looi-vision-indicator__lens,
-.looi-vision-indicator[data-mode="following"] .looi-vision-indicator__handle {
-  border-color: rgba(97, 211, 255, 0.95);
-  background-color: rgba(97, 211, 255, 0.95);
-}
-
-.looi-vision-indicator[data-mode="lost"] .looi-vision-indicator__lens,
-.looi-vision-indicator[data-mode="lost"] .looi-vision-indicator__handle {
-  border-color: rgba(255, 189, 89, 0.96);
-  background-color: rgba(255, 189, 89, 0.96);
-}
-
 .looi-thinking-indicator {
   position: absolute;
   z-index: 35;
@@ -1171,18 +1114,6 @@ body {
 
 .looi-thinking-indicator span:nth-child(3) {
   animation-delay: 240ms;
-}
-
-@keyframes looiVisionPulse {
-  from {
-    transform: scale(0.96);
-    opacity: 0.55;
-  }
-
-  to {
-    transform: scale(1.04);
-    opacity: 1;
-  }
 }
 
 @keyframes looiThinkingTick {
