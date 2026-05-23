@@ -42,7 +42,38 @@ import { VisionScenarioManager } from "./vision/visionScenarioManager.js";
 const DEFAULT_SPEED = 0.2;
 const DEFAULT_DURATION_MS = 400;
 const LOCAL_VISION_SIZE_STORAGE_KEY = "looi.localVisionWidgetSizePx.v2";
-const FOLLOW_TUNING_STORAGE_KEY = "looi.followTuning.v1";
+const FOLLOW_TUNING_STORAGE_KEY = "looi.followTuning.v2";
+const FOLLOW_TUNING_PRESETS = Object.freeze({
+  case1: Object.freeze({
+    label: "Case 1",
+    maxObjectFollowSpeed: 0.036,
+    followCommandDurationMs: 30,
+    followCommandRefreshMs: 70,
+    followCenterDeadband: 0.115
+  }),
+  case2: Object.freeze({
+    label: "Case 2",
+    maxObjectFollowSpeed: 0.036,
+    followCommandDurationMs: 20,
+    followCommandRefreshMs: 90,
+    followCenterDeadband: 0.115
+  }),
+  case3: Object.freeze({
+    label: "Case 3",
+    maxObjectFollowSpeed: 0.032,
+    followCommandDurationMs: 10,
+    followCommandRefreshMs: 60,
+    followCenterDeadband: 0.135
+  }),
+  case4: Object.freeze({
+    label: "Case 4",
+    maxObjectFollowSpeed: 0.03,
+    followCommandDurationMs: 10,
+    followCommandRefreshMs: 80,
+    followCenterDeadband: 0.105
+  })
+});
+const DEFAULT_FOLLOW_TUNING_PRESET = "case1";
 const LOCAL_VISION_SIZE_MIN = 70;
 const LOCAL_VISION_SIZE_MAX = 220;
 const LOCAL_VISION_SIZE_STEP = 10;
@@ -182,8 +213,13 @@ const ui = {
   objectRoboflowGpuPlanSelect: document.getElementById("objectRoboflowGpuPlanSelect"),
   objectMaxResultsInput: document.getElementById("objectMaxResultsInput"),
   objectCategoryAllowlistInput: document.getElementById("objectCategoryAllowlistInput"),
+  followTuningPresetSelect: document.getElementById("followTuningPresetSelect"),
   followRotationSpeedSlider: document.getElementById("followRotationSpeedSlider"),
   followRotationSpeedValue: document.getElementById("followRotationSpeedValue"),
+  followCommandDurationSlider: document.getElementById("followCommandDurationSlider"),
+  followCommandDurationValue: document.getElementById("followCommandDurationValue"),
+  followCommandIntervalSlider: document.getElementById("followCommandIntervalSlider"),
+  followCommandIntervalValue: document.getElementById("followCommandIntervalValue"),
   followCenterXSlider: document.getElementById("followCenterXSlider"),
   followCenterXValue: document.getElementById("followCenterXValue"),
   followErrorXToleranceSlider: document.getElementById("followErrorXToleranceSlider"),
@@ -1139,8 +1175,13 @@ ui.objectCategoryAllowlistInput?.addEventListener("change", () => {
   objectDetectorEngine?.setCategoryAllowlist?.(ui.objectCategoryAllowlistInput.value);
   updateVisionUi();
 });
+ui.followTuningPresetSelect?.addEventListener("change", () => {
+  applyFollowPresetFromUi();
+});
 [
   ui.followRotationSpeedSlider,
+  ui.followCommandDurationSlider,
+  ui.followCommandIntervalSlider,
   ui.followCenterXSlider,
   ui.followErrorXToleranceSlider
 ].forEach((slider) => {
@@ -1195,7 +1236,7 @@ async function init() {
     followCenterDeadband:
       activeConfig.followCenterDeadband ??
       PUBLIC_CONFIG.followCenterDeadband ??
-      0.035,
+      FOLLOW_TUNING_PRESETS[DEFAULT_FOLLOW_TUNING_PRESET].followCenterDeadband,
     followSteerGain:
       activeConfig.followSteerGain ??
       PUBLIC_CONFIG.followSteerGain ??
@@ -1203,7 +1244,15 @@ async function init() {
     maxObjectFollowSpeed:
       activeConfig.maxObjectFollowSpeed ??
       PUBLIC_CONFIG.maxObjectFollowSpeed ??
-      0.06,
+      FOLLOW_TUNING_PRESETS[DEFAULT_FOLLOW_TUNING_PRESET].maxObjectFollowSpeed,
+    followCommandDurationMs:
+      activeConfig.followCommandDurationMs ??
+      PUBLIC_CONFIG.followCommandDurationMs ??
+      FOLLOW_TUNING_PRESETS[DEFAULT_FOLLOW_TUNING_PRESET].followCommandDurationMs,
+    followCommandRefreshMs:
+      activeConfig.followCommandRefreshMs ??
+      PUBLIC_CONFIG.followCommandRefreshMs ??
+      FOLLOW_TUNING_PRESETS[DEFAULT_FOLLOW_TUNING_PRESET].followCommandRefreshMs,
     ...savedFollowTuning,
     eventThoughtCooldownMs:
       activeConfig.speechGateEventCooldownMs ??
@@ -1328,6 +1377,7 @@ async function init() {
 
   realRobotClient = new ESP32Client({
     url: ui.esp32UrlInput.value,
+    minDurationMs: 0,
     logger: (message, level = "info") => log(message, level)
   });
   registerRobotClientCallbacks(realRobotClient);
@@ -1727,6 +1777,7 @@ function createCommandQueue(client) {
     robotClient: client,
     logger: (message, level = "info") => log(message, level),
     maxSpeed: calibrationSettings.maxSpeed ?? activeConfig.maxSpeed ?? PUBLIC_CONFIG.maxSpeed,
+    minDurationMs: 0,
     maxDurationMs: activeConfig.maxDurationMs ?? PUBLIC_CONFIG.maxDurationMs
   });
 
@@ -4139,23 +4190,60 @@ function updateVisionUi() {
 
 function applyFollowTuningFromUi() {
   const nextTuning = {
-    maxObjectFollowSpeed: clampNumber(ui.followRotationSpeedSlider?.value, 0.005, 0.12, brainPolicy.maxObjectFollowSpeed),
+    maxObjectFollowSpeed: clampNumber(ui.followRotationSpeedSlider?.value, 0, 0.12, brainPolicy.maxObjectFollowSpeed),
+    followCommandDurationMs: Math.round(clampNumber(ui.followCommandDurationSlider?.value, 0, 600, brainPolicy.followCommandDurationMs)),
+    followCommandRefreshMs: Math.round(clampNumber(ui.followCommandIntervalSlider?.value, 0, 300, brainPolicy.followCommandRefreshMs)),
     followTargetCenterX: clampNumber(ui.followCenterXSlider?.value, 0.25, 0.75, brainPolicy.followTargetCenterX),
     followCenterDeadband: clampNumber(ui.followErrorXToleranceSlider?.value, 0.005, 0.2, brainPolicy.followCenterDeadband)
   };
 
   patchBrainPolicy(nextTuning);
   saveFollowTuningSettings(nextTuning);
-  updateFollowTuningUi();
+  updateFollowTuningUi(undefined, { syncPreset: true });
   updateVisionUi();
 }
 
-function updateFollowTuningUi(followStatus = followTargetController?.getStatus?.() ?? {}) {
+function applyFollowPresetFromUi() {
+  const presetId = ui.followTuningPresetSelect?.value;
+  const preset = FOLLOW_TUNING_PRESETS[presetId];
+
+  if (!preset) {
+    return;
+  }
+
+  const nextTuning = {
+    ...preset,
+    followTargetCenterX: brainPolicy.followTargetCenterX
+  };
+  delete nextTuning.label;
+  patchBrainPolicy(nextTuning);
+  saveFollowTuningSettings(nextTuning);
+  updateFollowTuningUi(undefined, { syncPreset: false });
+  updateVisionUi();
+  log(`Follow tuning preset applied: ${FOLLOW_TUNING_PRESETS[presetId].label}.`, "info");
+}
+
+function updateFollowTuningUi(followStatus = followTargetController?.getStatus?.() ?? {}, { syncPreset = true } = {}) {
+  if (ui.followTuningPresetSelect && syncPreset) {
+    setSelectValue(ui.followTuningPresetSelect, findMatchingFollowPresetId() ?? "custom", "Custom");
+  }
   if (ui.followRotationSpeedSlider) {
     setInputValue(ui.followRotationSpeedSlider, formatFollowValue(brainPolicy.maxObjectFollowSpeed, 3));
   }
   if (ui.followRotationSpeedValue) {
     ui.followRotationSpeedValue.textContent = formatFollowValue(brainPolicy.maxObjectFollowSpeed, 3);
+  }
+  if (ui.followCommandDurationSlider) {
+    setInputValue(ui.followCommandDurationSlider, String(Math.round(Number(brainPolicy.followCommandDurationMs) || 0)));
+  }
+  if (ui.followCommandDurationValue) {
+    ui.followCommandDurationValue.textContent = `${Math.round(Number(brainPolicy.followCommandDurationMs) || 0)} ms`;
+  }
+  if (ui.followCommandIntervalSlider) {
+    setInputValue(ui.followCommandIntervalSlider, String(Math.round(Number(brainPolicy.followCommandRefreshMs) || 0)));
+  }
+  if (ui.followCommandIntervalValue) {
+    ui.followCommandIntervalValue.textContent = `${Math.round(Number(brainPolicy.followCommandRefreshMs) || 0)} ms`;
   }
   if (ui.followCenterXSlider) {
     setInputValue(ui.followCenterXSlider, formatFollowValue(brainPolicy.followTargetCenterX, 2));
@@ -4179,7 +4267,7 @@ function updateFollowTuningUi(followStatus = followTargetController?.getStatus?.
   if (ui.followSteeringState) {
     const steering = followStatus.lastSteering;
     ui.followSteeringState.textContent = steering
-      ? `${steering.direction} · angular ${formatSignedFollowValue(steering.angular, 2)} · tolerance ${formatFollowValue(steering.deadband, 3)}`
+      ? `${steering.direction} · angular ${formatSignedFollowValue(steering.angular, 3)} · duration ${Math.round(steering.commandDurationMs ?? brainPolicy.followCommandDurationMs)}ms · interval ${Math.round(steering.commandRefreshMs ?? brainPolicy.followCommandRefreshMs)}ms · tolerance ${formatFollowValue(steering.deadband, 3)}`
       : "--";
   }
 }
@@ -4367,6 +4455,8 @@ function getExecutionPolicy() {
     followCenterDeadband: brainPolicy.followCenterDeadband,
     followSteerGain: brainPolicy.followSteerGain,
     maxObjectFollowSpeed: brainPolicy.maxObjectFollowSpeed,
+    followCommandDurationMs: brainPolicy.followCommandDurationMs,
+    followCommandRefreshMs: brainPolicy.followCommandRefreshMs,
     simulatorMode,
     robotConnected: Boolean(robotClient?.isConnected?.()),
     allowSpeak: brainPolicy.localSpeechAllowed,
@@ -4669,21 +4759,41 @@ function saveFollowTuningSettings(settings = {}) {
   }
 }
 
+function findMatchingFollowPresetId(settings = brainPolicy) {
+  const normalized = normalizeStoredFollowTuning(settings);
+  return Object.entries(FOLLOW_TUNING_PRESETS).find(([, preset]) => (
+    nearlyEqual(normalized.maxObjectFollowSpeed, preset.maxObjectFollowSpeed, 0.0005) &&
+    Number(normalized.followCommandDurationMs) === Number(preset.followCommandDurationMs) &&
+    Number(normalized.followCommandRefreshMs) === Number(preset.followCommandRefreshMs) &&
+    nearlyEqual(normalized.followCenterDeadband, preset.followCenterDeadband, 0.0005)
+  ))?.[0] ?? null;
+}
+
 function normalizeStoredFollowTuning(settings = {}) {
   const source = settings && typeof settings === "object" ? settings : {};
   const normalized = {};
 
   if (Number.isFinite(Number(source.maxObjectFollowSpeed))) {
-    normalized.maxObjectFollowSpeed = clampNumber(source.maxObjectFollowSpeed, 0.005, 0.12, 0.06);
+    normalized.maxObjectFollowSpeed = clampNumber(source.maxObjectFollowSpeed, 0, 0.12, FOLLOW_TUNING_PRESETS[DEFAULT_FOLLOW_TUNING_PRESET].maxObjectFollowSpeed);
   }
   if (Number.isFinite(Number(source.followTargetCenterX))) {
     normalized.followTargetCenterX = clampNumber(source.followTargetCenterX, 0.25, 0.75, 0.5);
   }
   if (Number.isFinite(Number(source.followCenterDeadband))) {
-    normalized.followCenterDeadband = clampNumber(source.followCenterDeadband, 0.005, 0.2, 0.035);
+    normalized.followCenterDeadband = clampNumber(source.followCenterDeadband, 0.005, 0.2, FOLLOW_TUNING_PRESETS[DEFAULT_FOLLOW_TUNING_PRESET].followCenterDeadband);
+  }
+  if (Number.isFinite(Number(source.followCommandDurationMs))) {
+    normalized.followCommandDurationMs = Math.round(clampNumber(source.followCommandDurationMs, 0, 600, FOLLOW_TUNING_PRESETS[DEFAULT_FOLLOW_TUNING_PRESET].followCommandDurationMs));
+  }
+  if (Number.isFinite(Number(source.followCommandRefreshMs))) {
+    normalized.followCommandRefreshMs = Math.round(clampNumber(source.followCommandRefreshMs, 0, 300, FOLLOW_TUNING_PRESETS[DEFAULT_FOLLOW_TUNING_PRESET].followCommandRefreshMs));
   }
 
   return normalized;
+}
+
+function nearlyEqual(a, b, epsilon = 0.0001) {
+  return Math.abs(Number(a) - Number(b)) <= epsilon;
 }
 
 function setInputValue(element, value) {

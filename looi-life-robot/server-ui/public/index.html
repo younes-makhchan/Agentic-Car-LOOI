@@ -771,10 +771,30 @@
                 <span>Category allowlist</span>
                 <input id="objectCategoryAllowlistInput" type="text" placeholder="optional: person,bottle,cup,cell phone" />
               </label>
+              <label class="slider-field" for="followTuningPresetSelect">
+                <span>Follow tuning preset</span>
+                <select id="followTuningPresetSelect">
+                  <option value="case1">Case 1 · 0.036 / 30 / 70 / 0.115</option>
+                  <option value="case2">Case 2 · 0.036 / 20 / 90 / 0.115</option>
+                  <option value="case3">Case 3 · 0.032 / 10 / 60 / 0.135</option>
+                  <option value="case4">Case 4 · 0.030 / 10 / 80 / 0.105</option>
+                  <option value="custom">Custom</option>
+                </select>
+              </label>
               <label class="slider-field" for="followRotationSpeedSlider">
                 <span>Follow rotation speed</span>
-                <strong id="followRotationSpeedValue">0.060</strong>
-                <input id="followRotationSpeedSlider" type="range" min="0.005" max="0.120" step="0.005" value="0.060" />
+                <strong id="followRotationSpeedValue">0.036</strong>
+                <input id="followRotationSpeedSlider" type="range" min="0" max="0.120" step="0.001" value="0.036" />
+              </label>
+              <label class="slider-field" for="followCommandDurationSlider">
+                <span>Command duration</span>
+                <strong id="followCommandDurationValue">30 ms</strong>
+                <input id="followCommandDurationSlider" type="range" min="0" max="600" step="10" value="30" />
+              </label>
+              <label class="slider-field" for="followCommandIntervalSlider">
+                <span>Command interval</span>
+                <strong id="followCommandIntervalValue">70 ms</strong>
+                <input id="followCommandIntervalSlider" type="range" min="0" max="300" step="10" value="70" />
               </label>
               <label class="slider-field" for="followCenterXSlider">
                 <span>Follow center X</span>
@@ -783,8 +803,8 @@
               </label>
               <label class="slider-field" for="followErrorXToleranceSlider">
                 <span>ErrorX tolerance</span>
-                <strong id="followErrorXToleranceValue">0.035</strong>
-                <input id="followErrorXToleranceSlider" type="range" min="0.005" max="0.200" step="0.005" value="0.035" />
+                <strong id="followErrorXToleranceValue">0.115</strong>
+                <input id="followErrorXToleranceSlider" type="range" min="0.005" max="0.200" step="0.005" value="0.115" />
               </label>
             </div>
             <div class="status-grid">

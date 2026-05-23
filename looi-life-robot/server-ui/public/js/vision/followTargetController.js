@@ -3,13 +3,12 @@ import { canonicalObjectLabel } from "./objectLabelUtils.js";
 const FOLLOW_MODES = new Set(["cautious", "gentle", "curious"]);
 const FOLLOW_POSITION_LOG_INTERVAL_MS = 600;
 const DEFAULT_FOLLOW_CENTER_X = 0.5;
-const DEFAULT_FOLLOW_CENTER_DEADBAND = 0.035;
+const DEFAULT_FOLLOW_CENTER_DEADBAND = 0.115;
 const DEFAULT_FOLLOW_STEER_GAIN = 0.9;
-const DEFAULT_MAX_FOLLOW_ANGULAR = 0.06;
+const DEFAULT_MAX_FOLLOW_ANGULAR = 0.036;
 const FOLLOW_STALE_GRACE_MS = 700;
-const FOLLOW_COMMAND_DURATION_MS = 280;
-const FOLLOW_COMMAND_REFRESH_MS = 160;
-const FOLLOW_RAMP_MS = 70;
+const DEFAULT_FOLLOW_COMMAND_DURATION_MS = 30;
+const DEFAULT_FOLLOW_COMMAND_REFRESH_MS = 70;
 
 export class FollowTargetController {
   constructor({
@@ -20,7 +19,7 @@ export class FollowTargetController {
     eventBus,
     getPolicy,
     logger,
-    tickMs = 200,
+    tickMs = 50,
     lostTimeoutMs = 2000
   } = {}) {
     this.visionState = visionState;
@@ -30,7 +29,7 @@ export class FollowTargetController {
     this.eventBus = eventBus;
     this.getPolicy = getPolicy;
     this.logger = logger;
-    this.tickMs = clampNumber(tickMs, 100, 1000, 200);
+    this.tickMs = clampNumber(tickMs, 20, 1000, 50);
     this.lostTimeoutMs = clampNumber(lostTimeoutMs, 500, 8000, 2000);
     this.running = false;
     this.targetLabel = null;
@@ -183,7 +182,8 @@ export class FollowTargetController {
     }
 
     const now = Date.now();
-    if (now - this.lastSteeringAt < FOLLOW_COMMAND_REFRESH_MS) {
+    const tuning = this.getTuning();
+    if (now - this.lastSteeringAt < tuning.commandRefreshMs) {
       return this.getStatus();
     }
 
@@ -252,11 +252,13 @@ export class FollowTargetController {
         absErrorX,
         angular: 0,
         maxAngular: tuning.maxAngular,
-        deadband: tuning.centerDeadband
+        deadband: tuning.centerDeadband,
+        commandDurationMs: tuning.commandDurationMs,
+        commandRefreshMs: tuning.commandRefreshMs
       };
     }
 
-    const angular = clampNumber(errorX * tuning.steerGain, -tuning.maxAngular, tuning.maxAngular, 0);
+    const angular = (errorX < 0 ? -1 : 1) * tuning.maxAngular;
 
     return {
       centered: false,
@@ -267,7 +269,9 @@ export class FollowTargetController {
       absErrorX,
       angular,
       maxAngular: tuning.maxAngular,
-      deadband: tuning.centerDeadband
+      deadband: tuning.centerDeadband,
+      commandDurationMs: tuning.commandDurationMs,
+      commandRefreshMs: tuning.commandRefreshMs
     };
   }
 
@@ -278,7 +282,9 @@ export class FollowTargetController {
       targetCenterX: clampNumber(policy.followTargetCenterX, 0.25, 0.75, DEFAULT_FOLLOW_CENTER_X),
       centerDeadband: clampNumber(policy.followCenterDeadband, 0.005, 0.2, DEFAULT_FOLLOW_CENTER_DEADBAND),
       steerGain: clampNumber(policy.followSteerGain, 0.05, 2.5, DEFAULT_FOLLOW_STEER_GAIN),
-      maxAngular: clampNumber(policy.maxObjectFollowSpeed, 0.005, 0.12, DEFAULT_MAX_FOLLOW_ANGULAR)
+      maxAngular: clampNumber(policy.maxObjectFollowSpeed, 0, 0.12, DEFAULT_MAX_FOLLOW_ANGULAR),
+      commandDurationMs: clampNumber(policy.followCommandDurationMs, 0, 600, DEFAULT_FOLLOW_COMMAND_DURATION_MS),
+      commandRefreshMs: clampNumber(policy.followCommandRefreshMs, 0, 300, DEFAULT_FOLLOW_COMMAND_REFRESH_MS)
     };
   }
 
@@ -314,8 +320,8 @@ export class FollowTargetController {
     const command = {
       linear: 0,
       angular: steering.angular,
-      durationMs: FOLLOW_COMMAND_DURATION_MS,
-      rampMs: FOLLOW_RAMP_MS,
+      durationMs: this.getTuning().commandDurationMs,
+      rampMs: 0,
       label: `roboflow_follow_turn_${steering.direction}`,
       log: false
     };
@@ -520,6 +526,8 @@ export class FollowTargetController {
       followCenterDeadband: DEFAULT_FOLLOW_CENTER_DEADBAND,
       followSteerGain: DEFAULT_FOLLOW_STEER_GAIN,
       maxObjectFollowSpeed: DEFAULT_MAX_FOLLOW_ANGULAR,
+      followCommandDurationMs: DEFAULT_FOLLOW_COMMAND_DURATION_MS,
+      followCommandRefreshMs: DEFAULT_FOLLOW_COMMAND_REFRESH_MS,
       ...(typeof this.getPolicy === "function" ? this.getPolicy() : {})
     };
   }

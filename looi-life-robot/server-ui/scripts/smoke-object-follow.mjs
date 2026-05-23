@@ -92,7 +92,9 @@ function createVisionRuntime({ policy = {} } = {}) {
       allowFollowMovement: false,
       robotConnected: true,
       localSpeechAllowed: true,
-      maxObjectFollowSpeed: 0.06,
+      maxObjectFollowSpeed: 0.036,
+      followCommandDurationMs: 30,
+      followCommandRefreshMs: 70,
       ...policy
     })
   });
@@ -173,9 +175,9 @@ function updateVision({ tracker, visionState }, result) {
   assert.equal(runtime.motions.length, 1);
   assert.equal(runtime.motions[0].label, "roboflow_follow_turn_left");
   assert.equal(runtime.motions[0].linear, 0);
-  assert.ok(runtime.motions[0].angular < 0);
-  assert.equal(runtime.motions[0].durationMs, 280);
-  assert.equal(runtime.motions[0].rampMs, 70);
+  assert.equal(runtime.motions[0].angular, -0.036);
+  assert.equal(runtime.motions[0].durationMs, 30);
+  assert.equal(runtime.motions[0].rampMs, 0);
   assert.equal(runtime.motions[0].realtime, true);
   runtime.controller.stop("test_stop");
 }

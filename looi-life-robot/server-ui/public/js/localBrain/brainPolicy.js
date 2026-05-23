@@ -10,9 +10,11 @@ export function createDefaultBrainPolicy() {
     allowFollowMovement: false,
     followLostTimeoutMs: 2000,
     followTargetCenterX: 0.5,
-    followCenterDeadband: 0.035,
+    followCenterDeadband: 0.115,
     followSteerGain: 0.9,
-    maxObjectFollowSpeed: 0.06,
+    maxObjectFollowSpeed: 0.036,
+    followCommandDurationMs: 30,
+    followCommandRefreshMs: 70,
     maxThoughtsPerMinute: 12,
     eventThoughtCooldownMs: 800,
     stopRespectCooldownMs: 8000
@@ -61,9 +63,21 @@ export function clampBrainPolicy(policy = {}) {
     ),
     maxObjectFollowSpeed: clampNumber(
       value.maxObjectFollowSpeed,
-      0.005,
+      0,
       0.12,
       defaults.maxObjectFollowSpeed
+    ),
+    followCommandDurationMs: clampInteger(
+      value.followCommandDurationMs,
+      0,
+      600,
+      defaults.followCommandDurationMs
+    ),
+    followCommandRefreshMs: clampInteger(
+      value.followCommandRefreshMs,
+      0,
+      300,
+      defaults.followCommandRefreshMs
     ),
     maxThoughtsPerMinute: clampInteger(
       value.maxThoughtsPerMinute,
