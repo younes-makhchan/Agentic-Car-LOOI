@@ -364,12 +364,12 @@ input[type="range"] {
         <label>
           <span>Command duration</span>
           <strong id="commandDurationValue">160 ms</strong>
-          <input id="commandDuration" type="range" min="50" max="600" step="10" value="160" />
+          <input id="commandDuration" type="range" min="0" max="600" step="10" value="160" />
         </label>
         <label>
           <span>Command interval</span>
           <strong id="commandIntervalValue">90 ms</strong>
-          <input id="commandInterval" type="range" min="40" max="300" step="10" value="90" />
+          <input id="commandInterval" type="range" min="0" max="300" step="10" value="90" />
         </label>
         <label>
           <span>ErrorX tolerance</span>
@@ -575,11 +575,13 @@ function initRobotClient() {
   robotClient = new ESP32Client({
     url: ui.esp32Url.value,
     maxSpeed: DEMO_MAX_ANGULAR_SPEED,
+    minDurationMs: 0,
     logger: (message, level = "info") => log(`${level}: ${message}`)
   });
   commandQueue = new CommandQueue({
     robotClient,
     maxSpeed: DEMO_MAX_ANGULAR_SPEED,
+    minDurationMs: 0,
     maxDurationMs: 1000,
     logger: (message, level = "info") => log(`${level}: ${message}`)
   });
@@ -637,8 +639,8 @@ function syncRobotUi() {
 function getMotionSettings() {
   return {
     speed: clamp(ui.speed.value, 0, DEMO_MAX_ANGULAR_SPEED),
-    durationMs: Math.round(clamp(ui.commandDuration.value, 50, 600)),
-    intervalMs: Math.round(clamp(ui.commandInterval.value, 40, 300))
+    durationMs: Math.round(clamp(ui.commandDuration.value, 0, 600)),
+    intervalMs: Math.round(clamp(ui.commandInterval.value, 0, 300))
   };
 }
 

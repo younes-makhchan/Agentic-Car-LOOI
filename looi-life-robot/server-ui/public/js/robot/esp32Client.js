@@ -14,12 +14,20 @@ const READY_STATE = {
 let messageCounter = 0;
 
 export class ESP32Client {
-  constructor({ url = DEFAULT_URL, logger, apiBase = "/api/esp32", getAuthHeaders = () => ({}), maxSpeed = MAX_SPEED } = {}) {
+  constructor({
+    url = DEFAULT_URL,
+    logger,
+    apiBase = "/api/esp32",
+    getAuthHeaders = () => ({}),
+    maxSpeed = MAX_SPEED,
+    minDurationMs = MIN_DURATION_MS
+  } = {}) {
     this.url = url;
     this.logger = logger;
     this.apiBase = apiBase;
     this.getAuthHeaders = getAuthHeaders;
     this.maxSpeed = clamp(maxSpeed, 0.05, 0.5);
+    this.minDurationMs = clamp(minDurationMs, 0, MAX_DURATION_MS);
     this.connected = false;
     this.readyState = READY_STATE.CLOSED;
     this.latestTelemetry = null;
@@ -165,7 +173,7 @@ export class ESP32Client {
       type: "motion",
       linear: clamp(linear, -this.maxSpeed, this.maxSpeed),
       angular: clamp(angular, -this.maxSpeed, this.maxSpeed),
-      duration_ms: clamp(durationMs, MIN_DURATION_MS, MAX_DURATION_MS)
+      duration_ms: clamp(durationMs, this.minDurationMs, MAX_DURATION_MS)
     };
 
     if (Number.isFinite(Number(rampMs))) {

@@ -7,12 +7,14 @@ export class CommandQueue {
     robotClient,
     logger,
     maxSpeed = 0.4,
+    minDurationMs = MIN_DURATION_MS,
     maxDurationMs = 1000
   } = {}) {
     this.robotClient = robotClient;
     this.logger = logger;
     this.maxSpeed = maxSpeed;
-    this.maxDurationMs = maxDurationMs;
+    this.minDurationMs = clamp(minDurationMs, 0, 1000);
+    this.maxDurationMs = clamp(maxDurationMs, this.minDurationMs, 1000);
     this.queue = [];
     this.busy = false;
     this.currentTask = null;
@@ -22,13 +24,18 @@ export class CommandQueue {
     this.maxHistory = 40;
   }
 
-  setLimits({ maxSpeed, maxDurationMs } = {}) {
+  setLimits({ maxSpeed, minDurationMs, maxDurationMs } = {}) {
     if (Number.isFinite(Number(maxSpeed))) {
       this.maxSpeed = clamp(maxSpeed, 0.05, 0.4);
     }
 
+    if (Number.isFinite(Number(minDurationMs))) {
+      this.minDurationMs = clamp(minDurationMs, 0, 1000);
+      this.maxDurationMs = Math.max(this.maxDurationMs, this.minDurationMs);
+    }
+
     if (Number.isFinite(Number(maxDurationMs))) {
-      this.maxDurationMs = clamp(maxDurationMs, MIN_DURATION_MS, 1000);
+      this.maxDurationMs = clamp(maxDurationMs, this.minDurationMs, 1000);
     }
   }
 
@@ -38,7 +45,7 @@ export class CommandQueue {
       label,
       linear: clamp(linear, -this.maxSpeed, this.maxSpeed),
       angular: clamp(angular, -this.maxSpeed, this.maxSpeed),
-      durationMs: clamp(durationMs, MIN_DURATION_MS, this.maxDurationMs),
+      durationMs: clamp(durationMs, this.minDurationMs, this.maxDurationMs),
       rampMs: clamp(rampMs ?? 120, 0, MAX_RAMP_MS)
     };
 
@@ -62,7 +69,7 @@ export class CommandQueue {
       label,
       linear: clamp(linear, -this.maxSpeed, this.maxSpeed),
       angular: clamp(angular, -this.maxSpeed, this.maxSpeed),
-      durationMs: clamp(durationMs, MIN_DURATION_MS, this.maxDurationMs),
+      durationMs: clamp(durationMs, this.minDurationMs, this.maxDurationMs),
       rampMs: clamp(rampMs ?? 120, 0, MAX_RAMP_MS)
     };
 
