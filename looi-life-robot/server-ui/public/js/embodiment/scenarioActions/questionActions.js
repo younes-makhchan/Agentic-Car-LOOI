@@ -1,3 +1,5 @@
+import { clampNumber } from "../../core/runtimeUtils.js";
+
 export async function showQuestion(ctx, args = {}) {
   const durationMs = clampNumber(args.durationMs, 300, 4000, 2200);
 
@@ -17,9 +19,4 @@ export async function showQuestion(ctx, args = {}) {
     type: "action",
     detail: { state: "questioned" }
   };
-}
-
-function clampNumber(value, min, max, fallback) {
-  const numeric = Number(value);
-  return Number.isFinite(numeric) ? Math.min(max, Math.max(min, numeric)) : fallback;
 }

@@ -10,15 +10,8 @@ let eatingActive = false;
 let drinkingActive = false;
 let tellingActive = false;
 const policy = {
-  cloudMotionArmed: false,
-  cloudCameraAllowed: false,
-  simulatorMode: true,
   robotConnected: true,
-  allowSpeak: true,
-  allowNonPhysical: true,
-  localMotionArmed: false,
-  localCameraAllowed: false,
-  localSpeechAllowed: true
+  localMotionArmed: false
 };
 
 const face = {
@@ -94,7 +87,6 @@ const robotClient = {
   },
   getLatestTelemetry() {
     return {
-      simulated: true,
       motor_state: "stopped"
     };
   }
@@ -270,25 +262,23 @@ const executor = new ToolExecutor({
   getRuntimeContext: () => ({
     lifeState: lifeEngine.getState(),
     robotTelemetry: robotClient.getLatestTelemetry(),
-    connectionState: "simulated_connected",
-    simulatorMode: true,
+    connectionState: "connected",
     localMotionArmed: policy.localMotionArmed,
-    localCameraAllowed: policy.localCameraAllowed,
     cameraStatus,
     recentLifeEvents: []
   })
 });
 
-const rejectedLegacy = await executor.executeBridgeAction({
-  id: "legacy_express",
+const rejectedUnsupported = await executor.executeAction({
+  id: "unsupported_express",
   source: "gemini_live",
   type: "express",
   args: { emotion: "happy" }
 });
-assert.equal(rejectedLegacy.status, "rejected");
-assert.match(rejectedLegacy.message, /Unknown action type/i);
+assert.equal(rejectedUnsupported.status, "rejected");
+assert.match(rejectedUnsupported.message, /Unknown action type/i);
 
-const rejectedInternalFromGemini = await executor.executeBridgeAction({
+const rejectedInternalFromGemini = await executor.executeAction({
   id: "internal_pose_gemini",
   source: "gemini_live",
   type: "run_scenario",
@@ -296,7 +286,7 @@ const rejectedInternalFromGemini = await executor.executeBridgeAction({
 });
 assert.equal(rejectedInternalFromGemini.status, "rejected");
 
-const internalPose = await executor.executeBridgeAction({
+const internalPose = await executor.executeAction({
   id: "internal_pose_ui",
   source: "local",
   type: "run_scenario",
@@ -306,7 +296,7 @@ assert.equal(internalPose.status, "completed");
 assert.equal(internalPose.detail.scenario, "pose_happy");
 assert.equal(faceEvents.some((event) => event.type === "expression" && event.expression === "happy"), true);
 
-const disarmedScenario = await executor.executeBridgeAction({
+const disarmedScenario = await executor.executeAction({
   id: "scenario_disarmed",
   source: "gemini_live",
   type: "run_scenario",
@@ -318,7 +308,7 @@ assert.match(disarmedScenario.message, /local_motion_not_armed/i);
 assert.equal(routedSequences.length, 1);
 
 policy.localMotionArmed = true;
-const bodyScenario = await executor.executeBridgeAction({
+const bodyScenario = await executor.executeAction({
   id: "scenario_body",
   source: "gemini_live",
   type: "run_scenario",
@@ -330,8 +320,7 @@ assert.equal("scenarioMovement" in bodyScenario.detail, false);
 assert.equal(routedSequences.at(-1).action.args.frames.some((frame) => frame.label === "scenario_tiny_turn_left"), true);
 assert.equal(motions.some((motion) => motion.label === "scenario_tiny_turn_left"), true);
 
-policy.localCameraAllowed = true;
-const photoScenario = await executor.executeBridgeAction({
+const photoScenario = await executor.executeAction({
   id: "scenario_photo",
   source: "gemini_live",
   type: "run_scenario",
@@ -344,7 +333,7 @@ assert.equal(cameraCalls.some((call) => call.type === "snapshot"), true);
 assert.equal(faceEvents.some((event) => event.type === "take_picture"), true);
 assert.equal(faceEvents.some((event) => event.type === "show_photo"), true);
 
-const eatingScenario = await executor.executeBridgeAction({
+const eatingScenario = await executor.executeAction({
   id: "scenario_eating",
   source: "gemini_live",
   type: "run_scenario",
@@ -356,7 +345,7 @@ assert.equal(eatingScenario.detail.actionDetails.some((entry) => entry.action ==
 assert.equal(faceEvents.some((event) => event.type === "take_bite"), true);
 
 const routesBeforeEatingExit = routedSequences.length;
-const backUpAfterEating = await executor.executeBridgeAction({
+const backUpAfterEating = await executor.executeAction({
   id: "scenario_after_eating",
   source: "gemini_live",
   type: "run_scenario",
@@ -369,7 +358,7 @@ assert.equal(routedSequences.at(-2).action.args.scenario, "finish_burger");
 assert.equal(routedSequences.at(-1).action.args.scenario, "back_up");
 assert.equal(faceEvents.some((event) => event.type === "finish_burger"), true);
 
-const secondEatingScenario = await executor.executeBridgeAction({
+const secondEatingScenario = await executor.executeAction({
   id: "scenario_eating_again",
   source: "gemini_live",
   type: "run_scenario",
@@ -378,7 +367,7 @@ const secondEatingScenario = await executor.executeBridgeAction({
 assert.equal(secondEatingScenario.status, "completed");
 assert.equal(eatingActive, true);
 const routesBeforeDirectFinish = routedSequences.length;
-const directFinishBurger = await executor.executeBridgeAction({
+const directFinishBurger = await executor.executeAction({
   id: "scenario_direct_finish_burger",
   source: "gemini_live",
   type: "run_scenario",
@@ -389,7 +378,7 @@ assert.equal(eatingActive, false);
 assert.equal(routedSequences.length, routesBeforeDirectFinish + 1);
 assert.equal(routedSequences.at(-1).action.args.scenario, "finish_burger");
 
-const drinkingScenario = await executor.executeBridgeAction({
+const drinkingScenario = await executor.executeAction({
   id: "scenario_drinking",
   source: "gemini_live",
   type: "run_scenario",
@@ -401,7 +390,7 @@ assert.equal(drinkingScenario.detail.actionDetails.some((entry) => entry.action 
 assert.equal(faceEvents.some((event) => event.type === "open_drink"), true);
 
 const routesBeforeDrinkExit = routedSequences.length;
-const comeCloserAfterDrinking = await executor.executeBridgeAction({
+const comeCloserAfterDrinking = await executor.executeAction({
   id: "scenario_after_drinking",
   source: "gemini_live",
   type: "run_scenario",
@@ -414,7 +403,7 @@ assert.equal(routedSequences.at(-2).action.args.scenario, "finish_drink");
 assert.equal(routedSequences.at(-1).action.args.scenario, "come_closer");
 assert.equal(faceEvents.some((event) => event.type === "finish_drink"), true);
 
-const secondDrinkingScenario = await executor.executeBridgeAction({
+const secondDrinkingScenario = await executor.executeAction({
   id: "scenario_drinking_again",
   source: "gemini_live",
   type: "run_scenario",
@@ -423,7 +412,7 @@ const secondDrinkingScenario = await executor.executeBridgeAction({
 assert.equal(secondDrinkingScenario.status, "completed");
 assert.equal(drinkingActive, true);
 const routesBeforeDuplicateDrink = routedSequences.length;
-const duplicateDrinkingScenario = await executor.executeBridgeAction({
+const duplicateDrinkingScenario = await executor.executeAction({
   id: "scenario_drinking_duplicate",
   source: "gemini_live",
   type: "run_scenario",
@@ -435,7 +424,7 @@ assert.equal(duplicateDrinkingScenario.detail.alreadyActive, true);
 assert.equal(drinkingActive, true);
 assert.equal(routedSequences.length, routesBeforeDuplicateDrink);
 const routesBeforeDirectFinishDrink = routedSequences.length;
-const directFinishDrink = await executor.executeBridgeAction({
+const directFinishDrink = await executor.executeAction({
   id: "scenario_direct_finish_drink",
   source: "gemini_live",
   type: "run_scenario",
@@ -446,7 +435,7 @@ assert.equal(drinkingActive, false);
 assert.equal(routedSequences.length, routesBeforeDirectFinishDrink + 1);
 assert.equal(routedSequences.at(-1).action.args.scenario, "finish_drink");
 
-const questionScenario = await executor.executeBridgeAction({
+const questionScenario = await executor.executeAction({
   id: "scenario_question",
   source: "gemini_live",
   type: "run_scenario",
@@ -456,7 +445,7 @@ assert.equal(questionScenario.status, "completed");
 assert.equal(questionScenario.detail.actionDetails.some((entry) => entry.action === "showQuestion"), true);
 assert.equal(faceEvents.some((event) => event.type === "question"), true);
 
-const angryScenario = await executor.executeBridgeAction({
+const angryScenario = await executor.executeAction({
   id: "scenario_angry",
   source: "gemini_live",
   type: "run_scenario",
@@ -466,7 +455,7 @@ assert.equal(angryScenario.status, "completed");
 assert.equal(angryScenario.detail.actionDetails.some((entry) => entry.action === "showAngry"), true);
 assert.equal(faceEvents.some((event) => event.type === "angry"), true);
 
-const lovingScenario = await executor.executeBridgeAction({
+const lovingScenario = await executor.executeAction({
   id: "scenario_loving",
   source: "gemini_live",
   type: "run_scenario",
@@ -476,7 +465,7 @@ assert.equal(lovingScenario.status, "completed");
 assert.equal(lovingScenario.detail.actionDetails.some((entry) => entry.action === "showLoving"), true);
 assert.equal(faceEvents.some((event) => event.type === "loving"), true);
 
-const shockedScenario = await executor.executeBridgeAction({
+const shockedScenario = await executor.executeAction({
   id: "scenario_shocked",
   source: "gemini_live",
   type: "run_scenario",
@@ -486,7 +475,7 @@ assert.equal(shockedScenario.status, "completed");
 assert.equal(shockedScenario.detail.actionDetails.some((entry) => entry.action === "showShocked"), true);
 assert.equal(faceEvents.some((event) => event.type === "shocked"), true);
 
-const tellMeAboutYourselfScenario = await executor.executeBridgeAction({
+const tellMeAboutYourselfScenario = await executor.executeAction({
   id: "scenario_tell_me_about_yourself",
   source: "gemini_live",
   type: "run_scenario",
@@ -500,7 +489,7 @@ assert.equal(
 assert.equal(faceEvents.some((event) => event.type === "tell_me_about_yourself"), true);
 assert.equal(tellingActive, true);
 
-const kissScenario = await executor.executeBridgeAction({
+const kissScenario = await executor.executeAction({
   id: "scenario_kiss",
   source: "gemini_live",
   type: "run_scenario",
@@ -514,7 +503,7 @@ assert.equal(faceEvents.some((event) => event.type === "kiss"), true);
 assert.equal(tellingActive, false);
 
 tellingActive = true;
-const directFinishTellingScenario = await executor.executeBridgeAction({
+const directFinishTellingScenario = await executor.executeAction({
   id: "scenario_direct_finish_telling",
   source: "gemini_live",
   type: "run_scenario",
@@ -571,7 +560,7 @@ executor.setVisionControllers({
     }
   }
 });
-const followScenario = await executor.executeBridgeAction({
+const followScenario = await executor.executeAction({
   id: "follow_1",
   source: "gemini_live",
   type: "run_scenario",
@@ -582,7 +571,7 @@ assert.equal(followStarted.at(-1).label, "bottle");
 
 const followStartsBeforeDuplicate = followStarted.length;
 const followStopsBeforeDuplicate = followStops.length;
-const duplicateFollowScenario = await executor.executeBridgeAction({
+const duplicateFollowScenario = await executor.executeAction({
   id: "follow_duplicate",
   source: "gemini_live",
   type: "run_scenario",
@@ -595,7 +584,7 @@ assert.equal(followStarted.length, followStartsBeforeDuplicate);
 assert.equal(followStops.length, followStopsBeforeDuplicate);
 assert.equal(followRunning, true);
 
-const followModeUpdate = await executor.executeBridgeAction({
+const followModeUpdate = await executor.executeAction({
   id: "follow_mode_update",
   source: "gemini_live",
   type: "run_scenario",
@@ -607,7 +596,7 @@ assert.equal(followStops.length, followStopsBeforeDuplicate);
 assert.equal(followMode, "curious");
 
 const activeFollowStopsBefore = followStops.length;
-const activeFollowStop = await executor.executeBridgeAction({
+const activeFollowStop = await executor.executeAction({
   id: "follow_stop_active",
   source: "gemini_live",
   type: "run_scenario",
@@ -616,7 +605,7 @@ const activeFollowStop = await executor.executeBridgeAction({
 assert.equal(activeFollowStop.status, "completed");
 assert.equal(followStops.length, activeFollowStopsBefore + 1);
 
-const followScenarioAgain = await executor.executeBridgeAction({
+const followScenarioAgain = await executor.executeAction({
   id: "follow_2",
   source: "gemini_live",
   type: "run_scenario",
@@ -626,7 +615,7 @@ assert.equal(followScenarioAgain.status, "completed");
 assert.equal(followRunning, true);
 
 const routesBeforeFollowExit = routedSequences.length;
-const backUpWhileFollowing = await executor.executeBridgeAction({
+const backUpWhileFollowing = await executor.executeAction({
   id: "back_up_while_following",
   source: "gemini_live",
   type: "run_scenario",
@@ -641,7 +630,7 @@ assert.equal(followStops.at(-1), "before:back_up");
 executor.getRuntimeContext = () => ({
   geminiLive: { lastInputTranscript: "stop following it" }
 });
-const stoppedFollow = await executor.executeBridgeAction({
+const stoppedFollow = await executor.executeAction({
   id: "follow_stop",
   source: "gemini_live",
   type: "run_scenario",
@@ -649,7 +638,7 @@ const stoppedFollow = await executor.executeBridgeAction({
 });
 assert.equal(stoppedFollow.status, "completed");
 
-const stopResult = await executor.executeBridgeAction({
+const stopResult = await executor.executeAction({
   id: "stop_1",
   source: "local",
   type: "stop",
@@ -659,7 +648,7 @@ assert.equal(stopResult.status, "completed");
 assert.equal(stopResult.executed, true);
 assert.equal(routedSequences.some((entry) => entry.action.type === "stop"), true);
 
-const unknownResult = await executor.executeBridgeAction({
+const unknownResult = await executor.executeAction({
   id: "unknown_1",
   source: "test",
   type: "raw_pwm",
@@ -670,7 +659,7 @@ assert.equal(unknownResult.status, "rejected");
 console.log(
   JSON.stringify({
     ok: true,
-    results: executor.getActionHistory().length,
+    results: routedSequences.length,
     routed: routedSequences.length,
     logs: logs.length
   })

@@ -57,7 +57,7 @@ const SUPPORTED_DIRECTIONS = new Set(["center", "left", "right", "up", "down"]);
 let rootRef = null;
 let eyesRef = null;
 
-export function initFaceCanvas(element) {
+function initFaceCanvas(element) {
   rootRef = element;
 
   clearAllTimers();
@@ -100,13 +100,13 @@ export function initFaceCanvas(element) {
   scheduleNextGlance();
 }
 
-export function setExpression(expression, intensity = 1) {
+function setExpression(expression, intensity = 1) {
   FACE_STATE.expression = normalizeExpression(expression);
   FACE_STATE.intensity = clamp(Number(intensity) || 1, 0, 1.5);
   applyExpression();
 }
 
-export function setEyeDirection(direction, { auto = false } = {}) {
+function setEyeDirection(direction, { auto = false } = {}) {
   if (!auto) {
     FACE_STATE.autoGlanceToken += 1;
     window.clearTimeout(FACE_STATE.autoGlanceReturnTimer);
@@ -134,7 +134,7 @@ export function setEyeDirection(direction, { auto = false } = {}) {
   openEyes();
 }
 
-export function blink() {
+function blink() {
   if (!eyesRef || FACE_STATE.speaking || FACE_STATE.sleeping || hasBlockingFaceAnimation()) {
     scheduleNextBlink();
     return;
@@ -147,7 +147,7 @@ export function blink() {
   scheduleNextBlink();
 }
 
-export function softClose() {
+function softClose() {
   if (!eyesRef || FACE_STATE.speaking || FACE_STATE.sleeping || hasBlockingFaceAnimation()) {
     return;
   }
@@ -158,7 +158,7 @@ export function softClose() {
   FACE_STATE.animationTimer = window.setTimeout(clearMomentaryAnimations, SOFT_CLOSE_TIME_MS);
 }
 
-export function openEyes() {
+function openEyes() {
   if (!eyesRef) {
     return;
   }
@@ -172,7 +172,7 @@ export function openEyes() {
   eyesRef.style.setProperty("--glow-dir", "1");
 }
 
-export function lookLeft() {
+function lookLeft() {
   if (!eyesRef || FACE_STATE.sleeping) {
     return;
   }
@@ -184,7 +184,7 @@ export function lookLeft() {
   settleLookHeight();
 }
 
-export function lookRight() {
+function lookRight() {
   if (!eyesRef || FACE_STATE.sleeping) {
     return;
   }
@@ -196,7 +196,7 @@ export function lookRight() {
   settleLookHeight();
 }
 
-export function invertLook() {
+function invertLook() {
   if (!eyesRef || FACE_STATE.sleeping) {
     return;
   }
@@ -214,7 +214,7 @@ export function invertLook() {
   });
 }
 
-export function sleep() {
+function sleep() {
   if (!eyesRef) {
     return;
   }
@@ -228,7 +228,7 @@ export function sleep() {
   eyesRef.classList.add("is-sleeping");
 }
 
-export function setSpeaking(isSpeaking) {
+function setSpeaking(isSpeaking) {
   FACE_STATE.speaking = Boolean(isSpeaking);
 
   if (!eyesRef) {
@@ -251,7 +251,7 @@ export function setSpeaking(isSpeaking) {
   scheduleNextBlink();
 }
 
-export function setThinking(isThinking) {
+function setThinking(isThinking) {
   const nextThinking = Boolean(isThinking);
 
   if (FACE_STATE.thinking === nextThinking) {
@@ -271,11 +271,7 @@ export function setThinking(isThinking) {
   }
 }
 
-export function setMouthOpen() {
-  // The new face has no mouth layer. Speech state is represented by eye glow only.
-}
-
-export function takePicture() {
+function takePicture() {
   if (!rootRef || !eyesRef) {
     return;
   }
@@ -296,7 +292,7 @@ export function takePicture() {
   }, PHOTO_TIME_MS);
 }
 
-export function takeBite() {
+function takeBite() {
   if (!rootRef || !eyesRef) {
     return;
   }
@@ -317,7 +313,7 @@ export function takeBite() {
   }, BITE_TIME_MS);
 }
 
-export function finishBurger() {
+function finishBurger() {
   if (!rootRef || !eyesRef) {
     return;
   }
@@ -340,7 +336,7 @@ export function finishBurger() {
   }, FINISH_BURGER_TIME_MS);
 }
 
-export function isEatingActive() {
+function isEatingActive() {
   return Boolean(
     FACE_STATE.eatingVisualState !== "idle" ||
     rootRef?.classList.contains("is-taking-bite") ||
@@ -349,7 +345,7 @@ export function isEatingActive() {
   );
 }
 
-export function openDrink() {
+function openDrink() {
   if (!rootRef || !eyesRef) {
     return;
   }
@@ -370,7 +366,7 @@ export function openDrink() {
   }, DRINK_OPEN_TIME_MS);
 }
 
-export function finishDrink() {
+function finishDrink() {
   if (!rootRef || !eyesRef) {
     return;
   }
@@ -393,7 +389,7 @@ export function finishDrink() {
   }, FINISH_DRINK_TIME_MS);
 }
 
-export function isDrinkingActive() {
+function isDrinkingActive() {
   return Boolean(
     FACE_STATE.drinkingVisualState !== "idle" ||
     rootRef?.classList.contains("is-drink-opening") ||
@@ -402,7 +398,7 @@ export function isDrinkingActive() {
   );
 }
 
-export function showQuestion() {
+function showQuestion() {
   if (!rootRef || !eyesRef) {
     return;
   }
@@ -420,7 +416,7 @@ export function showQuestion() {
   }, QUESTION_TIME_MS);
 }
 
-export function showAngry() {
+function showAngry() {
   if (!rootRef || !eyesRef) {
     return;
   }
@@ -438,7 +434,7 @@ export function showAngry() {
   }, ANGRY_TIME_MS);
 }
 
-export function showLoving() {
+function showLoving() {
   if (!rootRef || !eyesRef) {
     return;
   }
@@ -456,7 +452,7 @@ export function showLoving() {
   }, LOVING_TIME_MS);
 }
 
-export function showShocked() {
+function showShocked() {
   if (!rootRef || !eyesRef) {
     return;
   }
@@ -474,7 +470,7 @@ export function showShocked() {
   }, SHOCKED_TIME_MS);
 }
 
-export function showTellMeAboutYourself() {
+function showTellMeAboutYourself() {
   if (!rootRef || !eyesRef) {
     return;
   }
@@ -495,7 +491,7 @@ export function showTellMeAboutYourself() {
   }, TELL_OPEN_TIME_MS);
 }
 
-export function finishTellMeAboutYourself() {
+function finishTellMeAboutYourself() {
   if (!rootRef || !eyesRef) {
     return;
   }
@@ -518,7 +514,7 @@ export function finishTellMeAboutYourself() {
   }, TELL_FINISH_TIME_MS);
 }
 
-export function isTellingActive() {
+function isTellingActive() {
   return Boolean(
     FACE_STATE.tellingVisualState !== "idle" ||
     rootRef?.classList.contains("is-tell-opening") ||
@@ -527,7 +523,7 @@ export function isTellingActive() {
   );
 }
 
-export function showKiss() {
+function showKiss() {
   if (!rootRef || !eyesRef || FACE_STATE.speaking) {
     return false;
   }
@@ -600,7 +596,7 @@ export function stopFollow() {
   }, FOLLOW_STOP_TIME_MS);
 }
 
-export function showPhoto(dataUrl, { dismissMs = 5000 } = {}) {
+function showPhoto(dataUrl, { dismissMs = 5000 } = {}) {
   if (!rootRef || typeof dataUrl !== "string" || !dataUrl.startsWith("data:image/")) {
     return;
   }
@@ -623,7 +619,7 @@ export function showPhoto(dataUrl, { dismissMs = 5000 } = {}) {
   }, Math.max(1000, Number(dismissMs) || 5000));
 }
 
-export function dismissPhoto() {
+function dismissPhoto() {
   if (!rootRef) {
     return;
   }
@@ -641,11 +637,6 @@ export function dismissPhoto() {
   openEyes();
 }
 
-export function setVisionIndicator(active, mode = "detecting") {
-  void active;
-  void mode;
-}
-
 export function createFaceController(element) {
   initFaceCanvas(element);
 
@@ -653,7 +644,6 @@ export function createFaceController(element) {
     setExpression,
     setEyeDirection,
     setSpeaking,
-    setMouthOpen,
     blink,
     softClose,
     openEyes,
@@ -680,7 +670,6 @@ export function createFaceController(element) {
     stopFollow,
     showPhoto,
     dismissPhoto,
-    setVisionIndicator,
     setThinking
   };
 }

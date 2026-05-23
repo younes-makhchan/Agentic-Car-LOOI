@@ -4,6 +4,7 @@ import {
   normalizeScenarioName,
   normalizeRunScenarioName
 } from "../embodiment/scenarioCatalog.js";
+import { safeStringify, stopCommandQueueMotion } from "../core/runtimeUtils.js";
 import { PRIORITY_LEVELS } from "../embodiment/priorityScheduler.js";
 import { canonicalObjectLabel } from "../vision/objectLabelUtils.js";
 
@@ -17,9 +18,7 @@ export class ToolExecutor {
     face,
     robotClient,
     commandQueue,
-    clawBridgeClient,
     embodiedActionRouter,
-    voiceOutput,
     cameraInput,
     visionScenarioManager,
     visionState,
@@ -32,9 +31,7 @@ export class ToolExecutor {
     this.face = face;
     this.robotClient = robotClient;
     this.commandQueue = commandQueue;
-    this.clawBridgeClient = clawBridgeClient;
     this.embodiedActionRouter = embodiedActionRouter;
-    this.voiceOutput = voiceOutput;
     this.cameraInput = cameraInput;
     this.visionScenarioManager = visionScenarioManager;
     this.visionState = visionState;
@@ -85,12 +82,8 @@ export class ToolExecutor {
     this.embodiedActionRouter = embodiedActionRouter;
   }
 
-  executeBridgeAction(action) {
+  executeAction(action) {
     return this.enqueueAction(action);
-  }
-
-  executeActions(actions = []) {
-    return Promise.all(actions.map((action) => this.enqueueAction(action)));
   }
 
   enqueueAction(action) {
@@ -154,10 +147,6 @@ export class ToolExecutor {
       message: `Scenario cancelled: ${reason}`,
       detail: { reason }
     });
-  }
-
-  getActionHistory() {
-    return [...this.actionHistory];
   }
 
   async executeTool(type, args = {}, action = {}) {
@@ -257,17 +246,9 @@ export class ToolExecutor {
       return alreadyActive;
     }
 
-    const requiresCamera = scenarioRequiresCamera(scenario);
     const motionMode = scenarioMotionMode(scenario);
     const motionRequired = motionMode === true;
     const motionPermission = this.scenarioMotionPermission(action, motionMode !== false);
-
-    if (requiresCamera) {
-      const cameraGate = this.ensureCameraAllowed(action);
-      if (cameraGate) {
-        return cameraGate;
-      }
-    }
 
     if (motionRequired && motionPermission.allowed !== true) {
       return this.buildResult(motionPermission.reason === "robot_not_connected" ? "failed" : "rejected", {
@@ -290,8 +271,7 @@ export class ToolExecutor {
     }
 
     return this.executeScenario(scenario, action, {
-      motionPermission,
-      allowSpeech: scenarioAllowsSpeech(scenario)
+      motionPermission
     });
   }
 
@@ -377,14 +357,12 @@ export class ToolExecutor {
     const requestedLabel = canonicalObjectLabel(args.label);
     const requestedMode = normalizeFollowMode(args.mode);
     const controllerStatus = this.followTargetController?.getStatus?.() ?? {};
-    const visionStatus = this.visionState?.getStatus?.() ?? {};
-    const activeTarget = this.visionState?.getActiveTarget?.() ?? visionStatus.activeTarget ?? null;
+    const activeTarget = this.visionState?.getActiveTarget?.() ?? null;
     const activeLabel = canonicalObjectLabel(controllerStatus.targetLabel ?? activeTarget?.label);
     const activeMode = normalizeFollowMode(controllerStatus.mode);
     const running = Boolean(
       this.followTargetController?.isRunning?.() ||
-      controllerStatus.running ||
-      (visionStatus.scenario?.active && visionStatus.scenario?.type === "follow_object")
+      controllerStatus.running
     );
     const sameTarget = Boolean(running && requestedLabel && activeLabel && requestedLabel === activeLabel);
 
@@ -427,7 +405,7 @@ export class ToolExecutor {
     };
   }
 
-  async executeScenario(scenario, action, { motionPermission, allowSpeech } = {}) {
+  async executeScenario(scenario, action, { motionPermission } = {}) {
     const usesMotion = scenarioUsesMotion(scenario);
     const requiresMotion = scenarioRequiresMotion(scenario);
     const requiresCamera = scenarioRequiresCamera(scenario);
@@ -478,7 +456,6 @@ export class ToolExecutor {
       const routeResult = await this.executeEmbodiedRoute(routeAction, {
         physical: usesMotion,
         allowMotion: motionPermission?.allowed === true,
-        allowSpeech,
         allowCamera: requiresCamera,
         args: scenarioArgs
       });
@@ -562,7 +539,6 @@ export class ToolExecutor {
     }, {
       physical: true,
       allowMotion: false,
-      allowSpeech: false,
       force: true
     });
     if (routed?.status === "completed") {
@@ -570,7 +546,6 @@ export class ToolExecutor {
     }
 
     try {
-      this.voiceOutput?.cancel?.(reason);
       await stopCommandQueueMotion(this.commandQueue, reason);
       this.lifeEngine?.receiveEvent?.({ type: "motion_stop", reason });
 
@@ -594,7 +569,7 @@ export class ToolExecutor {
 
   async executeFollowTargetScenario(args = {}, action = {}) {
     const label = normalizeShortText(args.label, 80);
-    const mode = ["gentle", "curious", "cautious"].includes(args.mode) ? args.mode : "gentle";
+    const mode = normalizeFollowMode(args.mode);
 
     if (!label) {
       return this.buildResult("rejected", {
@@ -663,7 +638,6 @@ export class ToolExecutor {
   async executeEmbodiedRoute(action = {}, {
     physical = false,
     allowMotion = false,
-    allowSpeech = false,
     allowCamera = false,
     force = false,
     args = null
@@ -681,7 +655,6 @@ export class ToolExecutor {
         localPolicy: policy,
         lifeState: this.lifeEngine?.getState?.() ?? null,
         allowMotion,
-        allowSpeech,
         allowCamera,
         force,
         priority: priorityForRoutedAction(routedAction, { physical }),
@@ -764,9 +737,7 @@ export class ToolExecutor {
 
   isMotionArmed(action = {}) {
     const policy = this.policy();
-    return this.isLocalAction(action)
-      ? Boolean(policy.localMotionArmed)
-      : Boolean(policy.cloudMotionArmed);
+    return Boolean(policy.localMotionArmed);
   }
 
   buildResult(status, detail = {}) {
@@ -835,50 +806,15 @@ export class ToolExecutor {
     }
   }
 
-  ensureCameraAllowed(action) {
-    const policy = this.policy();
-    const allowed = this.isLocalAction(action)
-      ? policy.localCameraAllowed
-      : policy.cloudCameraAllowed;
-
-    if (!allowed) {
-      return this.buildResult("rejected", {
-        action,
-        executed: false,
-        physical: false,
-        message: `${this.policyLabel(action)} camera access is not allowed in the browser UI.`,
-        detail: {
-          cloudCameraAllowed: Boolean(policy.cloudCameraAllowed),
-          localCameraAllowed: Boolean(policy.localCameraAllowed)
-        }
-      });
-    }
-
-    return null;
-  }
-
-  isLocalAction(action = {}) {
-    return action?.source === "local_brain" ||
-      action?.source === "local" ||
-      action?.source === "gemini_live";
-  }
-
-  policyLabel(action = {}) {
-    return this.isLocalAction(action) ? "local" : "cloud";
+  policyLabel(_action = {}) {
+    return "local";
   }
 
   policy() {
     return {
-      cloudMotionArmed: false,
-      simulatorMode: false,
       robotConnected: Boolean(this.robotClient?.isConnected?.()),
-      allowSpeak: true,
-      allowNonPhysical: true,
-      cloudCameraAllowed: false,
       source: "local",
       localMotionArmed: false,
-      localCameraAllowed: false,
-      localSpeechAllowed: true,
       ...(typeof this.getExecutionPolicy === "function" ? this.getExecutionPolicy() : {})
     };
   }
@@ -908,22 +844,9 @@ export class ToolExecutor {
   }
 }
 
-function safeStringify(value) {
-  try {
-    return JSON.stringify(value);
-  } catch (_error) {
-    return String(value);
-  }
-}
-
 function readLatestUserIntent(context = {}) {
   return String(
     context?.geminiLive?.lastInputTranscript ??
-    context?.voice?.geminiLive?.lastInputTranscript ??
-    context?.voice?.lastTranscript?.text ??
-    context?.voice?.lastTranscript ??
-    context?.speechStatus?.lastTranscript?.text ??
-    context?.speechStatus?.lastTranscript ??
     ""
   );
 }
@@ -973,8 +896,7 @@ function scenarioPermissions(scenario = {}) {
     motion: permissions.motion === true || permissions.motion === "optional"
       ? permissions.motion
       : false,
-    camera: permissions.camera === true,
-    speech: permissions.speech === true
+    camera: permissions.camera === true
   };
 }
 
@@ -992,10 +914,6 @@ function scenarioRequiresMotion(scenario = {}) {
 
 function scenarioRequiresCamera(scenario = {}) {
   return scenarioPermissions(scenario).camera === true;
-}
-
-function scenarioAllowsSpeech(scenario = {}) {
-  return scenarioPermissions(scenario).speech === true;
 }
 
 function inspectRouteMotion(routeResult = null) {
@@ -1046,14 +964,6 @@ function normalizeFollowMode(mode) {
   return ["gentle", "curious", "cautious"].includes(mode) ? mode : "gentle";
 }
 
-function stopCommandQueueMotion(commandQueue, reason) {
-  if (commandQueue?.stopMotion) {
-    return commandQueue.stopMotion(reason);
-  }
-
-  return commandQueue?.cancelMotion?.(reason);
-}
-
 function normalizeRunScenarioArgs(args = {}, { allowInternalScenario = false } = {}) {
   const nested = args.args && typeof args.args === "object" && !Array.isArray(args.args)
     ? args.args
@@ -1067,7 +977,7 @@ function normalizeRunScenarioArgs(args = {}, { allowInternalScenario = false } =
   return {
     name,
     label: normalizeShortText(args.label ?? args.targetLabel ?? nested.label ?? nested.targetLabel, 80),
-    mode: ["gentle", "curious", "cautious"].includes(mode) ? mode : "gentle",
+    mode: normalizeFollowMode(mode),
     reason: normalizeShortText(args.reason ?? nested.reason, 120)
   };
 }

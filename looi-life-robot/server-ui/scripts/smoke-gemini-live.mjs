@@ -74,7 +74,7 @@ function createFakeTransport({ onOpen, onMessage, onClose }) {
 }
 
 const toolExecutor = {
-  executeBridgeAction(action) {
+  executeAction(action) {
     actions.push(action);
     if (action.type === "run_scenario" && action.args?.name === "back_up") {
       return Promise.resolve({

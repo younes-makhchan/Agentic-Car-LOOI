@@ -11,7 +11,7 @@ import { OllamaProvider } from "./providers/ollamaProvider.js";
 import { OpenAICompatibleProvider } from "./providers/openAICompatibleProvider.js";
 import { RuleProvider } from "./providers/ruleProvider.js";
 
-export class LocalBrainServer {
+class LocalBrainServer {
   constructor({ provider, enabled = true, logger, trace = false } = {}) {
     this.provider = provider ?? new MockProvider();
     this.enabled = enabled !== false;

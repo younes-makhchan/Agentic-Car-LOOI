@@ -420,19 +420,6 @@ export class ESP32Client {
     this.errorCallbacks.forEach((callback) => callback(error));
   }
 
-  handleMessage(rawMessage) {
-    let message;
-
-    try {
-      message = JSON.parse(rawMessage);
-    } catch (error) {
-      this.log(`Failed to parse ESP32 message: ${error.message}`, "warn");
-      return;
-    }
-
-    this.handleMessageObject(message);
-  }
-
   handleMessageObject(message) {
     if (!message || typeof message !== "object") {
       return;

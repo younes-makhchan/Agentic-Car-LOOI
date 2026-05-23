@@ -3427,95 +3427,40 @@ body {
   order: 4;
 }
 
-.settings-section-telemetry {
+.local-brain-card {
   order: 5;
 }
 
-.simulator-card {
+.camera-card {
   order: 6;
 }
 
-.local-brain-card {
+.settings-section-movement {
   order: 7;
 }
 
-.ears-card {
+.settings-section-life {
   order: 8;
 }
 
-.looi-mode-card {
+.settings-section-face-demo {
   order: 9;
 }
 
-.camera-card {
+.settings-section-scenarios {
   order: 10;
 }
 
-.voice-card {
+.personality-card {
   order: 11;
 }
 
-.settings-section-movement {
-  order: 12;
-}
-
-.calibration-card {
-  order: 13;
-}
-
-.settings-section-life {
-  order: 14;
-}
-
-.settings-section-face-demo {
-  order: 15;
-}
-
-.settings-section-scenarios {
-  order: 16;
-}
-
-.personality-card {
-  order: 17;
-}
-
 .log-card {
-  order: 18;
-}
-
-.simulator-card {
-  border-color: rgba(126, 224, 186, 0.16);
-}
-
-.voice-card {
-  border-color: rgba(144, 231, 255, 0.2);
-}
-
-.ears-card {
-  border-color: rgba(126, 224, 186, 0.22);
-}
-
-.ears-on .ears-card,
-.attention-active .ears-card {
-  border-color: rgba(126, 224, 186, 0.52);
-  box-shadow:
-    var(--shadow),
-    0 0 34px rgba(126, 224, 186, 0.08);
-}
-
-.stop-cooldown .ears-card {
-  border-color: rgba(255, 107, 107, 0.62);
-  box-shadow:
-    var(--shadow),
-    0 0 38px rgba(255, 107, 107, 0.1);
+  order: 12;
 }
 
 .camera-card {
   border-color: rgba(126, 224, 186, 0.2);
-}
-
-.calibration-card {
-  border-color: rgba(255, 209, 102, 0.22);
 }
 
 .personality-card {
@@ -3526,37 +3471,8 @@ body {
   border-color: rgba(144, 231, 255, 0.2);
 }
 
-.looi-mode-card {
-  border-color: rgba(126, 224, 186, 0.22);
-}
-
-.looi-mode-active .looi-mode-card {
-  border-color: rgba(126, 224, 186, 0.58);
-  box-shadow:
-    var(--shadow),
-    0 0 40px rgba(126, 224, 186, 0.1);
-}
-
-.sequence-running .looi-mode-card {
-  border-color: rgba(97, 211, 255, 0.56);
-}
-
 .local-motion-armed .local-brain-card {
   border-color: rgba(255, 209, 102, 0.58);
-  box-shadow:
-    var(--shadow),
-    0 0 38px rgba(255, 209, 102, 0.1);
-}
-
-.simulator-active .simulator-card {
-  border-color: rgba(126, 224, 186, 0.52);
-  box-shadow:
-    var(--shadow),
-    0 0 36px rgba(126, 224, 186, 0.08);
-}
-
-.calibration-armed .calibration-card {
-  border-color: rgba(255, 209, 102, 0.62);
   box-shadow:
     var(--shadow),
     0 0 38px rgba(255, 209, 102, 0.1);
@@ -3602,29 +3518,9 @@ body {
   color: #f4d598;
 }
 
-.simulator-note {
-  margin: 0.65rem 0 0;
-  padding: 0.8rem 0.9rem;
-  border-radius: 0.95rem;
-  background: rgba(126, 224, 186, 0.08);
-  border: 1px solid rgba(126, 224, 186, 0.18);
-  color: #b8f0db;
-}
-
-.local-brain-card h3,
-.looi-mode-card h3 {
+.local-brain-card h3 {
   margin: 1rem 0 0;
   font-size: 1rem;
-}
-
-.voice-warning {
-  margin: 0.65rem 0 0;
-  padding: 0.75rem 0.85rem;
-  border-radius: 0.9rem;
-  background: rgba(255, 191, 92, 0.08);
-  border: 1px solid rgba(255, 191, 92, 0.16);
-  color: #f4d598;
-  line-height: 1.4;
 }
 
 .camera-warning,
@@ -3660,20 +3556,6 @@ body {
     rgba(6, 10, 17, 0.62);
 }
 
-.ears-toggle-field {
-  border-color: rgba(126, 224, 186, 0.28);
-  background:
-    linear-gradient(180deg, rgba(126, 224, 186, 0.08), rgba(12, 72, 48, 0.08)),
-    rgba(6, 10, 17, 0.62);
-}
-
-.looi-mode-toggle-field {
-  border-color: rgba(126, 224, 186, 0.32);
-  background:
-    linear-gradient(180deg, rgba(126, 224, 186, 0.1), rgba(12, 72, 48, 0.08)),
-    rgba(6, 10, 17, 0.62);
-}
-
 .checkbox-field {
   display: flex;
   align-items: center;
@@ -3692,8 +3574,7 @@ body {
 }
 
 .local-brain-state--running,
-.local-server-state--available,
-.local-motion-state--disarmed {
+.local-server-state--available {
   color: var(--success);
 }
 
@@ -3702,41 +3583,12 @@ body {
   color: var(--danger);
 }
 
-.voice-state--active {
-  color: var(--success);
-}
-
-.ears-state--on,
-.attention-state--active {
-  color: var(--success);
-}
-
-.ears-state--off {
-  color: var(--muted);
-}
-
-.attention-state--stop {
-  color: var(--danger);
-}
-
-.voice-state--warn {
-  color: var(--warning);
-}
-
 .camera-state--active {
   color: var(--success);
 }
 
 .camera-state--warn {
   color: var(--warning);
-}
-
-.calibration-state--armed {
-  color: var(--warning);
-}
-
-.calibration-state--disarmed {
-  color: var(--success);
 }
 
 .status-grid {
@@ -3780,9 +3632,6 @@ body {
 
 #userInput,
 #esp32UrlInput,
-#speechLanguageInput,
-#wakeNamesInput,
-#voiceSelect,
 .personality-card input[type="text"],
 .personality-card textarea,
 .personality-card select,
@@ -3796,9 +3645,6 @@ button {
 
 #userInput,
 #esp32UrlInput,
-#speechLanguageInput,
-#wakeNamesInput,
-#voiceSelect,
 .personality-card input[type="text"],
 .personality-card textarea,
 .personality-card select {
@@ -3815,9 +3661,6 @@ button {
 
 #userInput:focus,
 #esp32UrlInput:focus,
-#speechLanguageInput:focus,
-#wakeNamesInput:focus,
-#voiceSelect:focus,
 .personality-card input[type="text"]:focus,
 .personality-card textarea:focus,
 .personality-card select:focus {
@@ -3847,13 +3690,6 @@ button {
   margin-top: 0.85rem;
   grid-template-columns: minmax(0, 1fr);
   min-width: 0;
-}
-
-.calibration-grid {
-  margin-top: 0.85rem;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.85rem;
 }
 
 .personality-grid {
@@ -3889,44 +3725,6 @@ button {
 .button-grid button {
   min-width: 0;
   max-width: 100%;
-}
-
-.transcript-grid {
-  margin-top: 0.85rem;
-  display: grid;
-  gap: 0.75rem;
-}
-
-.transcript-grid span {
-  color: var(--muted);
-}
-
-.transcript {
-  min-height: 3.2rem;
-  margin: 0.35rem 0 0;
-  padding: 0.8rem 0.9rem;
-  border-radius: 0.95rem;
-  background: rgba(6, 10, 17, 0.72);
-  border: 1px solid var(--line);
-  color: var(--text);
-  line-height: 1.4;
-}
-
-.transcript--interim {
-  color: var(--muted);
-  font-style: italic;
-}
-
-.transcript--live {
-  border-color: rgba(97, 211, 255, 0.26);
-  background:
-    radial-gradient(circle at top left, rgba(97, 211, 255, 0.08), transparent 42%),
-    rgba(6, 10, 17, 0.72);
-}
-
-.transcript--ignored {
-  color: var(--muted);
-  opacity: 0.78;
 }
 
 .camera-preview-grid {
@@ -4018,13 +3816,6 @@ button {
 .button-grid--compact {
   grid-template-columns: 1fr;
   min-width: min(9rem, 100%);
-}
-
-#visionMetadataPreview {
-  max-height: 12rem;
-  overflow: auto;
-  white-space: pre-wrap;
-  word-break: break-word;
 }
 
 .debug-grid {
@@ -4177,10 +3968,6 @@ button:active {
     rgba(120, 20, 20, 0.48);
 }
 
-#simulateObstacleButton {
-  border-color: rgba(255, 191, 92, 0.28);
-}
-
 .warning-button {
   border-color: rgba(255, 209, 102, 0.42);
   background:
@@ -4213,16 +4000,8 @@ button:active {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-.telemetry-grid .status-row strong {
-  font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
-  font-size: 0.92rem;
-}
-
 .local-brain-list,
-.local-event-list,
-.sequence-history-list,
-.runtime-warning-list,
-.speech-debug-log {
+.local-event-list {
   margin-top: 0.85rem;
   display: grid;
   gap: 0.6rem;
@@ -4231,24 +4010,15 @@ button:active {
 }
 
 .local-brain-item,
-.local-event-item,
-.sequence-history-item,
-.runtime-warning-item,
-.speech-debug-entry {
+.local-event-item {
   padding: 0.75rem;
   border-radius: 0.9rem;
   background: rgba(6, 10, 17, 0.72);
   border: 1px solid var(--line);
 }
 
-.local-brain-item--skipped,
-.sequence-history-item--partial {
+.local-brain-item--skipped {
   opacity: 0.75;
-}
-
-.runtime-warning-item--warn {
-  border-color: rgba(255, 191, 92, 0.28);
-  color: #f4d598;
 }
 
 .local-event-item--p5 {
@@ -4259,31 +4029,14 @@ button:active {
   border-color: rgba(97, 211, 255, 0.32);
 }
 
-.speech-debug-entry--error {
-  border-color: rgba(255, 107, 107, 0.42);
-}
-
-.speech-debug-entry--final,
-.speech-debug-entry--interim {
-  border-color: rgba(126, 224, 186, 0.32);
-}
-
-.speech-debug-entry--start_ok {
-  border-color: rgba(97, 211, 255, 0.32);
-}
-
 .local-brain-item strong,
-.local-event-item strong,
-.sequence-history-item strong,
-.speech-debug-entry strong {
+.local-event-item strong {
   display: block;
   color: var(--glow-strong);
 }
 
 .local-brain-item span,
-.local-event-item span,
-.sequence-history-item span,
-.speech-debug-entry span {
+.local-event-item span {
   display: block;
   margin-top: 0.25rem;
   color: var(--muted);
@@ -4356,7 +4109,6 @@ button:active {
   .button-grid,
   .movement-grid,
   .camera-preview-grid,
-  .calibration-grid,
   .personality-grid {
     grid-template-columns: 1fr;
   }
@@ -4413,7 +4165,8 @@ body {
   position: fixed;
   inset: 0 0 0 auto;
   z-index: 300;
-  width: min(430px, 94vw);
+  width: clamp(430px, 50vw, 920px);
+  max-width: 94vw;
   height: 100vh;
   height: 100dvh;
   max-height: 100vh;

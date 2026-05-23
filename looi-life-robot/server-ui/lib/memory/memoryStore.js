@@ -21,16 +21,8 @@ export class MemoryStore {
     return this.writeMemory({ type: "long_term", text, metadata });
   }
 
-  async appendDailyMemory(text, metadata = {}) {
-    return this.writeMemory({ type: "daily", text, metadata });
-  }
-
   async readPersonalityNotes() {
     return this.readFileSafe(this.memoryPath("personality-notes.md"));
-  }
-
-  async appendPersonalityNote(text, metadata = {}) {
-    return this.writeMemory({ type: "personality_note", text, metadata });
   }
 
   async getCompactMemoryContext() {

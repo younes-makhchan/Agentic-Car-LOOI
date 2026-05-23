@@ -8,8 +8,8 @@ export class AttentionSystem {
     this.busyUntil = 0;
     this.stopRespectUntil = 0;
     this.lastWakeAt = 0;
-    this.lastUserSpeechAt = 0;
-    this.lastRobotSpeechAt = 0;
+    this.lastUserInputAt = 0;
+    this.lastRobotOutputAt = 0;
     this.lastReason = "init";
   }
 
@@ -29,25 +29,7 @@ export class AttentionSystem {
     this.attentionTarget = "user";
     this.attentionUntil = Math.max(this.attentionUntil, now + clampDuration(durationMs, 1000, 90000, 30000));
     this.conversationUntil = Math.max(this.conversationUntil, now + clampDuration(durationMs, 1000, 90000, 30000));
-    this.lastUserSpeechAt = now;
-    this.lastReason = reason;
-    return this.getStatus();
-  }
-
-  enterBusy(reason = "busy", durationMs = 10000) {
-    const now = Date.now();
-    this.mode = "busy";
-    this.busyUntil = Math.max(this.busyUntil, now + clampDuration(durationMs, 1000, 60000, 10000));
-    this.lastReason = reason;
-    return this.getStatus();
-  }
-
-  enterStopCooldown(reason = "stop", durationMs = 8000) {
-    const now = Date.now();
-    this.mode = "stop_cooldown";
-    this.stopRespectUntil = Math.max(this.stopRespectUntil, now + clampDuration(durationMs, 1000, 30000, 8000));
-    this.attentionUntil = Math.max(this.attentionUntil, this.stopRespectUntil);
-    this.conversationUntil = 0;
+    this.lastUserInputAt = now;
     this.lastReason = reason;
     return this.getStatus();
   }
@@ -69,7 +51,7 @@ export class AttentionSystem {
     return this.getStatus(now);
   }
 
-  shouldAttendToSpeech(classification) {
+  shouldAttendToInput(classification) {
     this.update();
     return [
       "safety_stop",
@@ -77,8 +59,7 @@ export class AttentionSystem {
       "direct_to_robot",
       "possible_direct_command",
       "question",
-      "social_comment",
-      "open_speech"
+      "social_comment"
     ].includes(classification) || ["attentive", "conversation"].includes(this.mode);
   }
 
@@ -94,7 +75,7 @@ export class AttentionSystem {
     }
 
     const classification = event?.payload?.classification;
-    return this.shouldAttendToSpeech(classification);
+    return this.shouldAttendToInput(classification);
   }
 
   getStatus(now = Date.now()) {
@@ -108,8 +89,8 @@ export class AttentionSystem {
       conversationRemainingMs: Math.max(0, this.conversationUntil - now),
       stopCooldownRemainingMs: Math.max(0, this.stopRespectUntil - now),
       lastWakeAt: this.lastWakeAt,
-      lastUserSpeechAt: this.lastUserSpeechAt,
-      lastRobotSpeechAt: this.lastRobotSpeechAt,
+      lastUserInputAt: this.lastUserInputAt,
+      lastRobotOutputAt: this.lastRobotOutputAt,
       lastReason: this.lastReason
     };
   }

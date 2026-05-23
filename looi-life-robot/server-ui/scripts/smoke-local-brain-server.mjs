@@ -36,9 +36,7 @@ for (const [text, expectedScenario] of cases) {
     context: {
       lifeState: { mood: "curious", energy: 0.8, boredom: 0.4 },
       policy: {
-        localBrainEnabled: true,
-        localMotionArmed: true,
-        localSpeechAllowed: true
+        localMotionArmed: true
       }
     }
   });
@@ -57,10 +55,7 @@ const pictureResponse = await localBrain.think({
   },
   context: {
     policy: {
-      localBrainEnabled: true,
-      localMotionArmed: true,
-      localCameraAllowed: true,
-      localSpeechAllowed: true
+      localMotionArmed: true
     }
   }
 });
@@ -212,7 +207,7 @@ try {
       },
       context: {
         lifeState: { mood: "curious", energy: 0.8 },
-        policy: { localMotionArmed: true, localSpeechAllowed: true }
+        policy: { localMotionArmed: true }
       }
     })
   });
@@ -228,7 +223,7 @@ try {
     body: JSON.stringify({
       message: "look around",
       context: {
-        policy: { localMotionArmed: true, localSpeechAllowed: true }
+        policy: { localMotionArmed: true }
       }
     })
   });

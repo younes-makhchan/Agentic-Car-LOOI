@@ -1,6 +1,8 @@
+import { clampNumber } from "../core/runtimeUtils.js";
+
 const STORAGE_KEY = "looi.bodyCalibration.v1";
 
-export const DEFAULT_BODY_CALIBRATION = {
+const DEFAULT_BODY_CALIBRATION = {
   maxSpeed: 0.4,
   gentleSpeed: 0.18,
   turnSpeed: 0.18,
@@ -31,16 +33,6 @@ export class BodyCalibration {
 
   getSettings() {
     return { ...this.settings };
-  }
-
-  patchSettings(partial = {}) {
-    const next = normalizeSettings({
-      ...this.settings,
-      ...partial
-    });
-    this.settings = next;
-    this.emitChange();
-    return this.getSettings();
   }
 
   resetDefaults() {
@@ -163,7 +155,7 @@ export class BodyCalibration {
   }
 }
 
-export function normalizeSettings(settings = {}) {
+function normalizeSettings(settings = {}) {
   return {
     maxSpeed: clampNumber(settings.maxSpeed, 0.05, 0.4, DEFAULT_BODY_CALIBRATION.maxSpeed),
     gentleSpeed: clampNumber(settings.gentleSpeed, 0.05, 0.4, DEFAULT_BODY_CALIBRATION.gentleSpeed),
@@ -193,14 +185,4 @@ export function normalizeSettings(settings = {}) {
 
 function clampRound(value, min, max, fallback) {
   return Math.round(clampNumber(value, min, max, fallback));
-}
-
-function clampNumber(value, min, max, fallback) {
-  const numericValue = Number(value);
-
-  if (!Number.isFinite(numericValue)) {
-    return fallback;
-  }
-
-  return Math.min(max, Math.max(min, numericValue));
 }

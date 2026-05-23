@@ -85,7 +85,7 @@ export function validateMotionCommand(command, state = {}, limits = DEFAULT_LIMI
     warnings.push("low_energy_speed_reduced");
   }
 
-  if (!["connected", "simulated_connected"].includes(state?.connectionState)) {
+  if (state?.connectionState !== "connected") {
     warnings.push("robot_not_connected");
   }
 

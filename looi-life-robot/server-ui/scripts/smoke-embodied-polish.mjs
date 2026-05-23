@@ -28,13 +28,12 @@ import { WakeLockManager } from "../public/js/runtime/wakeLockManager.js";
 
 const faceEvents = [];
 const motions = [];
-const spoken = [];
 const stops = [];
 const lifeState = {
   mood: "neutral",
   energy: 0.8,
   obstacle: false,
-  connectionState: "simulated_connected",
+  connectionState: "connected",
   stopRespectUntil: 0
 };
 const lifeEngine = {
@@ -82,18 +81,8 @@ const commandQueue = {
     return false;
   }
 };
-const voiceOutput = {
-  async speak(payload) {
-    spoken.push(payload);
-    await wait(20);
-    return { executed: true, payload };
-  },
-  cancel() {}
-};
-
 const sequencer = new ScenarioFrameSequencer({
   face: lifeEngine.face,
-  voiceOutput,
   commandQueue,
   lifeEngine,
   logger: () => {}
@@ -187,7 +176,6 @@ await low;
 
 const routerSequencer = new ScenarioFrameSequencer({
   face: lifeEngine.face,
-  voiceOutput,
   commandQueue,
   lifeEngine,
   logger: () => {}
@@ -209,7 +197,6 @@ const sequenceMapped = router.mapActionToSequence({
   type: "run_sequence",
   args: {
     frames: [
-      { type: "speech", text: "I can move softly.", tone: "happy" },
       ...MOVEMENTS.look_left,
       ...MOVEMENTS.look_right
     ]
@@ -223,7 +210,6 @@ const sequenceDisarmed = await router.execute({
   type: "run_sequence",
   args: {
     frames: [
-      { type: "speech", text: "I can wiggle softly.", tone: "happy" },
       ...MOVEMENTS.look_left,
       ...MOVEMENTS.look_right
     ],
@@ -232,13 +218,11 @@ const sequenceDisarmed = await router.execute({
   source: "local"
 }, {
   allowMotion: false,
-  allowSpeech: true,
   reason: "smoke_sequence_disarmed"
 });
 assert.equal(sequenceDisarmed.ok, true);
 assert.equal(sequenceDisarmed.result.partial, true);
 assert.equal(sequenceDisarmed.result.skippedFrames.includes("motion_not_allowed"), true);
-assert.equal(spoken.some((entry) => entry.text === "I can wiggle softly."), true);
 
 const sequenceArmed = await router.execute({
   type: "run_sequence",
@@ -249,7 +233,6 @@ const sequenceArmed = await router.execute({
   source: "local"
 }, {
   allowMotion: true,
-  allowSpeech: false,
   reason: "smoke_sequence_armed"
 });
 assert.equal(sequenceArmed.ok, true);

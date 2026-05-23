@@ -1,13 +1,9 @@
+import { clampInteger, clampNumber } from "../core/runtimeUtils.js";
+
 export function createDefaultBrainPolicy() {
   return {
-    localBrainEnabled: true,
     localMotionArmed: false,
-    localCameraAllowed: false,
-    localSpeechAllowed: true,
-    localVisionEnabled: true,
-    objectDetectionEnabledDefault: false,
-    allowFollowMovement: false,
-    followLostTimeoutMs: 2000,
+    followLostTimeoutMs: 3000,
     followTargetCenterX: 0.5,
     followCenterDeadband: 0.115,
     followSteerGain: 0.9,
@@ -25,16 +21,7 @@ export function clampBrainPolicy(policy = {}) {
   const value = isPlainObject(policy) ? policy : {};
 
   return {
-    localBrainEnabled: toBoolean(value.localBrainEnabled, defaults.localBrainEnabled),
     localMotionArmed: toBoolean(value.localMotionArmed, defaults.localMotionArmed),
-    localCameraAllowed: toBoolean(value.localCameraAllowed, defaults.localCameraAllowed),
-    localSpeechAllowed: toBoolean(value.localSpeechAllowed, defaults.localSpeechAllowed),
-    localVisionEnabled: toBoolean(value.localVisionEnabled, defaults.localVisionEnabled),
-    objectDetectionEnabledDefault: toBoolean(
-      value.objectDetectionEnabledDefault,
-      defaults.objectDetectionEnabledDefault
-    ),
-    allowFollowMovement: toBoolean(value.allowFollowMovement, defaults.allowFollowMovement),
     followLostTimeoutMs: clampInteger(
       value.followLostTimeoutMs,
       500,
@@ -104,24 +91,4 @@ function toBoolean(value, fallback) {
 
 function isPlainObject(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
-function clampInteger(value, min, max, fallback) {
-  const numeric = Number(value);
-
-  if (!Number.isFinite(numeric)) {
-    return fallback;
-  }
-
-  return Math.min(max, Math.max(min, Math.round(numeric)));
-}
-
-function clampNumber(value, min, max, fallback) {
-  const numeric = Number(value);
-
-  if (!Number.isFinite(numeric)) {
-    return fallback;
-  }
-
-  return Math.min(max, Math.max(min, numeric));
 }

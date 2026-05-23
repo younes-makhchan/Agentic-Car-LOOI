@@ -1,3 +1,4 @@
+import { clampInteger, clampNumber } from "../core/runtimeUtils.js";
 import { canonicalObjectLabel, normalizeObjectLabel } from "./objectLabelUtils.js";
 
 const ROBOFLOW_MODEL_INFO = {
@@ -182,10 +183,6 @@ export class ObjectDetectorEngine {
     return Boolean(this.running);
   }
 
-  isReady() {
-    return Boolean(this.ready);
-  }
-
   setMaxResults(value) {
     this.maxResults = clampInteger(value, 1, 30, this.maxResults);
     this.log(`maxResults set ${this.maxResults}`);
@@ -284,10 +281,6 @@ export class ObjectDetectorEngine {
     }
 
     return this.waitForNextResult(this.waitForResultMs);
-  }
-
-  normalizeDetections(rawResult = {}) {
-    return this.normalizeRoboflowData(rawResult);
   }
 
   getStatus() {
@@ -923,14 +916,4 @@ function summarizeDetectionsForLog(detections = []) {
 function numberOrNull(value) {
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
-}
-
-function clampInteger(value, min, max, fallback) {
-  const numeric = Number(value);
-  return Number.isFinite(numeric) ? Math.min(max, Math.max(min, Math.round(numeric))) : fallback;
-}
-
-function clampNumber(value, min, max, fallback) {
-  const numeric = Number(value);
-  return Number.isFinite(numeric) ? Math.min(max, Math.max(min, numeric)) : fallback;
 }

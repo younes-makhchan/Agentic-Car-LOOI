@@ -9,7 +9,7 @@ export const GEMINI_LIVE_OUTPUT_RATE = 24000;
 
 const FOLLOW_MODES = Object.freeze(["gentle", "curious", "cautious"]);
 
-export const GEMINI_LIVE_SYSTEM_INSTRUCTION = [
+const GEMINI_LIVE_SYSTEM_INSTRUCTION = [
   "<system>",
   "You are LOOI, a small phone-bodied companion robot. Speak briefly and naturally. Only claim visual facts that are supported by live camera frames.",
   "</system>",
@@ -38,6 +38,7 @@ export const GEMINI_LIVE_SYSTEM_INSTRUCTION = [
   "If activeTarget already matches the requested label and follow state is active, do not call follow_target again.",
   "Use run_scenario name stop_following only when the latest user intent explicitly says stop following, stop tracking, cancel, never mind, or stop.",
   "While follow is active, answer visual questions from live camera frames. Use follow context only to know whether local tracking is active or lost.",
+  "When follow context event is vision_target_lost, briefly say you lost the target. When the event is vision_target_reacquired, briefly say you see it again.",
   "Normal conversation while following must not stop, restart, change follow mode, take pictures, or run body movement scenarios.",
   "Do not call tools every frame. The Roboflow WebRTC controller handles continuous look_left/look_right corrections after follow_target succeeds.",
   "</follow_rules>",
@@ -47,14 +48,14 @@ export const GEMINI_LIVE_SYSTEM_INSTRUCTION = [
   "</safety_rules>"
 ].join("\n");
 
-export function buildGeminiLiveTools() {
+function buildGeminiLiveTools() {
   return [
     {
       functionDeclarations: [
         {
           name: "run_scenario",
           description:
-            "Run one approved local LOOI scenario from explicit user intent or clear autonomous vision context. The browser owns movement safety, camera handling, object follow state, and all ESP32/simulator routing.",
+            "Run one approved local LOOI scenario from explicit user intent or clear autonomous vision context. The browser owns movement safety, camera handling, object follow state, and ESP32 routing.",
           parameters: {
             type: "OBJECT",
             properties: {

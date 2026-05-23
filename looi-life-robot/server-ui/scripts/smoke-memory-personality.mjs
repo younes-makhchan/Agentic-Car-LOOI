@@ -7,11 +7,6 @@ import {
   describePersonalityForRuntime
 } from "../public/js/personality/personalityProfile.js";
 import { PersonalityTuning } from "../public/js/personality/personalityTuning.js";
-import {
-  createLearnedPhrase,
-  inferKnownIntent,
-  normalizePhrase
-} from "../public/js/personality/learnedPhrases.js";
 import { LifeEventEmitter } from "../public/js/personality/lifeEvents.js";
 import { LifeEngine } from "../public/js/life/lifeEngine.js";
 import { LearnedPhraseStore } from "../lib/memory/learnedPhraseStore.js";
@@ -52,33 +47,14 @@ tuning.resetDefaults();
 tuning.load();
 assert.equal(tuning.getProfile().coreTraits.talkativeness, 1);
 
-assert.equal(normalizePhrase("Don’t move, please!"), "don't move please");
-const learned = createLearnedPhrase({
-  phrase: "give me room",
-  meaning: "increase distance from user",
-  action: "run_scenario",
-  args: {
-    name: "back_up"
-  },
-  confidence: "high",
-  source: "manual"
-});
-const inferred = inferKnownIntent("please give me room", [learned]);
-assert.equal(inferred.action, "run_scenario");
-assert.equal(inferred.args.name, "back_up");
-assert.equal(inferred.source, "learned_phrase");
-assert.equal(inferKnownIntent("come here").action, "run_scenario");
-assert.equal(inferKnownIntent("come here").args.name, "come_closer");
-assert.equal(inferKnownIntent("freeze"), null);
-
 const memoryStore = new MemoryStore({ rootDir: tempRoot });
 const longTerm = await memoryStore.appendLongTermMemory("The user prefers gentle motion.", {
   source: "smoke",
   importance: "high"
 });
 assert.equal(longTerm.type, "long_term");
-await memoryStore.appendDailyMemory("We tested personality smoke.", { source: "smoke" });
-await memoryStore.appendPersonalityNote("LOOI should keep replies short.", { source: "smoke" });
+await memoryStore.writeMemory({ type: "daily", text: "We tested personality smoke.", metadata: { source: "smoke" } });
+await memoryStore.writeMemory({ type: "personality_note", text: "LOOI should keep replies short.", metadata: { source: "smoke" } });
 const memoryContext = await memoryStore.getCompactMemoryContext();
 assert.match(memoryContext.longTerm, /gentle motion/);
 assert.match(memoryContext.today, /personality smoke/);
@@ -89,10 +65,18 @@ await assert.rejects(
 );
 
 const phraseStore = new LearnedPhraseStore({ rootDir: tempRoot });
-const storedPhrase = await phraseStore.addPhrase(learned);
+const storedPhrase = await phraseStore.addPhrase({
+  phrase: "give me room",
+  meaning: "increase distance from user",
+  action: "run_scenario",
+  args: {
+    name: "back_up"
+  },
+  confidence: "high",
+  source: "manual"
+});
 assert.equal(storedPhrase.normalizedPhrase, "give me room");
 assert.equal((await phraseStore.listPhrases()).length, 1);
-assert.equal((await phraseStore.findMatches("hey give me room"))[0].action, "run_scenario");
 await phraseStore.recordUse(storedPhrase.id);
 assert.equal((await phraseStore.listPhrases())[0].useCount, 1);
 await phraseStore.removePhrase(storedPhrase.id);

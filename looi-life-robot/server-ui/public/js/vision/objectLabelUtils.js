@@ -1,4 +1,4 @@
-export const OBJECT_LABEL_ALIASES = {
+const OBJECT_LABEL_ALIASES = {
   apple: ["apple"],
   banana: ["banana"],
   person: ["person", "me", "human", "user"],

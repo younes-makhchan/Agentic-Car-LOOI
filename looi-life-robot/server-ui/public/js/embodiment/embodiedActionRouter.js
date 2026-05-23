@@ -61,7 +61,6 @@ export class EmbodiedActionRouter {
       source: action.source ?? context.source ?? "scenario_runtime",
       priority,
       allowMotion: context.allowMotion !== false,
-      allowSpeech: context.allowSpeech !== false,
       allowCamera: context.allowCamera === true,
       reason: action.reason ?? context.reason ?? action.type,
       context

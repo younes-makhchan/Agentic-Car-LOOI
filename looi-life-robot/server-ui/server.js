@@ -60,7 +60,6 @@ const PUBLIC_CONFIG = {
   maxSpeed: 0.4,
   maxDurationMs: 1000,
   localFirstMode: true,
-  localBrainDefaultEnabled: true,
   localBrainMaxThoughtsPerMinute: Number(process.env.LOCAL_BRAIN_MAX_THOUGHTS_PER_MINUTE || 12),
   localBrainServerEnabled: process.env.LOCAL_BRAIN_ENABLED !== "false",
   localBrainProvider,
@@ -76,23 +75,19 @@ const PUBLIC_CONFIG = {
   roboflowWebrtcTerminateUrl: "/api/roboflow-webrtc/terminate",
   geminiVisionAssistDefault: true,
   geminiVisionAssistIntervalMs: 1500,
-  localVisionEnabled: true,
-  objectDetectionEnabledDefault: false,
   objectDetectionProvider: "roboflow_webrtc",
   objectDetectorMaxResults: 12,
   objectDetectorModuleUrl: "/vendor/roboflow-inference-sdk/index.es.js",
-  followLostTimeoutMs: 2000,
-  maxObjectFollowSpeed: 0.18,
+  followLostTimeoutMs: 3000,
+  followTargetCenterX: 0.5,
+  followCenterDeadband: 0.115,
+  maxObjectFollowSpeed: 0.036,
+  followCommandDurationMs: 30,
+  followCommandRefreshMs: 70,
   localBrainEventTimeoutMs: Number(process.env.LOCAL_BRAIN_EVENT_TIMEOUT_MS || 12000),
-  alwaysListeningDefault: false,
-  audioLevelMonitorDefault: false,
-  wakeNamesDefault: ["looi", "louie", "lui", "robot"],
   attentionWindowMs: Number(process.env.LOOI_ATTENTION_WINDOW_MS || 20000),
   conversationWindowMs: Number(process.env.LOOI_CONVERSATION_WINDOW_MS || 30000),
-  speechGateEventCooldownMs: Number(process.env.LOOI_SPEECH_GATE_EVENT_COOLDOWN_MS || 800),
-  looiModeDefault: false,
-  attentionBodyTrackingDefault: false,
-  keepRobotAwakeDefault: false,
+  localBrainEventCooldownMs: Number(process.env.LOCAL_BRAIN_EVENT_COOLDOWN_MS || 800),
   performanceMonitorEnabledDefault: true,
   cameraObservationPostMs: 3000,
   cameraSnapshotMaxWidth: 320
@@ -761,8 +756,7 @@ function summarizeTelemetry(telemetry = null) {
     type: telemetry.type,
     battery: telemetry.battery,
     rssi: telemetry.rssi,
-    motor_state: telemetry.motor_state,
-    simulated: telemetry.simulated
+    motor_state: telemetry.motor_state
   };
 }
 

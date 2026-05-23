@@ -1,3 +1,5 @@
+import { clampNumber } from "../../core/runtimeUtils.js";
+
 export async function openDrink(ctx, args = {}) {
   const durationMs = clampNumber(args.durationMs, 300, 4000, 1600);
 
@@ -46,9 +48,4 @@ export async function finishDrink(ctx, args = {}) {
     type: "action",
     detail: { state: "idle" }
   };
-}
-
-function clampNumber(value, min, max, fallback) {
-  const numeric = Number(value);
-  return Number.isFinite(numeric) ? Math.min(max, Math.max(min, numeric)) : fallback;
 }

@@ -67,18 +67,6 @@ export class PersonalityTuning {
     });
   }
 
-  patchSpeechStyle(name, value) {
-    if (!Object.hasOwn(DEFAULT_PERSONALITY_PROFILE.speechStyle, name)) {
-      return this.getProfile();
-    }
-
-    return this.patchProfile({
-      speechStyle: {
-        [name]: value
-      }
-    });
-  }
-
   resetDefaults() {
     this.profile = createPersonalityProfile();
     this.emitChange();

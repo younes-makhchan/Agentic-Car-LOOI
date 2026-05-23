@@ -5,7 +5,7 @@
 
 #include <math.h>
 
-// This firmware intentionally contains no AI, personality, Kimi logic, or Life
+// This firmware intentionally contains no AI, personality, or Life
 // Engine logic. The phone/server side will decide high-level intent later.
 // The ESP32 is only the final motor safety layer that executes short, clamped
 // motion commands and automatically stops.

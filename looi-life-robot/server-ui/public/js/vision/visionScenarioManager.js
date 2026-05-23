@@ -1,4 +1,6 @@
-import { canonicalObjectLabel, getObjectAliases } from "./objectLabelUtils.js";
+import { canonicalObjectLabel } from "./objectLabelUtils.js";
+
+const DEFAULT_FOLLOW_LOCK_TIMEOUT_MS = 3000;
 
 export class VisionScenarioManager {
   constructor({
@@ -7,12 +9,9 @@ export class VisionScenarioManager {
     objectTracker,
     visionState,
     followTargetController,
-    voiceOutput,
     face,
     eventBus,
-    getPolicy,
-    armFollowMovement,
-    disarmFollowMovement,
+    armMovement,
     logger
   } = {}) {
     this.cameraInput = cameraInput;
@@ -20,13 +19,11 @@ export class VisionScenarioManager {
     this.objectTracker = objectTracker;
     this.visionState = visionState;
     this.followTargetController = followTargetController;
-    this.voiceOutput = voiceOutput;
     this.face = face;
     this.eventBus = eventBus;
-    this.getPolicy = getPolicy;
-    this.armFollowMovement = armFollowMovement;
-    this.disarmFollowMovement = disarmFollowMovement;
+    this.armMovement = armMovement;
     this.logger = logger;
+    this.detectorStartedByFollow = false;
   }
 
   async startFollowTarget({ label, aliases = [], mode = "gentle", trackId = null } = {}) {
@@ -39,16 +36,6 @@ export class VisionScenarioManager {
       });
     }
 
-    const policy = this.policy();
-
-    if (!policy.localVisionEnabled) {
-      return result("rejected", false, "Local object vision is disabled.", {
-        scenario: "follow_object",
-        targetLabel,
-        targetVisible: false
-      });
-    }
-
     this.visionState?.setScenario?.({
       active: true,
       type: "follow_object",
@@ -57,19 +44,22 @@ export class VisionScenarioManager {
       state: "searching",
       reason: "follow_starting"
     });
-    this.face?.setVisionIndicator?.(true, "searching");
-    this.eventBus?.publish?.("vision_follow_starting", {
-      label: targetLabel,
-      aliases,
-      mode,
-      trackId
-    }, { source: "vision", priority: 3 });
+    let target = this.findTarget(targetLabel, aliases, trackId);
+    const detectorActive = this.isDetectorActive();
+    this.log(
+      `follow request target=${targetLabel} detectorActive=${detectorActive} currentTarget=${describeTarget(target)}`
+    );
 
-    await this.ensureFreshDetection();
+    if (!isFreshFollowTarget(target)) {
+      target = await this.waitForVisibleTarget({
+        label: targetLabel,
+        aliases,
+        trackId,
+        timeoutMs: this.getFollowLockTimeoutMs()
+      });
+    }
 
-    const target = this.findTarget(targetLabel, aliases, trackId);
-
-    if (!target?.visible) {
+    if (!isFreshFollowTarget(target)) {
       const message = `I can't see the ${targetLabel}. Can you show it to me?`;
       this.visionState?.setScenario?.({
         active: true,
@@ -79,14 +69,14 @@ export class VisionScenarioManager {
         state: "not_found",
         reason: "target_not_visible"
       });
-      this.face?.setVisionIndicator?.(true, "lost");
       this.face?.stopFollow?.();
       this.eventBus?.publish?.("vision_follow_not_found", {
         label: targetLabel,
         aliases,
         message
       }, { source: "vision", priority: 3 });
-      this.objectDetectorEngine?.stop?.();
+      this.log(`follow target not found target=${targetLabel}; detector left running=${this.isDetectorActive()}`, "warn");
+      this.detectorStartedByFollow = false;
       return result("completed", false, message, {
         scenario: "follow_object",
         targetLabel,
@@ -95,12 +85,7 @@ export class VisionScenarioManager {
       });
     }
 
-    this.visionState?.setActiveTarget?.({
-      label: target.label,
-      aliases: [...getObjectAliases(target.label), ...aliases],
-      trackId: target.id ?? target.trackId
-    });
-    this.armFollowMovement?.({
+    this.armMovement?.({
       requestedLabel: targetLabel,
       resolvedLabel: target.label,
       trackId: target.id ?? target.trackId,
@@ -111,8 +96,8 @@ export class VisionScenarioManager {
       trackId: target.id ?? target.trackId,
       mode
     });
-    this.face?.setVisionIndicator?.(true, "following");
     this.face?.startFollow?.();
+    this.log(`follow locked target=${target.label} track=${target.id ?? target.trackId ?? "none"}`);
 
     return result(started?.ok === false ? "rejected" : "completed", started?.ok !== false, `Started following ${target.label}.`, {
       scenario: "follow_object",
@@ -125,29 +110,21 @@ export class VisionScenarioManager {
 
   stopFollowing(reason = "follow_stop") {
     const stopped = this.followTargetController?.stop?.(reason) ?? { ok: true, reason };
-    this.objectDetectorEngine?.stop?.();
-    this.visionState?.clearActiveTarget?.(reason);
-    this.face?.setVisionIndicator?.(false);
+    if (this.detectorStartedByFollow) {
+      this.objectDetectorEngine?.stop?.();
+      this.detectorStartedByFollow = false;
+    }
+    if (!this.followTargetController?.stop) {
+      this.visionState?.clearActiveTarget?.(reason);
+    }
     if (stopped?.wasRunning !== false) {
       this.face?.stopFollow?.();
     }
-    this.disarmFollowMovement?.({
-      reason,
-      stopped
-    });
-    this.eventBus?.publish?.("vision_follow_stopped", {
-      reason,
-      stopped
-    }, { source: "vision", priority: 3 });
     return result("completed", true, "Stopped following target.", {
       scenario: "follow_object",
       reason,
       stopped
     });
-  }
-
-  stopScenario(reason = "scenario_stop") {
-    return this.stopFollowing(reason);
   }
 
   getStatus() {
@@ -172,30 +149,85 @@ export class VisionScenarioManager {
       ?? null;
   }
 
-  async ensureFreshDetection() {
-    if (!this.cameraInput?.isRunning?.()) {
+  async waitForVisibleTarget({ label, aliases = [], trackId = null, timeoutMs = DEFAULT_FOLLOW_LOCK_TIMEOUT_MS } = {}) {
+    let target = this.findTarget(label, aliases, trackId);
+    if (isFreshFollowTarget(target)) {
+      return target;
+    }
+
+    const wasDetectorActive = this.isDetectorActive();
+    const detectorStarted = await this.ensureDetectorRunning();
+    if (!wasDetectorActive && detectorStarted) {
+      this.detectorStartedByFollow = true;
+    }
+
+    target = this.findTarget(label, aliases, trackId);
+    if (isFreshFollowTarget(target)) {
+      return target;
+    }
+
+    if (!this.isDetectorActive()) {
       return null;
     }
 
-    if (!this.objectDetectorEngine?.isRunning?.()) {
-      await this.objectDetectorEngine?.start?.();
+    if (typeof this.objectDetectorEngine?.onDetections !== "function") {
+      const detection = await this.objectDetectorEngine?.detectOnce?.();
+      if (detection) {
+        const tracks = this.objectTracker?.update?.(detection) ?? [];
+        this.visionState?.updateFromDetections?.(detection, tracks);
+      }
+      return this.findTarget(label, aliases, trackId);
     }
 
-    const result = await this.objectDetectorEngine?.detectOnce?.();
-    if (!result) {
-      return null;
-    }
+    this.log(`waiting for target=${label} timeout=${Math.round(timeoutMs)}ms detectorActive=${this.isDetectorActive()}`, "debug");
 
-    const tracks = this.objectTracker?.update?.(result) ?? [];
-    this.visionState?.updateFromDetections?.(result, tracks);
-    return result;
+    return new Promise((resolve) => {
+      let done = false;
+      const finish = (value) => {
+        if (done) {
+          return;
+        }
+        done = true;
+        unsubscribe();
+        globalThis.clearTimeout(timeout);
+        resolve(value);
+      };
+      const checkTarget = () => {
+        const nextTarget = this.findTarget(label, aliases, trackId);
+        if (isFreshFollowTarget(nextTarget)) {
+          finish(nextTarget);
+        }
+      };
+      const unsubscribe = this.objectDetectorEngine?.onDetections?.(() => {
+        checkTarget();
+      }) ?? (() => {});
+      const timeout = globalThis.setTimeout(() => finish(null), Math.max(1, Number(timeoutMs) || DEFAULT_FOLLOW_LOCK_TIMEOUT_MS));
+
+      checkTarget();
+    });
   }
 
-  policy() {
-    return {
-      localVisionEnabled: true,
-      ...(typeof this.getPolicy === "function" ? this.getPolicy() : {})
-    };
+  async ensureDetectorRunning() {
+    if (!this.cameraInput?.isRunning?.()) {
+      this.log("follow detector unavailable: camera is not running", "warn");
+      return false;
+    }
+
+    if (this.isDetectorActive()) {
+      return true;
+    }
+
+    const status = await this.objectDetectorEngine?.start?.();
+    return Boolean(status?.running || status?.starting || this.isDetectorActive());
+  }
+
+  isDetectorActive() {
+    const status = this.objectDetectorEngine?.getStatus?.() ?? {};
+    return Boolean(status.running || status.starting || this.objectDetectorEngine?.isRunning?.());
+  }
+
+  getFollowLockTimeoutMs() {
+    return this.followTargetController?.getStatus?.().lostTimeoutMs ?? DEFAULT_FOLLOW_LOCK_TIMEOUT_MS;
   }
 
   log(message, level = "info") {
@@ -213,4 +245,16 @@ function result(status, executed, message, detail = {}) {
     message,
     detail
   };
+}
+
+function isFreshFollowTarget(target = null) {
+  return Boolean(target?.visible && !target.lostAt);
+}
+
+function describeTarget(target = null) {
+  if (!target) {
+    return "none";
+  }
+
+  return `${target.label ?? "unknown"}:${target.visible ? "visible" : "not_visible"}:track=${target.id ?? target.trackId ?? "none"}:lostAt=${target.lostAt ? "yes" : "no"}`;
 }

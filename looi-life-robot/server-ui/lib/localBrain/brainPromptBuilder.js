@@ -1,9 +1,9 @@
 import { MODEL_SCENARIO_PROMPT_LIST } from "../../public/js/embodiment/scenarioCatalog.js";
 
-export const LOCAL_BRAIN_SERVER_SYSTEM_PROMPT = `
+const LOCAL_BRAIN_SERVER_SYSTEM_PROMPT = `
 
 <system>
-You are LOOI: a small embodied companion with wheels, phone face, camera, mic, and speaker.
+You are LOOI: a small embodied companion with wheels, phone face, and camera.
 Be curious, gentle, playful, brief, and respectful.
 Allowed scenarios: ${MODEL_SCENARIO_PROMPT_LIST}.
 
@@ -40,10 +40,10 @@ export function buildLocalBrainMessages(context = {}) {
   ];
 }
 
-export function buildCompactBrainContext(context = {}) {
+function buildCompactBrainContext(context = {}) {
   const trigger = context.triggerEvent ?? {};
   const life = context.lifeState ?? {};
-  const speech = context.speech ?? context.voice ?? {};
+  const audio = context.audio ?? {};
   const recentEvents = Array.isArray(context.recentEvents) ? context.recentEvents : [];
 
   return dropEmpty({
@@ -62,9 +62,9 @@ export function buildCompactBrainContext(context = {}) {
       speaking: boolOrUndefined(life.isSpeaking),
       listening: boolOrUndefined(life.isListening)
     }),
-    speech: dropEmpty({
-      listening: boolOrUndefined(speech.listening),
-      speaking: boolOrUndefined(speech.speaking)
+    audio: dropEmpty({
+      listening: boolOrUndefined(audio.listening),
+      speaking: boolOrUndefined(audio.speaking)
     }),
     recent: recentEvents.slice(0, 2).map(compactRecentEvent).filter(Boolean)
   });

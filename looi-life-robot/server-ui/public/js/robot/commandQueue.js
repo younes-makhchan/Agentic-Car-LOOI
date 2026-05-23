@@ -1,3 +1,5 @@
+import { waitMs as wait } from "../core/runtimeUtils.js";
+
 const MIN_DURATION_MS = 50;
 const COMMAND_BUFFER_MS = 80;
 const MAX_RAMP_MS = 500;
@@ -185,32 +187,6 @@ export class CommandQueue {
     }
   }
 
-  enqueueSequence(commands, label = "sequence") {
-    if (!Array.isArray(commands) || commands.length === 0) {
-      return Promise.resolve([]);
-    }
-
-    const tasks = commands.map((command, index) => {
-      if (command?.type === "stop" || command?.kind === "stop") {
-        return this.enqueueItem({
-          kind: "stop",
-          label: command.label ?? `${label}_${index + 1}_stop`,
-          reason: command.reason ?? `${label}_stop`
-        });
-      }
-
-      return this.enqueueMotion({
-        linear: command?.linear ?? 0,
-        angular: command?.angular ?? 0,
-        durationMs: command?.durationMs ?? 300,
-        rampMs: command?.rampMs,
-        label: command?.label ?? `${label}_${index + 1}`
-      });
-    });
-
-    return Promise.all(tasks);
-  }
-
   clear(reason = "queue_clear") {
     const pending = [...this.queue];
 
@@ -269,15 +245,6 @@ export class CommandQueue {
 
   getRecentCommands({ limit = 20 } = {}) {
     return this.commandHistory.slice(0, clamp(Math.floor(Number(limit) || 20), 1, this.maxHistory));
-  }
-
-  onCommand(callback) {
-    if (typeof callback !== "function") {
-      return () => {};
-    }
-
-    this.commandCallbacks.add(callback);
-    return () => this.commandCallbacks.delete(callback);
   }
 
   enqueueItem(command) {
@@ -449,12 +416,6 @@ export class CommandQueue {
   }
 }
 
-export function wait(ms) {
-  return new Promise((resolve) => {
-    globalThis.setTimeout(resolve, ms);
-  });
-}
-
 function consoleLogRobotMotion(event, command = {}, level = "info") {
   const payload = {
     event,
@@ -480,7 +441,7 @@ function consoleLogRobotMotion(event, command = {}, level = "info") {
   globalThis.console?.[method]?.("[LOOI][robot-motion]", payload);
 }
 
-export function clamp(value, min, max) {
+function clamp(value, min, max) {
   const numericValue = Number(value);
 
   if (!Number.isFinite(numericValue)) {

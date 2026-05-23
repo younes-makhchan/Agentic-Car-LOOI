@@ -1,3 +1,5 @@
+import { clampNumber } from "../core/runtimeUtils.js";
+
 const DEFAULT_OBSERVATION = {
   timestamp: null,
   cameraRunning: false,
@@ -145,14 +147,6 @@ export class CameraInput {
   async switchCamera() {
     const nextFacingMode = this.facingMode === "user" ? "environment" : "user";
     return this.startCamera({ facingMode: nextFacingMode });
-  }
-
-  async openFrontCamera() {
-    return this.startCamera({ facingMode: "user" });
-  }
-
-  async openBackCamera() {
-    return this.startCamera({ facingMode: "environment" });
   }
 
   async captureSnapshot({
@@ -585,14 +579,4 @@ function estimateDataUrlBytes(dataUrl) {
   const commaIndex = dataUrl.indexOf(",");
   const base64 = commaIndex >= 0 ? dataUrl.slice(commaIndex + 1) : dataUrl;
   return Math.round((base64.length * 3) / 4);
-}
-
-function clampNumber(value, min, max, fallback) {
-  const numericValue = Number(value);
-
-  if (!Number.isFinite(numericValue)) {
-    return fallback;
-  }
-
-  return Math.min(max, Math.max(min, numericValue));
 }

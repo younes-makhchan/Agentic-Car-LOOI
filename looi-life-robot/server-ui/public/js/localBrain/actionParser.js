@@ -1,3 +1,4 @@
+import { clampNumber } from "../core/runtimeUtils.js";
 import {
   normalizeRunScenarioName
 } from "../embodiment/scenarioCatalog.js";
@@ -59,7 +60,7 @@ export function parseBrainResponse(raw) {
   };
 }
 
-export function normalizeBrainAction(action) {
+function normalizeBrainAction(action) {
   const errors = [];
 
   if (!action) {
@@ -210,14 +211,4 @@ function findUnsafeMotorKey(value) {
 
 function normalizeText(value, fallback) {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
-}
-
-function clampNumber(value, min, max, fallback) {
-  const numeric = Number(value);
-
-  if (!Number.isFinite(numeric)) {
-    return fallback;
-  }
-
-  return Math.min(max, Math.max(min, numeric));
 }

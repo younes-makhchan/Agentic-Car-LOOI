@@ -1,3 +1,5 @@
+import { clampNumber } from "../../core/runtimeUtils.js";
+
 export async function photoPoseAndCapture(ctx, args = {}) {
   if (ctx.allowCamera !== true) {
     return {
@@ -142,12 +144,4 @@ function sanitizeSnapshotMetadata(snapshot = null) {
     note: snapshot.note ?? "",
     hasDataUrl: typeof snapshot.dataUrl === "string" && snapshot.dataUrl.startsWith("data:image/")
   };
-}
-
-function clampNumber(value, min, max, fallback) {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) {
-    return fallback;
-  }
-  return Math.min(max, Math.max(min, numeric));
 }

@@ -15,11 +15,9 @@ export function sanitizeBrainContext(input = {}) {
     camera: compactCameraState(context.camera ?? context.cameraStatus),
     vision: compactVisionState(context.vision),
     recentObjectReference: compactRecentObjectReference(context.recentObjectReference),
-    speech: compactSpeechState(context.speech ?? context.speechStatus ?? context.voice),
-    voice: compactSpeechState(context.voice ?? context.voiceStatus),
+    audio: compactAudioState(context.audio ?? context.audioStatus ?? context.geminiLive),
     personality: compactPersonality(context.personality),
     recentEvents: compactRecentEvents(context.recentEvents, 20),
-    simulatorMode: Boolean(context.simulatorMode),
     robotConnected: Boolean(context.robotConnected),
     connectionState: shortText(context.connectionState, 80),
     browserTimestamp: shortText(context.browserTimestamp, 80)
@@ -76,12 +74,12 @@ function compactRecentObjectReference(value) {
     : null;
 }
 
-export function compactRecentEvents(events, limit = 20) {
+function compactRecentEvents(events, limit = 20) {
   const list = Array.isArray(events) ? events : [];
   return list.slice(0, clampInteger(limit, 1, 50, 20)).map(compactEvent);
 }
 
-export function compactLifeState(lifeState) {
+function compactLifeState(lifeState) {
   const state = isPlainObject(lifeState) ? lifeState : {};
   return pick(state, [
     "mood",
@@ -105,7 +103,7 @@ export function compactLifeState(lifeState) {
   ]);
 }
 
-export function compactCameraState(camera) {
+function compactCameraState(camera) {
   const status = isPlainObject(camera) ? camera : {};
   const observation = isPlainObject(status.latestObservation)
     ? status.latestObservation
@@ -132,26 +130,25 @@ export function compactCameraState(camera) {
   });
 }
 
-export function compactSpeechState(speech) {
-  const state = isPlainObject(speech) ? speech : {};
+function compactAudioState(audio) {
+  const state = isPlainObject(audio) ? audio : {};
+  const geminiLive = isPlainObject(state.geminiLive) ? state.geminiLive : state;
   return {
-    listening: Boolean(state.listening ?? state.speechListening),
+    listening: Boolean(state.listening ?? geminiLive.micStreaming),
     lastTranscript: shortText(
-      state.lastTranscript?.text ?? state.lastTranscript ?? state.finalTranscript,
+      state.lastTranscript?.text ?? state.lastTranscript ?? geminiLive.lastInputTranscript,
       300
     ),
-    speaking: Boolean(state.speaking ?? state.isSpeaking),
-    muted: Boolean(state.muted ?? state.voiceMuted)
+    speaking: Boolean(state.speaking ?? state.isSpeaking ?? geminiLive.audioPlaying)
   };
 }
 
-export function compactTelemetry(telemetry) {
+function compactTelemetry(telemetry) {
   const data = isPlainObject(telemetry) ? telemetry : {};
   return pick(data, [
     "motor_state",
     "battery",
     "rssi",
-    "simulated",
     "left_speed",
     "right_speed",
     "current_left_speed",
@@ -159,7 +156,7 @@ export function compactTelemetry(telemetry) {
   ]);
 }
 
-export function compactPersonality(personality) {
+function compactPersonality(personality) {
   const profile = isPlainObject(personality) ? personality : {};
   return {
     name: shortText(profile.name, 60),
@@ -175,10 +172,7 @@ export function compactPersonality(personality) {
 function compactPolicy(policy) {
   const value = isPlainObject(policy) ? policy : {};
   return {
-    localBrainEnabled: Boolean(value.localBrainEnabled),
-    localMotionArmed: Boolean(value.localMotionArmed),
-    localCameraAllowed: Boolean(value.localCameraAllowed),
-    localSpeechAllowed: value.localSpeechAllowed !== false
+    localMotionArmed: Boolean(value.localMotionArmed)
   };
 }
 
@@ -274,11 +268,6 @@ function scrubText(text, maxLength) {
 function looksSecretLike(value) {
   const text = String(value ?? "");
   return SECRET_PATTERNS.some((pattern) => pattern.test(text));
-}
-
-function safeNumber(value, fallback) {
-  const numeric = Number(value);
-  return Number.isFinite(numeric) ? numeric : fallback;
 }
 
 function finiteOrNull(value) {

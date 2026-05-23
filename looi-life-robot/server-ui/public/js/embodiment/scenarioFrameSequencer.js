@@ -1,3 +1,4 @@
+import { clampNumber, stopCommandQueueMotion, waitMs } from "../core/runtimeUtils.js";
 import { validateMotionCommand } from "../life/safetyGate.js";
 
 const SAFE_LINEAR = 0.22;
@@ -8,7 +9,6 @@ const DEFAULT_RAMP_MS = 160;
 export class ScenarioFrameSequencer {
   constructor({
     face,
-    voiceOutput,
     commandQueue,
     cameraInput,
     lifeEngine,
@@ -18,7 +18,6 @@ export class ScenarioFrameSequencer {
     logger
   } = {}) {
     this.face = face;
-    this.voiceOutput = voiceOutput;
     this.commandQueue = commandQueue;
     this.cameraInput = cameraInput;
     this.lifeEngine = lifeEngine;
@@ -181,7 +180,6 @@ export class ScenarioFrameSequencer {
     this.running = false;
     this.currentSequence = null;
     this.activeFrame = null;
-    this.voiceOutput?.cancel?.(reason);
     this.eventBus?.publish?.("sequence_interrupted", { reason }, { source: "scenario_frame_sequencer", priority: 9 });
   }
 
@@ -223,8 +221,6 @@ export class ScenarioFrameSequencer {
         return this.applyFaceFrame(frame);
       case "motion":
         return this.applyMotionFrame(frame, context);
-      case "speech":
-        return this.applySpeechFrame(frame, context);
       case "action":
         return this.applyActionFrame(frame, context);
       case "composite":
@@ -288,30 +284,6 @@ export class ScenarioFrameSequencer {
     } catch (error) {
       return { ok: true, skipped: true, type: "motion", reason: error.message };
     }
-  }
-
-  async applySpeechFrame(frame, context) {
-    if (!context.allowSpeech) {
-      return { ok: true, skipped: true, type: "speech", reason: "speech_not_allowed" };
-    }
-
-    if (!this.voiceOutput?.speak) {
-      await wait(frame.durationMs);
-      return { ok: true, skipped: true, type: "speech", reason: "voice_output_unavailable" };
-    }
-
-    const result = await this.voiceOutput.speak({
-      text: frame.text,
-      tone: frame.tone,
-      interrupt: frame.interrupt === true
-    });
-
-    if (!result.executed) {
-      await wait(frame.durationMs);
-      return { ok: true, skipped: true, type: "speech", reason: result.reason, detail: result };
-    }
-
-    return { ok: true, type: "speech", detail: result };
   }
 
   async applyActionFrame(frame, context) {
@@ -418,7 +390,6 @@ export class ScenarioFrameSequencer {
 
     if (frame.eventType === "motion_stop") {
       const reason = frame.payload?.reason ?? "sequence_motion_stop";
-      this.voiceOutput?.cancel?.(reason);
       await stopCommandQueueMotion(this.commandQueue, reason);
       this.lifeEngine?.receiveEvent?.({ type: "motion_stop", reason });
       await wait(frame.durationMs);
@@ -449,16 +420,11 @@ export class ScenarioFrameSequencer {
     this.lifeEngine = lifeEngine;
   }
 
-  setSafetyGate(safetyGate) {
-    this.safetyGate = safetyGate;
-  }
-
   buildContext(sequence, options, token) {
     return {
       source: options.source ?? "scenario_runtime",
       priority: Number(options.priority ?? sequence.priority ?? 0),
       allowMotion: options.allowMotion !== false,
-      allowSpeech: options.allowSpeech !== false,
       allowCamera: options.allowCamera === true,
       reason: options.reason ?? sequence.name,
       runtimeContext: options.context ?? {},
@@ -469,7 +435,6 @@ export class ScenarioFrameSequencer {
   buildActionContext(context) {
     return {
       face: this.face,
-      voiceOutput: this.voiceOutput,
       commandQueue: this.commandQueue,
       cameraInput: this.cameraInput,
       lifeEngine: this.lifeEngine,
@@ -479,7 +444,6 @@ export class ScenarioFrameSequencer {
       source: context.source,
       priority: context.priority,
       allowMotion: context.allowMotion,
-      allowSpeech: context.allowSpeech,
       allowCamera: context.allowCamera,
       reason: context.reason,
       runtimeContext: context.runtimeContext,
@@ -575,16 +539,7 @@ export function validateFrameSequence(sequence) {
 }
 
 function wait(ms) {
-  const delay = Math.max(0, Math.min(5000, Number(ms) || 0));
-  return delay > 0 ? new Promise((resolve) => globalThis.setTimeout(resolve, delay)) : Promise.resolve();
-}
-
-function stopCommandQueueMotion(commandQueue, reason) {
-  if (commandQueue?.stopMotion) {
-    return commandQueue.stopMotion(reason);
-  }
-
-  return commandQueue?.cancelMotion?.(reason);
+  return waitMs(ms, { maxMs: 5000 });
 }
 
 function normalizeFrame(frame = {}) {
@@ -592,7 +547,7 @@ function normalizeFrame(frame = {}) {
     return { ok: false, error: "frame_must_be_object" };
   }
 
-  const type = ["face", "motion", "speech", "pause", "event", "composite", "action"].includes(frame.type)
+  const type = ["face", "motion", "pause", "event", "composite", "action"].includes(frame.type)
     ? frame.type
     : inferFrameType(frame);
   const normalized = {
@@ -616,11 +571,6 @@ function normalizeFrame(frame = {}) {
     normalized.expression = normalizeExpression(frame.expression);
     normalized.intensity = clampNumber(frame.intensity, 0, 1.5, 0.8);
     normalized.eyeDirection = normalizeEyeDirection(frame.eyeDirection);
-  }
-
-  if (type === "speech") {
-    normalized.text = typeof frame.text === "string" ? frame.text.trim().slice(0, 240) : "";
-    normalized.tone = normalizeTone(frame.tone);
   }
 
   if (type === "action") {
@@ -657,10 +607,6 @@ function normalizeFrame(frame = {}) {
 }
 
 function inferFrameType(frame) {
-  if (typeof frame.text === "string") {
-    return "speech";
-  }
-
   if (Number.isFinite(Number(frame.linear)) || Number.isFinite(Number(frame.angular))) {
     return "motion";
   }
@@ -688,18 +634,6 @@ function normalizeExpression(expression) {
 
 function normalizeEyeDirection(direction) {
   return ["left", "right", "center", "up", "down"].includes(direction) ? direction : "center";
-}
-
-function normalizeTone(tone) {
-  return ["soft", "happy", "curious", "serious", "shy", "playful"].includes(tone) ? tone : "soft";
-}
-
-function clampNumber(value, min, max, fallback) {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) {
-    return fallback;
-  }
-  return Math.min(max, Math.max(min, numeric));
 }
 
 function clampRound(value, min, max, fallback) {

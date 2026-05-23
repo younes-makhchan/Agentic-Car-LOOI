@@ -72,7 +72,7 @@
           <p class="eyebrow">Phone-Bodied Life Robot</p>
           <h1>LOOI Life Robot</h1>
           <p class="subtitle">
-            Local-first phone-bodied robot runtime with Life Engine, voice, camera, memory,
+            Local-first phone-bodied robot runtime with Life Engine, Gemini Live, camera, memory,
             local brain scaffolding, and safe ESP32 body control.
           </p>
         </header>
@@ -81,12 +81,8 @@
           <a href="#settingsStatus">Status</a>
           <a href="#settingsRobotBody">Body</a>
           <a href="#settingsLocalBrain">Brain</a>
-          <a href="#settingsEars">Ears</a>
-          <a href="#settingsLooiMode">LOOI</a>
           <a href="#settingsCamera">Camera</a>
-          <a href="#settingsVoice">Voice</a>
           <a href="#settingsMovement">Move</a>
-          <a href="#settingsCalibration">Tune</a>
           <a href="#settingsLog">Log</a>
         </nav>
 
@@ -149,18 +145,6 @@
           <div class="button-grid">
             <button id="lifeEngineToggle" class="primary-button" type="button">
               Pause Life Engine
-            </button>
-            <button id="simulateAttentionButton" type="button">
-              Simulate User Attention
-            </button>
-            <button id="simulateObstacleButton" type="button">
-              Simulate Obstacle
-            </button>
-            <button id="simulateBoredomButton" type="button">
-              Simulate Boredom
-            </button>
-            <button id="simulateLowEnergyButton" type="button">
-              Simulate Low Energy
             </button>
           </div>
         </section>
@@ -312,333 +296,10 @@
           </label>
         </section>
 
-        <section id="settingsSimulator" class="panel-card simulator-card">
-          <h2>Simulator</h2>
-          <div class="status-grid">
-            <div class="status-row">
-              <span>Simulator Mode</span>
-              <strong id="simulatorState">off</strong>
-            </div>
-          </div>
-          <p id="simulatorNote" class="simulator-note">
-            Simulator inactive. Real ESP32 commands use the WebSocket body controller.
-          </p>
-          <div class="button-grid button-grid--single">
-            <button id="simulatorToggle" type="button">Enable Simulator Mode</button>
-          </div>
-        </section>
-
-        <section id="settingsCalibration" class="panel-card calibration-card">
-          <h2>Body Tuning / Calibration</h2>
-          <p class="safety-note">
-            Lift wheels before calibration tests. Emergency Stop always works.
-          </p>
-          <div class="status-grid">
-            <div class="status-row">
-              <span>Calibration Test</span>
-              <strong id="calibrationArmState" class="calibration-state--disarmed">
-                DISARMED - test movement blocked
-              </strong>
-            </div>
-          </div>
-          <div class="button-grid button-grid--single">
-            <button id="calibrationArmButton" class="warning-button" type="button">
-              Arm Calibration Test
-            </button>
-          </div>
-          <div class="calibration-grid">
-            <label class="slider-field" for="calibrationMaxSpeed">
-              <span>Max speed</span>
-              <input id="calibrationMaxSpeed" type="range" min="0.05" max="0.40" step="0.01" value="0.40" />
-            </label>
-            <label class="slider-field" for="calibrationGentleSpeed">
-              <span>Gentle speed</span>
-              <input id="calibrationGentleSpeed" type="range" min="0.05" max="0.40" step="0.01" value="0.18" />
-            </label>
-            <label class="slider-field" for="calibrationTurnSpeed">
-              <span>Turn speed</span>
-              <input id="calibrationTurnSpeed" type="range" min="0.05" max="0.40" step="0.01" value="0.18" />
-            </label>
-            <label class="slider-field" for="calibrationWiggleSpeed">
-              <span>Wiggle speed</span>
-              <input id="calibrationWiggleSpeed" type="range" min="0.05" max="0.40" step="0.01" value="0.20" />
-            </label>
-            <label class="slider-field" for="calibrationRampMs">
-              <span>Ramp ms</span>
-              <input id="calibrationRampMs" type="range" min="0" max="500" step="10" value="150" />
-            </label>
-            <label class="slider-field" for="calibrationLeftTrim">
-              <span>Left trim</span>
-              <input id="calibrationLeftTrim" type="range" min="0.5" max="1.3" step="0.01" value="1.0" />
-            </label>
-            <label class="slider-field" for="calibrationRightTrim">
-              <span>Right trim</span>
-              <input id="calibrationRightTrim" type="range" min="0.5" max="1.3" step="0.01" value="1.0" />
-            </label>
-            <label class="slider-field" for="calibrationDeadband">
-              <span>Deadband</span>
-              <input id="calibrationDeadband" type="range" min="0" max="0.12" step="0.005" value="0.03" />
-            </label>
-            <label class="slider-field" for="calibrationMinPwm">
-              <span>Min PWM</span>
-              <input id="calibrationMinPwm" type="range" min="0" max="255" step="1" value="210" />
-            </label>
-            <label class="slider-field" for="calibrationMotionIntensityScale">
-              <span>Motion intensity scale</span>
-              <input id="calibrationMotionIntensityScale" type="range" min="0.2" max="1.2" step="0.05" value="1" />
-            </label>
-          </div>
-          <label class="checkbox-field">
-            <input id="calibrationIdleMotionEnabled" type="checkbox" checked />
-            <span>Idle motion enabled</span>
-          </label>
-          <div class="button-grid button-grid--triple">
-            <button id="applyCalibrationButton" class="primary-button" type="button">
-              Apply to Robot
-            </button>
-            <button id="saveCalibrationButton" type="button">
-              Save Calibration
-            </button>
-            <button id="resetCalibrationButton" type="button">
-              Reset Calibration
-            </button>
-            <button id="requestRobotConfigButton" type="button">
-              Request Robot Config
-            </button>
-            <button id="calibrationTestStopButton" class="danger-button" type="button">
-              Test Stop
-            </button>
-          </div>
-          <div class="button-grid">
-            <button id="calibrationTestForwardButton" type="button">
-              Test Forward Tiny
-            </button>
-            <button id="calibrationTestBackwardButton" type="button">
-              Test Backward Tiny
-            </button>
-            <button id="calibrationTestRotateLeftButton" type="button">
-              Test Rotate Left Tiny
-            </button>
-            <button id="calibrationTestRotateRightButton" type="button">
-              Test Rotate Right Tiny
-            </button>
-            <button id="calibrationTestWiggleButton" type="button">
-              Test Gentle Wiggle
-            </button>
-            <button id="calibrationTestApproachButton" type="button">
-              Test Life Approach
-            </button>
-            <button id="calibrationTestRetreatButton" type="button">
-              Test Life Retreat
-            </button>
-          </div>
-          <div class="debug-grid">
-            <div>
-              <span>Latest robot config</span>
-              <pre id="robotConfigDisplay">No robot config received yet.</pre>
-            </div>
-            <div>
-              <span>Recent command history</span>
-              <pre id="recentCommandHistory">No movement commands yet.</pre>
-            </div>
-            <div>
-              <span>Motion debug</span>
-              <pre id="motionDebugDisplay">No motion telemetry yet.</pre>
-            </div>
-          </div>
-        </section>
-
-        <section id="settingsVoice" class="panel-card voice-card">
-          <h2>Voice</h2>
-          <p class="panel-note">
-            Voice transcripts are published to the local event bus. Stop phrases remain
-            immediate local safety commands.
-          </p>
-          <div class="status-grid">
-            <div class="status-row">
-              <span>Speech input</span>
-              <strong id="speechSupportState">checking</strong>
-            </div>
-            <div class="status-row">
-              <span>Speech output</span>
-              <strong id="voiceSupportState">checking</strong>
-            </div>
-            <div class="status-row">
-              <span>Event post</span>
-              <strong id="robotEventPostStatus">idle</strong>
-            </div>
-            <div class="status-row">
-              <span>Last event</span>
-              <strong id="lastRobotEventPosted">--</strong>
-            </div>
-          </div>
-          <p id="speechSecureWarning" class="voice-warning">
-            Microphone access may require HTTPS or localhost.
-          </p>
-          <div class="input-stack">
-            <label class="field-label" for="speechLanguageInput">Speech language</label>
-            <input id="speechLanguageInput" type="text" value="en-US" autocomplete="off" />
-          </div>
-          <label class="checkbox-field">
-            <input id="continuousListeningToggle" type="checkbox" checked />
-            <span>Continuous listening</span>
-          </label>
-          <div class="button-grid">
-            <button id="startListeningButton" class="primary-button" type="button">
-              Start Listening
-            </button>
-            <button id="stopListeningButton" type="button">
-              Stop Listening
-            </button>
-          </div>
-          <div class="transcript-grid">
-            <div>
-              <span>Interim transcript</span>
-              <p id="interimTranscript" class="transcript transcript--interim">--</p>
-            </div>
-            <div>
-              <span>Final transcript</span>
-              <p id="finalTranscript" class="transcript">--</p>
-            </div>
-          </div>
-          <div class="input-stack">
-            <label class="field-label" for="voiceSelect">Voice</label>
-            <select id="voiceSelect"></select>
-          </div>
-          <label class="checkbox-field">
-            <input id="muteSpeechToggle" type="checkbox" />
-            <span>Mute Speech</span>
-          </label>
-          <div class="slider-grid">
-            <label class="slider-field" for="voiceRateSlider">
-              <span>Voice rate</span>
-              <input id="voiceRateSlider" type="range" min="0.6" max="1.4" step="0.1" value="1" />
-            </label>
-            <label class="slider-field" for="voicePitchSlider">
-              <span>Voice pitch</span>
-              <input id="voicePitchSlider" type="range" min="0.6" max="1.4" step="0.1" value="1" />
-            </label>
-          </div>
-          <div class="button-grid button-grid--single">
-            <button id="speakTestButton" type="button">Speak Test</button>
-          </div>
-        </section>
-
-        <section id="settingsEars" class="panel-card ears-card">
-          <h2>Always Listening / Ears</h2>
-          <p class="panel-note">
-            The robot can hear continuously, but it only thinks when speech is relevant.
-            Stop/freeze is handled instantly without the model.
-          </p>
-          <div class="status-grid">
-            <div class="status-row">
-              <span>Ears</span>
-              <strong id="earsState" class="ears-state--off">ears off</strong>
-            </div>
-            <div class="status-row">
-              <span>SpeechGate</span>
-              <strong id="speechGateState">0 accepted / 0 ignored</strong>
-            </div>
-            <div class="status-row">
-              <span>Attention mode</span>
-              <strong id="attentionModeState">idle</strong>
-            </div>
-            <div class="status-row">
-              <span>Attention remaining</span>
-              <strong id="attentionWindowRemaining">--</strong>
-            </div>
-            <div class="status-row">
-              <span>Last classification</span>
-              <strong id="lastSpeechClassification">--</strong>
-            </div>
-          </div>
-          <div class="brain-policy-grid">
-            <label class="checkbox-field ears-toggle-field">
-              <input id="alwaysListeningToggle" type="checkbox" />
-              <span>Always Listening</span>
-            </label>
-            <label class="checkbox-field">
-              <input id="audioLevelMonitorToggle" type="checkbox" />
-              <span>Audio Activity Monitor</span>
-            </label>
-            <label class="checkbox-field">
-              <input id="useFinalSpeechOnlyToggle" type="checkbox" />
-              <span>Use final transcript only</span>
-            </label>
-          </div>
-          <div class="input-stack">
-            <label class="field-label" for="wakeNamesInput">Wake names</label>
-            <input id="wakeNamesInput" type="text" value="looi,louie,lui,robot" autocomplete="off" />
-          </div>
-          <div class="button-grid button-grid--single">
-            <button id="saveWakeNamesButton" type="button">
-              Save Wake Names
-            </button>
-          </div>
-          <div class="status-grid">
-            <div class="status-row">
-              <span>Audio level</span>
-              <strong id="audioLevelDisplay">off</strong>
-            </div>
-            <div class="status-row">
-              <span>Voice activity</span>
-              <strong id="voiceActivityState">off</strong>
-            </div>
-          </div>
-          <div class="transcript-grid">
-            <div>
-              <span>Live interim transcript</span>
-              <p id="earsInterimTranscript" class="transcript transcript--interim transcript--live">--</p>
-            </div>
-            <div>
-              <span>Last accepted transcript</span>
-              <p id="lastAcceptedTranscript" class="transcript">--</p>
-            </div>
-            <div>
-              <span>Last ignored transcript</span>
-              <p id="lastIgnoredTranscript" class="transcript transcript--ignored">--</p>
-            </div>
-          </div>
-          <h3>Speech Recognition Diagnostics</h3>
-          <div class="status-grid">
-            <div class="status-row">
-              <span>Recognition support</span>
-              <strong id="speechRecognitionSupportDetail">--</strong>
-            </div>
-            <div class="status-row">
-              <span>Recognition state</span>
-              <strong id="speechRecognitionStateDetail">--</strong>
-            </div>
-            <div class="status-row">
-              <span>Recognition attempts</span>
-              <strong id="speechRecognitionAttemptCount">0</strong>
-            </div>
-            <div class="status-row">
-              <span>Recognition results</span>
-              <strong id="speechRecognitionResultCount">0 final / 0 interim</strong>
-            </div>
-            <div class="status-row">
-              <span>Last recognition result</span>
-              <strong id="speechRecognitionLastResult">--</strong>
-            </div>
-            <div class="status-row">
-              <span>Last recognition error</span>
-              <strong id="speechRecognitionLastError">--</strong>
-            </div>
-          </div>
-          <div id="speechRecognitionDebugLog" class="speech-debug-log" aria-live="polite">
-            <div class="speech-debug-entry">
-              <strong>No speech recognition events yet</strong>
-              <span>Start listening, then speak near the phone.</span>
-            </div>
-          </div>
-        </section>
-
         <section id="settingsCamera" class="panel-card camera-card">
           <h2>Camera / Eyes</h2>
           <p class="panel-note">
-            The camera runs locally in the browser. Local Brain camera actions are blocked
-            until Local Camera is allowed in the Local Brain panel.
+            The camera runs locally in the browser and feeds Gemini vision plus object-follow metadata.
           </p>
           <div class="status-grid">
             <div class="status-row">
@@ -965,25 +626,9 @@
             SafetyGate, CommandQueue, and ESP32.
           </p>
           <div class="brain-policy-grid">
-            <label class="checkbox-field">
-              <input id="localBrainEnabledToggle" type="checkbox" checked />
-              <span>Local Brain Enabled</span>
-            </label>
             <label class="checkbox-field local-motion-arm-field">
               <input id="localMotionArmedToggle" type="checkbox" />
               <span>Local Motion Armed</span>
-            </label>
-            <label class="checkbox-field">
-              <input id="localCameraAllowedToggle" type="checkbox" />
-              <span>Local Camera Allowed</span>
-            </label>
-            <label class="checkbox-field">
-              <input id="localSpeechAllowedToggle" type="checkbox" checked />
-              <span>Local Speech Allowed</span>
-            </label>
-            <label class="checkbox-field">
-              <input id="allowFollowMovementToggle" type="checkbox" />
-              <span>Allow Follow Movement</span>
             </label>
           </div>
           <div class="button-grid">
@@ -1009,75 +654,6 @@
             </button>
           </div>
           <div id="localEventList" class="local-event-list" aria-live="polite"></div>
-        </section>
-
-        <section id="settingsLooiMode" class="panel-card looi-mode-card">
-          <h2>Scenario Runtime</h2>
-          <p class="panel-note">
-            Gemini chooses approved scenarios only. The browser expands scenarios
-            into safe local face/body frames and routes movement through the command queue.
-          </p>
-          <div class="status-grid">
-            <div class="status-row">
-              <span>Current sequence</span>
-              <strong id="currentSequenceState">idle</strong>
-            </div>
-            <div class="status-row">
-              <span>Scheduler</span>
-              <strong id="schedulerState">idle</strong>
-            </div>
-            <div class="status-row">
-              <span>Current task</span>
-              <strong id="currentPriorityTask">--</strong>
-            </div>
-            <div class="status-row">
-              <span>FPS</span>
-              <strong id="fpsDisplay">--</strong>
-            </div>
-            <div class="status-row">
-              <span>Performance</span>
-              <strong id="performanceModeDisplay">monitoring</strong>
-            </div>
-            <div class="status-row">
-              <span>Wake lock</span>
-              <strong id="wakeLockState">checking</strong>
-            </div>
-            <div class="status-row">
-              <span>Reliability</span>
-              <strong id="reliabilityModeDisplay">normal</strong>
-            </div>
-          </div>
-          <p class="safety-note">
-            Emergency Stop interrupts scenario frames, speech, scheduler tasks, and motors.
-            The scenario runtime does not arm physical movement by itself.
-          </p>
-          <div class="brain-policy-grid">
-            <label class="checkbox-field looi-mode-toggle-field">
-              <input id="looiModeToggle" type="checkbox" />
-              <span>Enable Scenario Runtime</span>
-            </label>
-            <label class="checkbox-field">
-              <input id="keepRobotAwakeToggle" type="checkbox" />
-              <span>Keep Robot Awake</span>
-            </label>
-          </div>
-          <div class="button-grid">
-            <button id="runSimulatorLooiDemoButton" class="primary-button" type="button">
-              Run Simulator Scenario Demo
-            </button>
-            <button id="runWheelsLiftedSafetyTestButton" type="button">
-              Run Wheels-Lifted Safety Test
-            </button>
-          </div>
-          <div class="button-grid button-grid--single">
-            <button id="scenarioRuntimeStopButton" class="danger-button" type="button">
-              Scenario Stop
-            </button>
-          </div>
-          <h3>Sequence History</h3>
-          <div id="sequenceHistoryList" class="sequence-history-list" aria-live="polite"></div>
-          <h3>Runtime Warnings</h3>
-          <div id="runtimeWarningsList" class="runtime-warning-list" aria-live="polite"></div>
         </section>
 
         <section id="settingsRobotBody" class="panel-card settings-section-robot-body">
@@ -1156,48 +732,10 @@
           </div>
         </section>
 
-        <section id="settingsTelemetry" class="panel-card settings-section-telemetry">
-          <h2>Telemetry</h2>
-          <div class="status-grid telemetry-grid">
-            <div class="status-row">
-              <span>Connection state</span>
-              <strong id="connectionState">disconnected</strong>
-            </div>
-            <div class="status-row">
-              <span>Latest RSSI</span>
-              <strong id="telemetryRssi">--</strong>
-            </div>
-            <div class="status-row">
-              <span>Client count</span>
-              <strong id="telemetryClients">--</strong>
-            </div>
-            <div class="status-row">
-              <span>Motor state</span>
-              <strong id="telemetryMotorState">--</strong>
-            </div>
-            <div class="status-row">
-              <span>Left speed</span>
-              <strong id="telemetryLeftSpeed">--</strong>
-            </div>
-            <div class="status-row">
-              <span>Right speed</span>
-              <strong id="telemetryRightSpeed">--</strong>
-            </div>
-            <div class="status-row">
-              <span>Motion remaining</span>
-              <strong id="telemetryMotionRemaining">--</strong>
-            </div>
-            <div class="status-row">
-              <span>Last command age</span>
-              <strong id="telemetryLastCommandAge">--</strong>
-            </div>
-          </div>
-        </section>
-
         <section id="settingsScenarios" class="panel-card settings-section-scenarios">
           <h2>Scenario Tests</h2>
           <p class="panel-note">
-            These simulate local Life Engine reactions only. External cloud is not involved.
+            These trigger local Life Engine reactions only. External cloud is not involved.
           </p>
           <div class="button-grid scenario-grid">
             <button id="scenarioComeHereButton" class="primary-button" type="button">

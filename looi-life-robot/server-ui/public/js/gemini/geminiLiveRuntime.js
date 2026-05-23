@@ -1,3 +1,4 @@
+import { safeStringify } from "../core/runtimeUtils.js";
 import {
   GEMINI_LIVE_INPUT_RATE,
   GEMINI_LIVE_OUTPUT_RATE,
@@ -15,7 +16,6 @@ export class GeminiLiveRuntime {
     toolExecutor,
     face,
     lifeEngine,
-    eventBus,
     logger,
     getRuntimeContext,
     fetchToken,
@@ -27,7 +27,6 @@ export class GeminiLiveRuntime {
     this.toolExecutor = toolExecutor;
     this.face = face;
     this.lifeEngine = lifeEngine;
-    this.eventBus = eventBus;
     this.logger = logger;
     this.getRuntimeContext = getRuntimeContext;
     this.fetchToken = fetchToken ?? defaultFetchToken;
@@ -529,22 +528,10 @@ export class GeminiLiveRuntime {
 
     if (inputText) {
       this.patchStatus({ lastInputTranscript: inputText, thinking: true });
-      this.eventBus?.publish?.("gemini_live_input_transcript", {
-        text: inputText
-      }, {
-        source: "gemini_live",
-        priority: 1
-      });
     }
 
     if (outputText) {
       this.patchStatus({ lastOutputTranscript: outputText });
-      this.eventBus?.publish?.("gemini_live_output_transcript", {
-        text: outputText
-      }, {
-        source: "gemini_live",
-        priority: 1
-      });
 
       if (this.status.audioPlaying || this.activeOutputSources.size > 0) {
         this.maybeTriggerSpeechStartScenario({ inputText, outputText });
@@ -593,7 +580,7 @@ export class GeminiLiveRuntime {
       };
     }
 
-    if (!this.toolExecutor?.executeBridgeAction) {
+    if (!this.toolExecutor?.executeAction) {
       return {
         id,
         name,
@@ -616,7 +603,7 @@ export class GeminiLiveRuntime {
     });
 
     try {
-      const result = await this.toolExecutor.executeBridgeAction(action);
+      const result = await this.toolExecutor.executeAction(action);
       const status = result?.status ?? "completed";
       const executed = result?.executed === true;
       const accepted = ["completed", "queued"].includes(status) && executed;
@@ -930,7 +917,7 @@ export class GeminiLiveRuntime {
   }
 
   maybeTriggerSpeechStartScenario({ inputText = "", outputText = "" } = {}) {
-    if (!this.toolExecutor?.executeBridgeAction) {
+    if (!this.toolExecutor?.executeAction) {
       return false;
     }
 
@@ -1074,7 +1061,7 @@ export class GeminiLiveRuntime {
   }
 
   executeSpeechStartScenarioAction(action = {}, { signature = "", logMessage = "Gemini speech-start scenario" } = {}) {
-    if (!this.toolExecutor?.executeBridgeAction) {
+    if (!this.toolExecutor?.executeAction) {
       return false;
     }
 
@@ -1092,7 +1079,7 @@ export class GeminiLiveRuntime {
       lastToolCallAt: now
     });
     this.log(`${logMessage}: ${scenarioName}`);
-    this.toolExecutor.executeBridgeAction(action)
+    this.toolExecutor.executeAction(action)
       .then((result) => {
         const status = result?.status ?? "completed";
         this.patchStatus({
@@ -1168,7 +1155,7 @@ export class GeminiLiveRuntime {
   }
 }
 
-export function downsampleFloat32(input, inputRate, outputRate) {
+function downsampleFloat32(input, inputRate, outputRate) {
   if (!input?.length || inputRate <= 0 || outputRate <= 0) {
     return new Float32Array();
   }
@@ -1209,7 +1196,7 @@ export function float32ToPcm16(input) {
   return output;
 }
 
-export function pcm16Base64ToFloat32(base64) {
+function pcm16Base64ToFloat32(base64) {
   const bytes = base64ToUint8Array(base64);
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const samples = new Float32Array(Math.floor(bytes.byteLength / 2));
@@ -1596,14 +1583,6 @@ function estimateBase64Bytes(base64 = "") {
   return Math.max(0, Math.floor((value.length * 3) / 4) - padding);
 }
 
-function safeStringify(value) {
-  try {
-    return JSON.stringify(value);
-  } catch (_error) {
-    return String(value);
-  }
-}
-
 function shouldKeepLocalToolRunningAfterGeminiCancellation(entry = {}) {
   return entry.action?.type === "run_scenario" && entry.action?.args?.name === "follow_target";
 }
@@ -1625,6 +1604,7 @@ function compactVisionContext(vision = {}, { recentObjectReference = null, reaso
   const follow = followScenarioActive || vision?.activeTarget || targetLabel
     ? {
         active: followScenarioActive,
+        event: shortText(reason, 80),
         targetLabel: shortText(targetLabel, 80),
         state: shortText(vision?.scenario?.state, 80),
         targetVisible: Boolean(vision?.activeTarget?.visible),

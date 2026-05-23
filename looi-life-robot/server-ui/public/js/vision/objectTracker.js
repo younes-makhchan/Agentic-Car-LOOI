@@ -1,3 +1,4 @@
+import { clampNumber } from "../core/runtimeUtils.js";
 import { canonicalObjectLabel, getObjectAliases } from "./objectLabelUtils.js";
 
 const LOST_PRUNE_MS = 10000;
@@ -19,7 +20,7 @@ export class ObjectTracker {
   }
 
   update(detectionsResult = {}) {
-    const now = parseTimestamp(detectionsResult.timestamp) ?? Date.now();
+    const now = parseTimestamp(detectionsResult.receivedAt) ?? parseTimestamp(detectionsResult.timestamp) ?? Date.now();
     const detections = Array.isArray(detectionsResult.detections)
       ? detectionsResult.detections.map(normalizeDetection).filter(Boolean)
       : [];
@@ -51,7 +52,7 @@ export class ObjectTracker {
 
   getTracks() {
     const now = Date.now();
-    return this.tracks.map((track) => snapshotTrack(track, now));
+    return this.tracks.map((track) => snapshotTrack(track, now, this.maxLostMs));
   }
 
   getVisibleTracks() {
@@ -197,14 +198,16 @@ function normalizeDetection(detection = {}) {
   };
 }
 
-function snapshotTrack(track, now) {
+function snapshotTrack(track, now, maxLostMs) {
+  const lastSeenAt = Number(track.lastSeenAt || now);
+  const elapsedSinceSeenMs = Math.max(0, now - lastSeenAt);
   const elapsedLostMs = track.lostAt ? Math.max(0, now - Number(track.lostAt)) : 0;
-  const lostForMs = Math.max(Number(track.lostForMs || 0), elapsedLostMs);
+  const lostForMs = Math.max(Number(track.lostForMs || 0), elapsedLostMs, elapsedSinceSeenMs);
   return {
     ...track,
     bbox: { ...track.bbox },
     lostForMs,
-    visible: Boolean(track.visible && lostForMs < LOST_PRUNE_MS)
+    visible: Boolean(track.visible && lostForMs < maxLostMs)
   };
 }
 
@@ -249,9 +252,4 @@ function smoothBbox(previous = {}, next = {}, previousWeight) {
 function parseTimestamp(timestamp) {
   const value = Date.parse(timestamp);
   return Number.isFinite(value) ? value : null;
-}
-
-function clampNumber(value, min, max, fallback) {
-  const numeric = Number(value);
-  return Number.isFinite(numeric) ? Math.min(max, Math.max(min, numeric)) : fallback;
 }

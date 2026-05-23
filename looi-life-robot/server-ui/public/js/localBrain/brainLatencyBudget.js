@@ -34,10 +34,6 @@ export class BrainLatencyBudget {
     }
   }
 
-  shouldUseFallback(latencyMs) {
-    return Number(latencyMs) > this.eventThoughtTimeoutMs;
-  }
-
   recordLatency(source, latencyMs) {
     const entry = {
       source: source ?? "unknown",

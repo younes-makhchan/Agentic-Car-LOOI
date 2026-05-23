@@ -1,3 +1,5 @@
+import { clampInteger } from "./runtimeUtils.js";
+
 const DEFAULT_MAX_EVENTS = 200;
 
 export class LocalEventBus {
@@ -142,14 +144,4 @@ function createEventId() {
 
 function isPlainObject(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
-function clampInteger(value, min, max, fallback) {
-  const numeric = Number(value);
-
-  if (!Number.isFinite(numeric)) {
-    return fallback;
-  }
-
-  return Math.min(max, Math.max(min, Math.round(numeric)));
 }

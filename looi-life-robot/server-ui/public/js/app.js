@@ -1,5 +1,6 @@
 import { PUBLIC_CONFIG } from "./config.js";
 import { LocalEventBus } from "./core/localEventBus.js";
+import { clampNumber } from "./core/runtimeUtils.js";
 import { EmbodiedActionRouter } from "./embodiment/embodiedActionRouter.js";
 import { ScenarioFrameSequencer } from "./embodiment/scenarioFrameSequencer.js";
 import { PriorityScheduler } from "./embodiment/priorityScheduler.js";
@@ -13,17 +14,12 @@ import { AttentionSystem } from "./localBrain/attentionSystem.js";
 import { BrainLatencyBudget } from "./localBrain/brainLatencyBudget.js";
 import { clampBrainPolicy, createDefaultBrainPolicy } from "./localBrain/brainPolicy.js";
 import { CameraInput } from "./perception/camera.js";
-import { SpeechInput } from "./perception/speech.js";
-import { AudioLevelMonitor } from "./perception/audioLevelMonitor.js";
-import { SpeechGate } from "./perception/speechGate.js";
-import { VoiceOutput } from "./perception/voiceOutput.js";
 import { LifeEventEmitter } from "./personality/lifeEvents.js";
 import { describePersonalityForRuntime } from "./personality/personalityProfile.js";
 import { PersonalityTuning } from "./personality/personalityTuning.js";
 import { BodyCalibration } from "./robot/bodyCalibration.js";
 import { CommandQueue } from "./robot/commandQueue.js";
 import { ESP32Client } from "./robot/esp32Client.js";
-import { SimulatedESP32Client } from "./robot/simulatedEsp32Client.js";
 import { ToolExecutor } from "./robot/toolExecutor.js";
 import { PerformanceMonitor } from "./runtime/performanceMonitor.js";
 import { ReliabilityManager } from "./runtime/reliabilityManager.js";
@@ -77,8 +73,6 @@ const DEFAULT_FOLLOW_TUNING_PRESET = "case1";
 const LOCAL_VISION_SIZE_MIN = 70;
 const LOCAL_VISION_SIZE_MAX = 220;
 const LOCAL_VISION_SIZE_STEP = 10;
-const SPEECH_FINAL_ONLY_STORAGE_KEY = "looi.useFinalSpeechOnly.v1";
-const INTERIM_STABILITY_MS = 300;
 
 const ui = {
   canvas: document.getElementById("faceCanvas"),
@@ -113,75 +107,6 @@ const ui = {
   curiousButton: document.getElementById("curiousButton"),
   wiggleButton: document.getElementById("wiggleButton"),
   logPanel: document.getElementById("logPanel"),
-  simulatorToggle: document.getElementById("simulatorToggle"),
-  simulatorState: document.getElementById("simulatorState"),
-  simulatorNote: document.getElementById("simulatorNote"),
-  calibrationArmButton: document.getElementById("calibrationArmButton"),
-  calibrationArmState: document.getElementById("calibrationArmState"),
-  calibrationMaxSpeed: document.getElementById("calibrationMaxSpeed"),
-  calibrationGentleSpeed: document.getElementById("calibrationGentleSpeed"),
-  calibrationTurnSpeed: document.getElementById("calibrationTurnSpeed"),
-  calibrationWiggleSpeed: document.getElementById("calibrationWiggleSpeed"),
-  calibrationRampMs: document.getElementById("calibrationRampMs"),
-  calibrationLeftTrim: document.getElementById("calibrationLeftTrim"),
-  calibrationRightTrim: document.getElementById("calibrationRightTrim"),
-  calibrationDeadband: document.getElementById("calibrationDeadband"),
-  calibrationMinPwm: document.getElementById("calibrationMinPwm"),
-  calibrationMotionIntensityScale: document.getElementById("calibrationMotionIntensityScale"),
-  calibrationIdleMotionEnabled: document.getElementById("calibrationIdleMotionEnabled"),
-  applyCalibrationButton: document.getElementById("applyCalibrationButton"),
-  saveCalibrationButton: document.getElementById("saveCalibrationButton"),
-  resetCalibrationButton: document.getElementById("resetCalibrationButton"),
-  requestRobotConfigButton: document.getElementById("requestRobotConfigButton"),
-  calibrationTestStopButton: document.getElementById("calibrationTestStopButton"),
-  calibrationTestForwardButton: document.getElementById("calibrationTestForwardButton"),
-  calibrationTestBackwardButton: document.getElementById("calibrationTestBackwardButton"),
-  calibrationTestRotateLeftButton: document.getElementById("calibrationTestRotateLeftButton"),
-  calibrationTestRotateRightButton: document.getElementById("calibrationTestRotateRightButton"),
-  calibrationTestWiggleButton: document.getElementById("calibrationTestWiggleButton"),
-  calibrationTestApproachButton: document.getElementById("calibrationTestApproachButton"),
-  calibrationTestRetreatButton: document.getElementById("calibrationTestRetreatButton"),
-  robotConfigDisplay: document.getElementById("robotConfigDisplay"),
-  recentCommandHistory: document.getElementById("recentCommandHistory"),
-  motionDebugDisplay: document.getElementById("motionDebugDisplay"),
-  speechSupportState: document.getElementById("speechSupportState"),
-  speechSecureWarning: document.getElementById("speechSecureWarning"),
-  startListeningButton: document.getElementById("startListeningButton"),
-  stopListeningButton: document.getElementById("stopListeningButton"),
-  continuousListeningToggle: document.getElementById("continuousListeningToggle"),
-  speechLanguageInput: document.getElementById("speechLanguageInput"),
-  interimTranscript: document.getElementById("interimTranscript"),
-  finalTranscript: document.getElementById("finalTranscript"),
-  earsInterimTranscript: document.getElementById("earsInterimTranscript"),
-  voiceSupportState: document.getElementById("voiceSupportState"),
-  muteSpeechToggle: document.getElementById("muteSpeechToggle"),
-  voiceSelect: document.getElementById("voiceSelect"),
-  voiceRateSlider: document.getElementById("voiceRateSlider"),
-  voicePitchSlider: document.getElementById("voicePitchSlider"),
-  speakTestButton: document.getElementById("speakTestButton"),
-  lastRobotEventPosted: document.getElementById("lastRobotEventPosted"),
-  robotEventPostStatus: document.getElementById("robotEventPostStatus"),
-  alwaysListeningToggle: document.getElementById("alwaysListeningToggle"),
-  useFinalSpeechOnlyToggle: document.getElementById("useFinalSpeechOnlyToggle"),
-  earsState: document.getElementById("earsState"),
-  speechGateState: document.getElementById("speechGateState"),
-  attentionModeState: document.getElementById("attentionModeState"),
-  attentionWindowRemaining: document.getElementById("attentionWindowRemaining"),
-  lastSpeechClassification: document.getElementById("lastSpeechClassification"),
-  lastAcceptedTranscript: document.getElementById("lastAcceptedTranscript"),
-  lastIgnoredTranscript: document.getElementById("lastIgnoredTranscript"),
-  speechRecognitionSupportDetail: document.getElementById("speechRecognitionSupportDetail"),
-  speechRecognitionStateDetail: document.getElementById("speechRecognitionStateDetail"),
-  speechRecognitionAttemptCount: document.getElementById("speechRecognitionAttemptCount"),
-  speechRecognitionResultCount: document.getElementById("speechRecognitionResultCount"),
-  speechRecognitionLastResult: document.getElementById("speechRecognitionLastResult"),
-  speechRecognitionLastError: document.getElementById("speechRecognitionLastError"),
-  speechRecognitionDebugLog: document.getElementById("speechRecognitionDebugLog"),
-  wakeNamesInput: document.getElementById("wakeNamesInput"),
-  saveWakeNamesButton: document.getElementById("saveWakeNamesButton"),
-  audioLevelMonitorToggle: document.getElementById("audioLevelMonitorToggle"),
-  audioLevelDisplay: document.getElementById("audioLevelDisplay"),
-  voiceActivityState: document.getElementById("voiceActivityState"),
   cameraSupportState: document.getElementById("cameraSupportState"),
   cameraSecureWarning: document.getElementById("cameraSecureWarning"),
   cameraRunningState: document.getElementById("cameraRunningState"),
@@ -233,7 +158,6 @@ const ui = {
   followControllerState: document.getElementById("followControllerState"),
   followCurrentErrorX: document.getElementById("followCurrentErrorX"),
   followSteeringState: document.getElementById("followSteeringState"),
-  allowFollowMovementToggle: document.getElementById("allowFollowMovementToggle"),
   localBrainState: document.getElementById("localBrainState"),
   localBrainAdapterState: document.getElementById("localBrainAdapterState"),
   localBrainServerStatus: document.getElementById("localBrainServerStatus"),
@@ -251,10 +175,7 @@ const ui = {
   geminiLiveLastToolCall: document.getElementById("geminiLiveLastToolCall"),
   geminiLiveLatency: document.getElementById("geminiLiveLatency"),
   localBrainThoughtList: document.getElementById("localBrainThoughtList"),
-  localBrainEnabledToggle: document.getElementById("localBrainEnabledToggle"),
   localMotionArmedToggle: document.getElementById("localMotionArmedToggle"),
-  localCameraAllowedToggle: document.getElementById("localCameraAllowedToggle"),
-  localSpeechAllowedToggle: document.getElementById("localSpeechAllowedToggle"),
   startLocalBrainButton: document.getElementById("startLocalBrainButton"),
   stopLocalBrainButton: document.getElementById("stopLocalBrainButton"),
   thinkNowButton: document.getElementById("thinkNowButton"),
@@ -275,19 +196,7 @@ const ui = {
   durationSlider: document.getElementById("durationSlider"),
   speedValue: document.getElementById("speedValue"),
   durationValue: document.getElementById("durationValue"),
-  connectionState: document.getElementById("connectionState"),
-  telemetryRssi: document.getElementById("telemetryRssi"),
-  telemetryClients: document.getElementById("telemetryClients"),
-  telemetryMotorState: document.getElementById("telemetryMotorState"),
-  telemetryLeftSpeed: document.getElementById("telemetryLeftSpeed"),
-  telemetryRightSpeed: document.getElementById("telemetryRightSpeed"),
-  telemetryMotionRemaining: document.getElementById("telemetryMotionRemaining"),
-  telemetryLastCommandAge: document.getElementById("telemetryLastCommandAge"),
   lifeEngineToggle: document.getElementById("lifeEngineToggle"),
-  simulateAttentionButton: document.getElementById("simulateAttentionButton"),
-  simulateObstacleButton: document.getElementById("simulateObstacleButton"),
-  simulateBoredomButton: document.getElementById("simulateBoredomButton"),
-  simulateLowEnergyButton: document.getElementById("simulateLowEnergyButton"),
   personalityNameInput: document.getElementById("personalityNameInput"),
   personalityIdentityInput: document.getElementById("personalityIdentityInput"),
   personalityPronounsInput: document.getElementById("personalityPronounsInput"),
@@ -328,39 +237,21 @@ const ui = {
   scenarioComeHereButton: document.getElementById("scenarioComeHereButton"),
   scenarioGiveMeSpaceButton: document.getElementById("scenarioGiveMeSpaceButton"),
   scenarioLookAroundButton: document.getElementById("scenarioLookAroundButton"),
-  scenarioRuntimeStopButton: document.getElementById("scenarioRuntimeStopButton"),
   scenarioBoredButton: document.getElementById("scenarioBoredButton"),
   scenarioLowEnergyButton: document.getElementById("scenarioLowEnergyButton"),
   scenarioObstacleButton: document.getElementById("scenarioObstacleButton"),
   scenarioClearObstacleButton: document.getElementById("scenarioClearObstacleButton"),
-  currentSequenceState: document.getElementById("currentSequenceState"),
-  sequenceHistoryList: document.getElementById("sequenceHistoryList"),
-  schedulerState: document.getElementById("schedulerState"),
-  currentPriorityTask: document.getElementById("currentPriorityTask"),
-  looiModeToggle: document.getElementById("looiModeToggle"),
-  keepRobotAwakeToggle: document.getElementById("keepRobotAwakeToggle"),
-  scenarioStopButton: document.getElementById("scenarioStopButton"),
-  runSimulatorLooiDemoButton: document.getElementById("runSimulatorLooiDemoButton"),
-  runWheelsLiftedSafetyTestButton: document.getElementById("runWheelsLiftedSafetyTestButton"),
-  fpsDisplay: document.getElementById("fpsDisplay"),
-  performanceModeDisplay: document.getElementById("performanceModeDisplay"),
-  wakeLockState: document.getElementById("wakeLockState"),
-  reliabilityModeDisplay: document.getElementById("reliabilityModeDisplay"),
-  runtimeWarningsList: document.getElementById("runtimeWarningsList")
+  scenarioStopButton: document.getElementById("scenarioStopButton")
 };
 
 let face = null;
 let robotClient = null;
-let realRobotClient = null;
-let simulatedRobotClient = null;
 let commandQueue = null;
 let lifeEngine = null;
 let localEventBus = null;
 let localBrainEngine = null;
 let localServerBrainAdapter = null;
-let speechGate = null;
 let attentionSystem = null;
-let audioLevelMonitor = null;
 let brainLatencyBudget = null;
 let scenarioFrameSequencer = null;
 let priorityScheduler = null;
@@ -368,8 +259,6 @@ let embodiedActionRouter = null;
 let wakeLockManager = null;
 let performanceMonitor = null;
 let reliabilityManager = null;
-let speechInput = null;
-let voiceOutput = null;
 let geminiLiveRuntime = null;
 let cameraInput = null;
 let objectDetectorEngine = null;
@@ -382,12 +271,8 @@ let personalityTuning = null;
 let lifeEventEmitter = null;
 let toolExecutor = null;
 let activeConfig = { ...PUBLIC_CONFIG };
-let simulatorMode = false;
 let brainPolicy = createDefaultBrainPolicy();
-let calibrationTestArmed = false;
 let latestActionResult = null;
-let lastTranscript = null;
-let lastEventPosted = null;
 let lastObservationEventAt = 0;
 let lastObservationSignature = "";
 let recentObjectReference = null;
@@ -399,34 +284,18 @@ let geminiVisionAssistSending = false;
 let learnedPhraseCache = [];
 let lifeEventsEnabled = false;
 let settingsOpen = false;
-let audioActivityClearTimer = null;
-let interimSpeechTimer = null;
 let poseScenarioLastRun = new Map();
-let latestInterimSpeech = null;
-let bestInterimSpeech = null;
-let lastInterimDispatchedText = "";
-let lastInterimDispatchedAt = 0;
-let useFinalSpeechOnly = loadUseFinalSpeechOnly();
-let looiModeEnabled = false;
-let keepRobotAwakeEnabled = false;
 let localVisionWidgetSizePx = loadLocalVisionWidgetSize();
 let lastLogSignature = "";
 let lastOverlayDebugAt = 0;
 
 face = createFaceController(ui.canvas);
 applyLocalVisionWidgetSize(localVisionWidgetSizePx, { persist: false });
-if (ui.useFinalSpeechOnlyToggle) {
-  ui.useFinalSpeechOnlyToggle.checked = useFinalSpeechOnly;
-}
-renderTelemetry(null);
 updateSliderLabels();
-updateSimulatorUi();
 updateLocalBrainUi();
-updateVoiceUi();
-updateAlwaysListeningUi();
-updateEmbodimentUi();
+updateOutputAudioUi();
+updateAttentionUi();
 updateCameraUi();
-updateCalibrationUi();
 updatePersonalityUi();
 updateLifeEventsUi();
 updateProductionChrome();
@@ -472,64 +341,6 @@ ui.userInput.addEventListener("keydown", (event) => {
       log(`Typed input handling failed: ${error.message}`, "error");
     });
   }
-});
-
-ui.simulatorToggle.addEventListener("click", () => {
-  toggleSimulatorMode().catch((error) => {
-    log(`Simulator toggle failed: ${error.message}`, "error");
-  });
-});
-
-ui.calibrationArmButton.addEventListener("click", () => {
-  calibrationTestArmed = !calibrationTestArmed;
-  updateCalibrationUi();
-  log(
-    calibrationTestArmed
-      ? "Calibration Test armed. Lift wheels and keep Emergency Stop ready."
-      : "Calibration Test disarmed.",
-    calibrationTestArmed ? "warn" : "info"
-  );
-});
-
-bindCalibrationInput(ui.calibrationMaxSpeed, "maxSpeed");
-bindCalibrationInput(ui.calibrationGentleSpeed, "gentleSpeed");
-bindCalibrationInput(ui.calibrationTurnSpeed, "turnSpeed");
-bindCalibrationInput(ui.calibrationWiggleSpeed, "wiggleSpeed");
-bindCalibrationInput(ui.calibrationRampMs, "rampMs");
-bindCalibrationInput(ui.calibrationLeftTrim, "leftTrim");
-bindCalibrationInput(ui.calibrationRightTrim, "rightTrim");
-bindCalibrationInput(ui.calibrationDeadband, "deadband");
-bindCalibrationInput(ui.calibrationMinPwm, "minPwm");
-bindCalibrationInput(ui.calibrationMotionIntensityScale, "motionIntensityScale");
-ui.calibrationIdleMotionEnabled.addEventListener("change", () => {
-  bodyCalibration?.patchSettings({
-    idleMotionEnabled: ui.calibrationIdleMotionEnabled.checked
-  });
-});
-
-ui.applyCalibrationButton.addEventListener("click", () => {
-  applyCalibrationToRobot().catch((error) => {
-    log(`Calibration apply failed: ${error.message}`, "error");
-  });
-});
-
-ui.saveCalibrationButton.addEventListener("click", () => {
-  if (!bodyCalibration) {
-    return;
-  }
-
-  bodyCalibration.save();
-  log("Body calibration saved locally.");
-});
-
-ui.resetCalibrationButton.addEventListener("click", () => {
-  bodyCalibration?.resetDefaults();
-  updateCalibrationUi();
-  log("Body calibration reset to safe defaults.", "warn");
-});
-
-ui.requestRobotConfigButton.addEventListener("click", () => {
-  requestRobotConfig();
 });
 
 bindPersonalityText(ui.personalityNameInput, "name");
@@ -619,42 +430,6 @@ ui.lifeEventsToggle.addEventListener("change", () => {
   updateLifeEventsUi();
 });
 
-ui.calibrationTestStopButton.addEventListener("click", async () => {
-  await immediateStop("calibration_test_stop", "Calibration stop sent.", "warn");
-});
-
-ui.calibrationTestForwardButton.addEventListener("click", () => {
-  runCalibrationMotionTest({ linear: 1, angular: 0, label: "calibration_forward_tiny" });
-});
-
-ui.calibrationTestBackwardButton.addEventListener("click", () => {
-  runCalibrationMotionTest({ linear: -1, angular: 0, label: "calibration_backward_tiny" });
-});
-
-ui.calibrationTestRotateLeftButton.addEventListener("click", () => {
-  runCalibrationMotionTest({ linear: 0, angular: -1, label: "calibration_rotate_left_tiny" });
-});
-
-ui.calibrationTestRotateRightButton.addEventListener("click", () => {
-  runCalibrationMotionTest({ linear: 0, angular: 1, label: "calibration_rotate_right_tiny" });
-});
-
-ui.calibrationTestWiggleButton.addEventListener("click", () => {
-  runCalibrationScenarioTest("body_talking");
-});
-
-ui.calibrationTestApproachButton.addEventListener("click", () => {
-  runCalibrationScenarioTest("come_closer");
-});
-
-ui.calibrationTestRetreatButton.addEventListener("click", () => {
-  runCalibrationScenarioTest("back_up");
-});
-
-ui.localBrainEnabledToggle.addEventListener("change", () => {
-  patchBrainPolicy({ localBrainEnabled: ui.localBrainEnabledToggle.checked });
-});
-
 ui.localMotionArmedToggle.addEventListener("change", () => {
   patchBrainPolicy({ localMotionArmed: ui.localMotionArmedToggle.checked });
   log(
@@ -662,29 +437,6 @@ ui.localMotionArmedToggle.addEventListener("change", () => {
       ? "Local Motion armed. Supervise the robot and keep Emergency Stop ready."
       : "Local Motion disarmed. Local Brain physical actions will be rejected.",
     brainPolicy.localMotionArmed ? "warn" : "info"
-  );
-});
-
-ui.localCameraAllowedToggle.addEventListener("change", () => {
-  patchBrainPolicy({ localCameraAllowed: ui.localCameraAllowedToggle.checked });
-  log(
-    brainPolicy.localCameraAllowed
-      ? "Local Camera allowed for Local Brain camera actions."
-      : "Local Camera blocked for Local Brain camera actions.",
-    brainPolicy.localCameraAllowed ? "warn" : "info"
-  );
-});
-
-ui.localSpeechAllowedToggle.addEventListener("change", () => {
-  patchBrainPolicy({ localSpeechAllowed: ui.localSpeechAllowedToggle.checked });
-});
-
-ui.allowFollowMovementToggle?.addEventListener("change", () => {
-  patchBrainPolicy({ allowFollowMovement: ui.allowFollowMovementToggle.checked });
-  log(
-    brainPolicy.allowFollowMovement
-      ? "Follow Movement allowed while local motion is armed."
-      : "Follow Movement disabled."
   );
 });
 
@@ -778,106 +530,6 @@ ui.captureSnapshotButton.addEventListener("click", () => {
   });
 });
 
-ui.startListeningButton.addEventListener("click", () => {
-  if (!speechInput) {
-    log("Speech input is still initializing.", "warn");
-    return;
-  }
-
-  speechInput.setLanguage(ui.speechLanguageInput.value.trim() || "en-US");
-  if (ui.alwaysListeningToggle.checked) {
-    ui.continuousListeningToggle.checked = true;
-    speechInput.startAlwaysListening();
-  } else {
-    speechInput.setContinuous(ui.continuousListeningToggle.checked);
-    speechInput.start();
-  }
-  updateAlwaysListeningUi();
-});
-
-ui.stopListeningButton.addEventListener("click", () => {
-  speechInput?.stop();
-  ui.alwaysListeningToggle.checked = false;
-  updateAlwaysListeningUi();
-});
-
-ui.continuousListeningToggle.addEventListener("change", () => {
-  speechInput?.setContinuous(ui.continuousListeningToggle.checked);
-  updateVoiceUi();
-  updateAlwaysListeningUi();
-});
-
-ui.speechLanguageInput.addEventListener("change", () => {
-  speechInput?.setLanguage(ui.speechLanguageInput.value.trim() || "en-US");
-  updateVoiceUi();
-  updateAlwaysListeningUi();
-});
-
-ui.alwaysListeningToggle.addEventListener("change", () => {
-  if (!speechInput) {
-    ui.alwaysListeningToggle.checked = false;
-    log("Speech input is still initializing.", "warn");
-    return;
-  }
-
-  speechInput.setLanguage(ui.speechLanguageInput.value.trim() || "en-US");
-  ui.continuousListeningToggle.checked = ui.alwaysListeningToggle.checked || ui.continuousListeningToggle.checked;
-  speechInput.setAlwaysListening(ui.alwaysListeningToggle.checked);
-  updateAlwaysListeningUi();
-});
-
-ui.saveWakeNamesButton.addEventListener("click", () => {
-  const names = parseWakeNames(ui.wakeNamesInput.value);
-  speechGate?.setRobotNames?.(names);
-  ui.wakeNamesInput.value = names.join(",");
-  updateAlwaysListeningUi();
-  log(`Wake names saved: ${names.join(", ")}`);
-});
-
-ui.audioLevelMonitorToggle.addEventListener("change", () => {
-  setAudioLevelMonitorEnabled(ui.audioLevelMonitorToggle.checked).catch((error) => {
-    ui.audioLevelMonitorToggle.checked = false;
-    log(`Audio activity monitor failed: ${error.message}`, "warn");
-    updateAlwaysListeningUi();
-  });
-});
-
-ui.useFinalSpeechOnlyToggle?.addEventListener("change", () => {
-  useFinalSpeechOnly = Boolean(ui.useFinalSpeechOnlyToggle.checked);
-  globalThis.localStorage?.setItem?.(SPEECH_FINAL_ONLY_STORAGE_KEY, String(useFinalSpeechOnly));
-  clearPendingInterimSpeech();
-  log(
-    useFinalSpeechOnly
-      ? "Speech mode: final transcript only."
-      : "Speech mode: stable interim transcript after 300ms."
-  );
-});
-
-ui.muteSpeechToggle.addEventListener("change", () => {
-  voiceOutput?.setMuted(ui.muteSpeechToggle.checked);
-  updateVoiceUi();
-});
-
-ui.voiceSelect.addEventListener("change", () => {
-  voiceOutput?.setVoiceByName(ui.voiceSelect.value);
-});
-
-ui.voiceRateSlider.addEventListener("input", () => {
-  voiceOutput?.setRate(ui.voiceRateSlider.value);
-});
-
-ui.voicePitchSlider.addEventListener("input", () => {
-  voiceOutput?.setPitch(ui.voicePitchSlider.value);
-});
-
-ui.speakTestButton.addEventListener("click", () => {
-  voiceOutput?.speak({
-    text: "I can hear you from the phone.",
-    tone: "happy",
-    interrupt: true
-  });
-});
-
 ui.connectEsp32Button.addEventListener("click", async () => {
   if (!robotClient) {
     log("Robot client is still initializing.", "warn");
@@ -887,15 +539,9 @@ ui.connectEsp32Button.addEventListener("click", async () => {
   const nextUrl = ui.esp32UrlInput.value.trim() || activeConfig.defaultEsp32WsUrl;
 
   try {
-    if (simulatorMode) {
-      await robotClient.connect();
-      await applyCalibrationToRobot({ quiet: true });
-      log("Simulator connected from Connect button.");
-    } else {
-      await realRobotClient.connect(nextUrl);
-      ui.esp32UrlInput.value = nextUrl;
-      await applyCalibrationToRobot({ quiet: true });
-    }
+    await robotClient.connect(nextUrl);
+    ui.esp32UrlInput.value = nextUrl;
+    await applyCalibrationToRobot({ quiet: true });
   } catch (error) {
     log(`Robot connection failed: ${error.message}`, "error");
     requestPoseScenario("pose_scared");
@@ -909,14 +555,12 @@ ui.disconnectEsp32Button.addEventListener("click", async () => {
   }
 
   if (commandQueue) {
-    await commandQueue.stopMotion?.(simulatorMode ? "simulator_disconnect" : "ui_disconnect");
+    await commandQueue.stopMotion?.("ui_disconnect");
   }
 
   robotClient.disconnect();
   lifeEngine?.setConnectionState("disconnected");
-  renderTelemetry({});
-  updateSimulatorUi();
-  log(simulatorMode ? "Simulator disconnect requested." : "ESP32 disconnect requested.");
+  log("ESP32 disconnect requested.");
 });
 
 ui.pingButton.addEventListener("click", () => {
@@ -931,7 +575,7 @@ ui.pingButton.addEventListener("click", () => {
 
   try {
     robotClient.ping();
-    log(simulatorMode ? "Ping sent to simulator." : "Ping sent to ESP32.");
+    log("Ping sent to ESP32.");
   } catch (error) {
     log(`Ping failed: ${error.message}`, "error");
   }
@@ -986,40 +630,6 @@ ui.lifeEngineToggle.addEventListener("click", () => {
   }
 
   updateLifeEngineToggle();
-});
-
-ui.simulateAttentionButton.addEventListener("click", () => {
-  lifeEngine?.receiveEvent({
-    type: "user_text",
-    text: "simulated attention"
-  });
-  requestPoseScenario("pose_attentive");
-  log("Simulated user attention.");
-});
-
-ui.simulateObstacleButton.addEventListener("click", () => {
-  if (!lifeEngine) {
-    return;
-  }
-
-  const nextObstacleState = !lifeEngine.getState().obstacle;
-  lifeEngine.receiveEvent({
-    type: "obstacle",
-    value: nextObstacleState
-  });
-  log(`Obstacle simulation ${nextObstacleState ? "enabled" : "cleared"}.`, "warn");
-});
-
-ui.simulateBoredomButton.addEventListener("click", () => {
-  lifeEngine?.patchState?.({ boredom: 0.9, curiosity: 0.85, mood: "curious" }, "ui_simulate_boredom");
-  requestPoseScenario("pose_curious");
-  log("Simulated boredom state.");
-});
-
-ui.simulateLowEnergyButton.addEventListener("click", () => {
-  lifeEngine?.patchState?.({ energy: 0.15, mood: "sleepy" }, "ui_simulate_low_energy");
-  requestPoseScenario("pose_sleepy");
-  log("Simulated low energy state.");
 });
 
 ui.scenarioComeHereButton.addEventListener("click", () => {
@@ -1080,41 +690,6 @@ ui.scenarioClearObstacleButton.addEventListener("click", () => {
     type: "obstacle",
     value: false
   });
-});
-
-ui.looiModeToggle?.addEventListener("change", () => {
-  looiModeEnabled = ui.looiModeToggle.checked;
-  if (looiModeEnabled) {
-    reliabilityManager?.start?.();
-  } else {
-    reliabilityManager?.stop?.();
-  }
-  updateEmbodimentUi();
-  log(looiModeEnabled ? "Scenario runtime enabled. Motion safety gates are unchanged." : "Scenario runtime disabled.");
-});
-
-ui.keepRobotAwakeToggle?.addEventListener("change", () => {
-  keepRobotAwakeEnabled = ui.keepRobotAwakeToggle.checked;
-  const task = keepRobotAwakeEnabled ? wakeLockManager?.request?.() : wakeLockManager?.release?.();
-  task?.catch?.((error) => {
-    ui.keepRobotAwakeToggle.checked = false;
-    keepRobotAwakeEnabled = false;
-    log(`Wake lock failed: ${error.message}`, "warn");
-    updateEmbodimentUi();
-  });
-  updateEmbodimentUi();
-});
-
-ui.scenarioRuntimeStopButton?.addEventListener("click", async () => {
-  await immediateStop("scenario_panel_stop", "Scenario stop sent.", "warn");
-});
-
-ui.runSimulatorLooiDemoButton?.addEventListener("click", () => {
-  simulatorDemoRoutine().catch((error) => log(`Simulator LOOI demo failed: ${error.message}`, "warn"));
-});
-
-ui.runWheelsLiftedSafetyTestButton?.addEventListener("click", () => {
-  wheelsLiftedSafetyRoutine().catch((error) => log(`Wheels-lifted test failed: ${error.message}`, "warn"));
 });
 
 ui.speedSlider.addEventListener("input", updateSliderLabels);
@@ -1181,21 +756,14 @@ async function init() {
   const savedFollowTuning = loadFollowTuningSettings();
   brainPolicy = clampBrainPolicy({
     ...createDefaultBrainPolicy(),
-    localBrainEnabled: activeConfig.localBrainDefaultEnabled ?? true,
     maxThoughtsPerMinute:
       activeConfig.localBrainMaxThoughtsPerMinute ??
       PUBLIC_CONFIG.localBrainMaxThoughtsPerMinute ??
       12,
-    localVisionEnabled: activeConfig.localVisionEnabled ?? PUBLIC_CONFIG.localVisionEnabled ?? true,
-    objectDetectionEnabledDefault:
-      activeConfig.objectDetectionEnabledDefault ??
-      PUBLIC_CONFIG.objectDetectionEnabledDefault ??
-      false,
-    allowFollowMovement: false,
     followLostTimeoutMs:
       activeConfig.followLostTimeoutMs ??
       PUBLIC_CONFIG.followLostTimeoutMs ??
-      2000,
+      3000,
     followTargetCenterX:
       activeConfig.followTargetCenterX ??
       PUBLIC_CONFIG.followTargetCenterX ??
@@ -1222,20 +790,10 @@ async function init() {
       FOLLOW_TUNING_PRESETS[DEFAULT_FOLLOW_TUNING_PRESET].followCommandRefreshMs,
     ...savedFollowTuning,
     eventThoughtCooldownMs:
-      activeConfig.speechGateEventCooldownMs ??
-      PUBLIC_CONFIG.speechGateEventCooldownMs ??
+      activeConfig.localBrainEventCooldownMs ??
+      PUBLIC_CONFIG.localBrainEventCooldownMs ??
       createDefaultBrainPolicy().eventThoughtCooldownMs
   });
-  const wakeNames = Array.isArray(activeConfig.wakeNamesDefault)
-    ? activeConfig.wakeNamesDefault
-    : PUBLIC_CONFIG.wakeNamesDefault;
-  ui.wakeNamesInput.value = parseWakeNames(wakeNames).join(",");
-  ui.alwaysListeningToggle.checked = Boolean(activeConfig.alwaysListeningDefault);
-  ui.audioLevelMonitorToggle.checked = Boolean(activeConfig.audioLevelMonitorDefault);
-  looiModeEnabled = Boolean(activeConfig.looiModeDefault);
-  keepRobotAwakeEnabled = Boolean(activeConfig.keepRobotAwakeDefault);
-  if (ui.looiModeToggle) ui.looiModeToggle.checked = looiModeEnabled;
-  if (ui.keepRobotAwakeToggle) ui.keepRobotAwakeToggle.checked = keepRobotAwakeEnabled;
   geminiVisionAssistEnabled = activeConfig.geminiVisionAssistDefault ?? PUBLIC_CONFIG.geminiVisionAssistDefault ?? true;
   geminiVisionAssistIntervalMs = clampNumber(
     activeConfig.geminiVisionAssistIntervalMs ?? PUBLIC_CONFIG.geminiVisionAssistIntervalMs,
@@ -1268,9 +826,6 @@ async function init() {
       performanceMonitor?.recordBrainLatency?.(latencyMs);
     }
   });
-  ["sequence_started", "sequence_result", "sequence_interrupted"].forEach((type) => {
-    localEventBus.subscribe(type, () => updateEmbodimentUi());
-  });
   localEventBus.subscribe("brain_thought_result", (event) => {
     const results = event.payload?.results ?? event.payload?.thought?.results ?? [];
     const lastResult = Array.isArray(results) ? results[results.length - 1] : null;
@@ -1288,25 +843,6 @@ async function init() {
     logger: (message, level = "info") => log(message, level)
   });
 
-  speechGate = new SpeechGate({
-    robotNames: parseWakeNames(ui.wakeNamesInput.value),
-    logger: (message, level = "info") => log(message, level),
-    getContext: () => ({
-      lifeState: lifeEngine?.getState?.() ?? {},
-      attention: attentionSystem?.getStatus?.() ?? null,
-      localPolicy: getPolicy(),
-      speechStatus: speechInput?.getStatus?.() ?? null
-    })
-  });
-  speechGate.attentionWindowMs =
-    activeConfig.attentionWindowMs ??
-    PUBLIC_CONFIG.attentionWindowMs ??
-    speechGate.attentionWindowMs;
-  speechGate.conversationWindowMs =
-    activeConfig.conversationWindowMs ??
-    PUBLIC_CONFIG.conversationWindowMs ??
-    speechGate.conversationWindowMs;
-
   brainLatencyBudget = new BrainLatencyBudget({
     eventThoughtTimeoutMs: activeConfig.localBrainEventTimeoutMs ?? 12000
   });
@@ -1322,7 +858,6 @@ async function init() {
       maxSpeed: settings.maxSpeed,
       maxDurationMs: activeConfig.maxDurationMs ?? PUBLIC_CONFIG.maxDurationMs
     });
-    updateCalibrationUi(settings);
   });
 
   personalityTuning = new PersonalityTuning({
@@ -1342,13 +877,13 @@ async function init() {
   ui.durationSlider.max = String(activeConfig.maxDurationMs ?? PUBLIC_CONFIG.maxDurationMs);
   updateSliderLabels();
 
-  realRobotClient = new ESP32Client({
+  robotClient = new ESP32Client({
     url: ui.esp32UrlInput.value,
     minDurationMs: 0,
     logger: (message, level = "info") => log(message, level)
   });
-  registerRobotClientCallbacks(realRobotClient);
-  realRobotClient
+  registerRobotClientCallbacks(robotClient);
+  robotClient
     .refreshStatus?.()
     .then((status) => {
       if (status.connected) {
@@ -1361,7 +896,6 @@ async function init() {
       log(`ESP32 server gateway status unavailable: ${error.message}`, "warn");
     });
 
-  robotClient = realRobotClient;
   commandQueue = createCommandQueue(robotClient);
 
   lifeEngine = new LifeEngine({
@@ -1375,20 +909,11 @@ async function init() {
     statusCallback: updateLifeStatus
   });
 
-  voiceOutput = new VoiceOutput({
-    face,
-    lifeEngine,
-    logger: (message, level = "info") => log(message, level)
-  });
-  voiceOutput.onStatus(updateVoiceUi);
-  setupVoiceList();
-
   priorityScheduler = new PriorityScheduler({
     logger: (message, level = "info") => log(message, level)
   });
   scenarioFrameSequencer = new ScenarioFrameSequencer({
     face,
-    voiceOutput,
     commandQueue,
     lifeEngine,
     calibration: bodyCalibration,
@@ -1455,38 +980,12 @@ async function init() {
     updateVisionUi();
   });
 
-  speechInput = new SpeechInput({
-    language: ui.speechLanguageInput.value.trim() || "en-US",
-    continuous: ui.continuousListeningToggle.checked,
-    interimResults: true,
-    logger: (message, level = "info") => log(message, level)
-  });
-  speechInput.onStatus(updateVoiceUi);
-  speechInput.onInterim(handleInterimSpeech);
-  speechInput.onFinal((payload) => {
-    handleFinalSpeech(payload).catch((error) => {
-      log(`Speech handling failed: ${error.message}`, "error");
-    });
-  });
-  speechInput.onError(updateVoiceUi);
-
-  audioLevelMonitor = new AudioLevelMonitor({
-    logger: (message, level = "info") => log(message, level)
-  });
-  audioLevelMonitor.onLevel((payload) => {
-    if (ui.audioLevelDisplay) {
-      ui.audioLevelDisplay.textContent = `${Math.round(Number(payload.level || 0) * 100)}%`;
-    }
-  });
-  audioLevelMonitor.onVoiceActivity(handleVoiceActivity);
-
   toolExecutor = new ToolExecutor({
     lifeEngine,
     face,
     robotClient,
     commandQueue,
     embodiedActionRouter,
-    voiceOutput,
     cameraInput,
     visionScenarioManager: null,
     visionState,
@@ -1512,12 +1011,9 @@ async function init() {
     objectTracker,
     visionState,
     followTargetController,
-    voiceOutput,
     face,
     eventBus: localEventBus,
-    getPolicy: getExecutionPolicy,
-    armFollowMovement: armFollowMovementForScenario,
-    disarmFollowMovement: disarmFollowMovementForScenario,
+    armMovement: armMovementForScenario,
     logger: (message, level = "info") => log(message, level)
   });
   toolExecutor.setVisionControllers?.({
@@ -1530,18 +1026,17 @@ async function init() {
     toolExecutor,
     face,
     lifeEngine,
-    eventBus: localEventBus,
     getRuntimeContext,
     logger: (message, level = "info") => log(message, level)
   });
   geminiLiveRuntime.configure(activeConfig);
   geminiLiveRuntime.onStatus(updateGeminiLiveUi);
   [
-    "vision_follow_starting",
     "vision_follow_started",
     "vision_follow_stopped",
     "vision_follow_not_found",
-    "vision_target_lost"
+    "vision_target_lost",
+    "vision_target_reacquired"
   ].forEach((type) => {
     localEventBus.subscribe(type, () => {
       updateVisionUi();
@@ -1573,12 +1068,8 @@ async function init() {
   wakeLockManager = new WakeLockManager({
     logger: (message, level = "info") => log(message, level)
   });
-  wakeLockManager.onStatus(updateEmbodimentUi);
   performanceMonitor = new PerformanceMonitor({
     logger: (message, level = "info") => log(message, level)
-  });
-  performanceMonitor.onStatus((status) => {
-    updateEmbodimentUi(status);
   });
   reliabilityManager = new ReliabilityManager({
     performanceMonitor,
@@ -1601,44 +1092,24 @@ async function init() {
   if (activeConfig.performanceMonitorEnabledDefault !== false) {
     performanceMonitor.start();
   }
-  if (looiModeEnabled) {
-    reliabilityManager.start();
-  }
-  if (keepRobotAwakeEnabled) {
-    wakeLockManager.request().catch((error) => {
-      keepRobotAwakeEnabled = false;
-      if (ui.keepRobotAwakeToggle) ui.keepRobotAwakeToggle.checked = false;
-      log(`Wake lock unavailable: ${error.message}`, "warn");
-    });
-  }
   updateConnectionState(robotClient.getStatus());
   updateLifeEngineToggle();
-  updateSimulatorUi();
   updateLocalBrainUi();
-  updateVoiceUi();
-  updateAlwaysListeningUi();
+  updateOutputAudioUi();
+  updateAttentionUi();
   updateCameraUi();
-  updateCalibrationUi();
   updatePersonalityUi();
   updateLifeEventsUi();
   refreshLocalBrainServerStatus().catch((error) => {
     log(`Local Brain server unavailable, fallback will be used: ${error.message}`, "warn");
   });
-  if (ui.audioLevelMonitorToggle.checked) {
-    setAudioLevelMonitorEnabled(true).catch((error) => {
-      ui.audioLevelMonitorToggle.checked = false;
-      log(`Audio activity monitor unavailable: ${error.message}`, "warn");
-      updateAlwaysListeningUi();
-    });
-  }
   ui.productionStartButton.disabled = false;
   ui.localBrainQuickButton.disabled = false;
   updateProductionChrome();
   renderLocalBrainThoughts();
   renderLocalEvents();
   globalThis.setInterval(() => {
-    updateAlwaysListeningUi();
-    updateEmbodimentUi();
+    updateAttentionUi();
     updateGeminiVisionAssistUi();
   }, 1000);
   refreshLearnedPhrases().catch((error) => {
@@ -1682,10 +1153,8 @@ function registerRobotClientCallbacks(client) {
     lifeEngine?.setConnectionState(getLifeConnectionState(status));
 
     if (!status.connected) {
-      renderTelemetry({});
+      lifeEngine?.setConnectionState("disconnected");
     }
-
-    updateSimulatorUi();
   });
 
   client.onTelemetry((telemetry) => {
@@ -1693,15 +1162,12 @@ function registerRobotClientCallbacks(client) {
       return;
     }
 
-    renderTelemetry(telemetry);
     lifeEngine?.updateTelemetry(telemetry);
-    renderMotionDebug(telemetry);
     localEventBus?.publish?.("telemetry", {
       telemetry,
-      simulatorMode,
       robotConnected: Boolean(robotClient?.isConnected?.())
     }, {
-      source: simulatorMode ? "simulator" : "esp32",
+      source: "esp32",
       priority: 0
     });
   });
@@ -1715,19 +1181,7 @@ function registerRobotClientCallbacks(client) {
       message.cmd === "motion"
         ? `label=${message.label ?? "--"} left=${formatNumber(message.left_speed)} right=${formatNumber(message.right_speed)} ramp=${message.ramp_ms ?? "--"}`
         : message.reason ?? "";
-    log(`${simulatorMode ? "SIM" : "ESP32"} ack: ${message.cmd}${details ? ` (${details})` : ""}`);
-
-    if (message.cmd === "config_update" && message.config) {
-      renderRobotConfig(message.config);
-    }
-  });
-
-  client.onConfig?.((config) => {
-    if (client !== robotClient) {
-      return;
-    }
-
-    renderRobotConfig(config);
+    log(`ESP32 ack: ${message.cmd}${details ? ` (${details})` : ""}`);
   });
 
   client.onError((message) => {
@@ -1736,7 +1190,7 @@ function registerRobotClientCallbacks(client) {
     }
 
     requestPoseScenario("pose_scared");
-    log(`${simulatorMode ? "Simulator" : "ESP32"} error: ${message.message ?? "unknown"}`, "error");
+    log(`ESP32 error: ${message.message ?? "unknown"}`, "error");
   });
 }
 
@@ -1750,89 +1204,7 @@ function createCommandQueue(client) {
     maxDurationMs: activeConfig.maxDurationMs ?? PUBLIC_CONFIG.maxDurationMs
   });
 
-  queue.onCommand?.((_entry, history) => {
-    renderCommandHistory(history);
-  });
-
   return queue;
-}
-
-function setActiveRobotClient(nextClient) {
-  robotClient = nextClient;
-  commandQueue = createCommandQueue(robotClient);
-  lifeEngine?.setRobotInterfaces({
-    robotClient,
-    commandQueue
-  });
-  toolExecutor?.setRobotInterfaces({
-    robotClient,
-    commandQueue
-  });
-  followTargetController?.setRobotInterfaces?.({
-    commandQueue,
-    lifeEngine
-  });
-  scenarioFrameSequencer?.setCommandQueue?.(commandQueue);
-  scenarioFrameSequencer?.setLifeEngine?.(lifeEngine);
-  renderCommandHistory(commandQueue?.getRecentCommands?.() ?? []);
-  updateConnectionState(robotClient.getStatus());
-  renderTelemetry(robotClient.getLatestTelemetry?.() ?? {});
-  renderRobotConfig(robotClient.getLatestConfig?.() ?? robotClient.getLatestTelemetry?.()?.config ?? null);
-  updateSimulatorUi();
-}
-
-async function toggleSimulatorMode() {
-  if (simulatorMode) {
-    await disableSimulatorMode();
-    return;
-  }
-
-  await enableSimulatorMode();
-}
-
-async function enableSimulatorMode() {
-  if (simulatorMode) {
-    return;
-  }
-
-  if (realRobotClient?.isConnected()) {
-    await commandQueue?.stopMotion?.("switch_to_simulator");
-    realRobotClient.disconnect();
-  }
-
-  if (!simulatedRobotClient) {
-    simulatedRobotClient = new SimulatedESP32Client({
-      logger: (message, level = "info") => log(message, level)
-    });
-    registerRobotClientCallbacks(simulatedRobotClient);
-  }
-
-  simulatorMode = true;
-  setActiveRobotClient(simulatedRobotClient);
-  await simulatedRobotClient.connect();
-  await applyCalibrationToRobot({ quiet: true });
-  lifeEngine?.setConnectionState("simulated_connected");
-  updateConnectionState(simulatedRobotClient.getStatus());
-  updateSimulatorUi();
-  log("Simulator mode enabled.");
-}
-
-async function disableSimulatorMode() {
-  if (!simulatorMode) {
-    return;
-  }
-
-  if (simulatedRobotClient?.isConnected()) {
-    await commandQueue?.stopMotion?.("switch_to_real_esp32");
-    simulatedRobotClient.disconnect();
-  }
-
-  simulatorMode = false;
-  setActiveRobotClient(realRobotClient);
-  lifeEngine?.setConnectionState("disconnected");
-  renderTelemetry({});
-  updateSimulatorUi();
-  log("Simulator mode disabled.");
 }
 
 function ensureConnected(message) {
@@ -1851,7 +1223,6 @@ async function immediateStop(reason, message, level = "warn") {
   }
 
   geminiLiveRuntime?.interrupt?.(reason);
-  voiceOutput?.cancel?.(reason);
   scenarioFrameSequencer?.interrupt?.(reason, 100);
   priorityScheduler?.interruptBelow?.(100, reason);
   priorityScheduler?.clear?.();
@@ -1877,17 +1248,17 @@ async function handleSend() {
 
   log(`STEP 0 INPUT typed: "${text}"`);
   ui.userInput.value = "";
-  await handleGatedTranscript({
+  await handleLocalTextInput({
     text,
     confidence: 1,
-    language: ui.speechLanguageInput.value.trim() || "typed",
+    language: "typed",
     timestamp: new Date().toISOString(),
     source: "typed"
   });
 }
 
-async function handleGatedTranscript(transcript = {}) {
-  const text = String(transcript.text ?? "").trim();
+async function handleLocalTextInput(input = {}) {
+  const text = String(input.text ?? "").trim();
 
   if (!text) {
     return null;
@@ -1898,18 +1269,10 @@ async function handleGatedTranscript(transcript = {}) {
     visionScenarioManager?.stopFollowing?.("user_stop_following");
   }
 
-  const source = transcript.source === "typed"
-    ? "typed"
-    : transcript.source === "speech_interim"
-      ? "speech_interim"
-      : "speech";
-  const eventType = source === "typed" ? "user_text" : "user_speech";
-  const gateResult = speechGate?.processTranscript?.({
-    ...transcript,
-    text,
-    source
-  }) ?? fallbackGateResult(text, source);
-  traceLive("STEP 1 SPEECH_GATE", {
+  const source = "typed";
+  const eventType = "user_text";
+  const gateResult = classifyLocalTextInput(text);
+  traceLive("STEP 1 LOCAL_INPUT", {
     text,
     source,
     classification: gateResult.classification,
@@ -1943,7 +1306,7 @@ async function handleGatedTranscript(transcript = {}) {
 
   if (
     gateResult.accepted &&
-    ["direct_to_robot", "possible_direct_command", "question", "social_comment", "open_speech"].includes(gateResult.classification)
+    ["direct_to_robot", "possible_direct_command", "question", "social_comment"].includes(gateResult.classification)
   ) {
     attentionSystem?.enterConversation?.(
       gateResult.classification,
@@ -1956,9 +1319,9 @@ async function handleGatedTranscript(transcript = {}) {
     type: gateResult.shouldImmediateStop ? "local_stop_phrase" : eventType,
     text,
     payload: {
-      confidence: transcript.confidence,
-      language: transcript.language,
-      final: transcript.final !== false,
+      confidence: input.confidence,
+      language: input.language,
+      final: input.final !== false,
       classification: gateResult.classification,
       accepted: gateResult.accepted,
       shouldTriggerBrain: gateResult.shouldTriggerBrain,
@@ -1975,203 +1338,22 @@ async function handleGatedTranscript(transcript = {}) {
 
   if (gateResult.shouldImmediateStop) {
     await immediateStop(
-      source === "typed" ? "local_typed_stop" : "local_voice_stop",
-      source === "typed"
-        ? "Local typed stop phrase detected."
-        : "Local voice stop phrase detected.",
+      "local_typed_stop",
+      "Local typed stop phrase detected.",
       "warn"
     );
   } else if (!gateResult.accepted) {
     log(`Ignored ${source}: ${text} (${gateResult.classification})`);
-  } else if (gateResult.shouldTriggerBrain && looiModeEnabled) {
+  } else if (gateResult.shouldTriggerBrain && isBrainLive()) {
     requestPoseScenario("pose_curious");
   }
 
-  updateAlwaysListeningUi();
+  updateAttentionUi();
   updateLocalBrainUi();
   return {
     event,
     gateResult
   };
-}
-
-function handleInterimSpeech(payload) {
-  const text = String(payload.text ?? "").trim();
-  ui.interimTranscript.textContent = text || "--";
-  if (ui.earsInterimTranscript) {
-    ui.earsInterimTranscript.textContent = text || "--";
-  }
-  scheduleStableInterimSpeech({ ...payload, text });
-  updateVoiceUi();
-}
-
-async function handleFinalSpeech(payload) {
-  const text = payload.text.trim();
-
-  if (!text) {
-    return;
-  }
-
-  const normalizedFinal = normalizeTranscriptForDedupe(text);
-  const finalMatchesDispatchedInterim =
-    Boolean(lastInterimDispatchedText) &&
-    normalizedFinal === normalizeTranscriptForDedupe(lastInterimDispatchedText);
-  const finalFollowsRecentInterim =
-    Boolean(lastInterimDispatchedAt) &&
-    Date.now() - lastInterimDispatchedAt < 2500;
-
-  clearPendingInterimSpeech();
-  lastTranscript = {
-    ...payload,
-    text
-  };
-  ui.finalTranscript.textContent = text;
-  ui.interimTranscript.textContent = "";
-  if (ui.earsInterimTranscript) {
-    ui.earsInterimTranscript.textContent = "--";
-  }
-
-  if (!useFinalSpeechOnly && (finalMatchesDispatchedInterim || finalFollowsRecentInterim)) {
-    log(`STEP 0 INPUT final skipped: already sent interim "${text}"`);
-    return;
-  }
-
-  log(`STEP 0 INPUT speech: "${text}"`);
-  await handleGatedTranscript({
-    ...payload,
-    text,
-    source: "speech",
-    final: true
-  });
-}
-
-function scheduleStableInterimSpeech(payload = {}) {
-  clearTimeout(interimSpeechTimer);
-  latestInterimSpeech = payload;
-  bestInterimSpeech = chooseBetterInterimCandidate(bestInterimSpeech, payload);
-
-  if (useFinalSpeechOnly) {
-    return;
-  }
-
-  const text = String(bestInterimSpeech?.text ?? payload.text ?? "").trim();
-  if (!shouldDispatchInterimText(text)) {
-    return;
-  }
-
-  interimSpeechTimer = globalThis.setTimeout(() => {
-    dispatchStableInterimSpeech().catch((error) => {
-      log(`Interim speech handling failed: ${error.message}`, "warn");
-    });
-  }, INTERIM_STABILITY_MS);
-}
-
-async function dispatchStableInterimSpeech() {
-  const payload = bestInterimSpeech ?? latestInterimSpeech;
-  latestInterimSpeech = null;
-  bestInterimSpeech = null;
-  interimSpeechTimer = null;
-
-  const text = String(payload?.text ?? "").trim();
-  if (!shouldDispatchInterimText(text)) {
-    return null;
-  }
-
-  if (normalizeTranscriptForDedupe(text) === normalizeTranscriptForDedupe(lastInterimDispatchedText)) {
-    return null;
-  }
-
-  lastInterimDispatchedText = text;
-  lastInterimDispatchedAt = Date.now();
-  lastTranscript = {
-    ...payload,
-    text,
-    final: false,
-    source: "speech_interim"
-  };
-  log(`STEP 0 INPUT interim: "${text}"`);
-  return handleGatedTranscript({
-    ...payload,
-    text,
-    source: "speech_interim",
-    final: false,
-    timestamp: payload.timestamp ?? new Date().toISOString()
-  });
-}
-
-function clearPendingInterimSpeech() {
-  clearTimeout(interimSpeechTimer);
-  interimSpeechTimer = null;
-  latestInterimSpeech = null;
-  bestInterimSpeech = null;
-}
-
-function chooseBetterInterimCandidate(current, next) {
-  const currentText = String(current?.text ?? "").trim();
-  const nextText = String(next?.text ?? "").trim();
-
-  if (!nextText) {
-    return current ?? next;
-  }
-
-  if (!currentText) {
-    return next;
-  }
-
-  const currentNormalized = normalizeTranscriptForDedupe(currentText);
-  const nextNormalized = normalizeTranscriptForDedupe(nextText);
-
-  if (!nextNormalized) {
-    return current;
-  }
-
-  if (!currentNormalized) {
-    return next;
-  }
-
-  if (currentNormalized.includes(nextNormalized) && currentNormalized !== nextNormalized) {
-    return current;
-  }
-
-  if (nextNormalized.includes(currentNormalized) && currentNormalized !== nextNormalized) {
-    return next;
-  }
-
-  const currentWords = currentNormalized.split(/\s+/).filter(Boolean).length;
-  const nextWords = nextNormalized.split(/\s+/).filter(Boolean).length;
-
-  if (nextWords > currentWords) {
-    return next;
-  }
-
-  if (nextWords === currentWords && nextNormalized.length > currentNormalized.length) {
-    return next;
-  }
-
-  return current;
-}
-
-function shouldDispatchInterimText(text) {
-  const normalized = normalizeTranscriptForDedupe(text);
-
-  if (!normalized) {
-    return false;
-  }
-
-  if (isLocalStopPhrase(normalized)) {
-    return true;
-  }
-
-  return normalized.split(/\s+/).length >= 2 && normalized.length >= 5;
-}
-
-function normalizeTranscriptForDedupe(text) {
-  return String(text ?? "")
-    .toLowerCase()
-    .replace(/[’`]/g, "'")
-    .replace(/[^\w\s']/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
 }
 
 async function openCameraFromUi(facingMode) {
@@ -2208,7 +1390,6 @@ function handleCameraCommandResult(result = {}) {
     if (result.status?.running === false) {
       visionScenarioManager?.stopFollowing?.("camera_stopped");
       drawObjectDetectionOverlays([]);
-      face?.setVisionIndicator?.(false);
       syncGeminiVisionAssist("camera_stopped");
     }
     syncGeminiVisionAssist("camera_started");
@@ -2294,16 +1475,10 @@ async function postRobotEvent(event) {
       }
     );
 
-    lastEventPosted = published;
-    ui.lastRobotEventPosted.textContent = published
-      ? `${published.type} · ${published.id}`
-      : "--";
-    ui.robotEventPostStatus.textContent = "local";
     updateLifeEventsUi();
     renderLocalEvents();
     return published;
   } catch (error) {
-    ui.robotEventPostStatus.textContent = `failed: ${error.message}`;
     log(`Local event publish failed: ${error.message}`, "warn");
     return null;
   }
@@ -2337,77 +1512,19 @@ function isLocalStopPhrase(text) {
   );
 }
 
-async function setAudioLevelMonitorEnabled(enabled) {
-  if (!audioLevelMonitor) {
-    throw new Error("Audio activity monitor is still initializing.");
-  }
-
-  if (enabled) {
-    await audioLevelMonitor.start();
-  } else {
-    audioLevelMonitor.stop();
-    clearTimeout(audioActivityClearTimer);
-    lifeEngine?.setListening?.(false);
-  }
-
-  updateAlwaysListeningUi();
-  return audioLevelMonitor.getStatus();
-}
-
-function handleVoiceActivity(payload = {}) {
-  lifeEngine?.setListening?.(true);
-  requestPoseScenario("pose_attentive", { minIntervalMs: 1200 });
-  if (ui.voiceActivityState) {
-    ui.voiceActivityState.textContent = "voice activity";
-  }
-
-  clearTimeout(audioActivityClearTimer);
-  audioActivityClearTimer = globalThis.setTimeout(() => {
-    lifeEngine?.setListening?.(false);
-    updateAlwaysListeningUi();
-  }, 1200);
-
-  if (ui.audioLevelDisplay) {
-    ui.audioLevelDisplay.textContent = `${Math.round(Number(payload.level || 0) * 100)}%`;
-  }
-
-  updateAlwaysListeningUi();
-}
-
-function parseWakeNames(value) {
-  const source = Array.isArray(value) ? value : String(value ?? "").split(",");
-  const names = source
-    .map((name) => String(name).trim().toLowerCase())
-    .filter(Boolean);
-  return names.length ? [...new Set(names)] : ["looi", "louie", "lui", "robot"];
-}
-
-function fallbackGateResult(text, source = "speech") {
-  const typed = source === "typed";
+function classifyLocalTextInput(text) {
   const stopPhrase = isLocalStopPhrase(text);
   return {
     accepted: true,
-    classification: stopPhrase ? "safety_stop" : typed ? "direct_to_robot" : "open_speech",
-    priority: stopPhrase ? "critical" : typed ? "normal" : "low",
+    classification: stopPhrase ? "safety_stop" : "direct_to_robot",
+    priority: stopPhrase ? "critical" : "normal",
     shouldTriggerBrain: !stopPhrase,
-    shouldOpenAttention: typed,
+    shouldOpenAttention: true,
     shouldImmediateStop: stopPhrase,
     normalizedText: String(text ?? "").trim().toLowerCase(),
-    reason: "speech_gate_unavailable",
+    reason: "local_text_input",
     suggestedIntent: null
   };
-}
-
-function bindCalibrationInput(element, key) {
-  element.addEventListener("input", () => {
-    if (!bodyCalibration) {
-      return;
-    }
-
-    bodyCalibration.patchSettings({
-      [key]: Number(element.value)
-    });
-  });
 }
 
 function bindPersonalityText(element, key) {
@@ -2543,8 +1660,6 @@ async function applyCalibrationToRobot({ quiet = false } = {}) {
     return result;
   }
 
-  renderRobotConfig(result.config);
-
   if (!quiet) {
     log("Calibration config sent to robot runtime.");
   }
@@ -2552,77 +1667,11 @@ async function applyCalibrationToRobot({ quiet = false } = {}) {
   return result;
 }
 
-function requestRobotConfig() {
-  if (!robotClient?.isConnected?.()) {
-    log("Cannot request robot config: robot or simulator is not connected.", "warn");
-    return;
-  }
-
-  if (typeof robotClient.requestConfig !== "function") {
-    log("Robot config request is unavailable on this client.", "warn");
-    return;
-  }
-
-  robotClient.requestConfig();
-  log("Requested robot config.");
-}
-
-function runCalibrationMotionTest({ linear = 0, angular = 0, label }) {
-  if (!calibrationTestArmed) {
-    log("Calibration movement blocked: arm Calibration Test first.", "warn");
-    return;
-  }
-
-  if (!ensureConnected("Calibration movement skipped because no robot client is connected.")) {
-    return;
-  }
-
-  const settings = bodyCalibration?.getSettings?.() ?? {};
-  const speed =
-    linear !== 0
-      ? settings.gentleSpeed ?? 0.18
-      : settings.turnSpeed ?? 0.18;
-
-  commandQueue
-    .enqueueMotion({
-      linear: linear * speed,
-      angular: angular * speed,
-      durationMs: settings.approachTinyMs ?? 220,
-      rampMs: settings.rampMs ?? 150,
-      label
-    })
-    .catch((error) => {
-      log(`${label} failed: ${error.message}`, "warn");
-    });
-  log(`Calibration test queued: ${label}`);
-}
-
-function runCalibrationScenarioTest(name) {
-  if (!calibrationTestArmed) {
-    log("Calibration scenario test blocked: arm Calibration Test first.", "warn");
-    return;
-  }
-
-  if (!ensureConnected("Calibration Life test skipped because no robot client is connected.")) {
-    return;
-  }
-
-  lifeEngine?.receiveEvent({
-    type: "manual_test",
-    label: `calibration_${name}`,
-    value: { scenario: name }
-  });
-  runScenarioFromUi(name).catch((error) => {
-    log(`Calibration scenario test failed: ${error.message}`, "warn");
-  });
-  log(`Calibration scenario test requested: ${name}`);
-}
-
 async function startProductionRuntime() {
   await requestFullscreenSafe();
 
-  if (realRobotClient?.refreshStatus) {
-    await realRobotClient.refreshStatus().catch((error) => {
+  if (robotClient?.refreshStatus) {
+    await robotClient.refreshStatus().catch((error) => {
       log(`ESP32 gateway refresh failed: ${error.message}`, "warn");
     });
   }
@@ -2654,29 +1703,15 @@ async function startLocalBrainProductionMode() {
   await ensureOfficialRobotConnection();
 
   patchBrainPolicy({
-    localBrainEnabled: true,
-    localMotionArmed: true,
-    localCameraAllowed: true,
-    localSpeechAllowed: true,
-    allowFollowMovement: true
+    localMotionArmed: true
   });
 
   lifeEventsEnabled = true;
   globalThis.localStorage?.setItem?.("looi.lifeEventsEnabled.v1", "true");
 
-  ui.muteSpeechToggle.checked = false;
-  voiceOutput?.setMuted?.(false);
-
-  looiModeEnabled = true;
-  keepRobotAwakeEnabled = true;
-  if (ui.looiModeToggle) ui.looiModeToggle.checked = true;
-  if (ui.keepRobotAwakeToggle) ui.keepRobotAwakeToggle.checked = true;
-
   performanceMonitor?.start?.();
   reliabilityManager?.start?.();
   wakeLockManager?.request?.().catch((error) => {
-    keepRobotAwakeEnabled = false;
-    if (ui.keepRobotAwakeToggle) ui.keepRobotAwakeToggle.checked = false;
     log(`Wake lock unavailable: ${error.message}`, "warn");
   });
 
@@ -2690,77 +1725,30 @@ async function startLocalBrainProductionMode() {
   }
   updateLifeEventsUi();
 
-  if (useGeminiLive) {
-    speechInput?.stop?.();
-    ui.continuousListeningToggle.checked = false;
-    ui.alwaysListeningToggle.checked = false;
-    const geminiStartResult = await geminiStartPromise;
-    if (geminiStartResult?.error) {
-      throw geminiStartResult.error;
-    }
-  } else {
-    speechInput?.setLanguage?.(ui.speechLanguageInput.value.trim() || "en-US");
-    ui.continuousListeningToggle.checked = true;
-    ui.alwaysListeningToggle.checked = true;
-    speechInput?.startAlwaysListening?.();
+  const geminiStartResult = useGeminiLive ? await geminiStartPromise : null;
+  if (geminiStartResult?.error) {
+    throw geminiStartResult.error;
   }
   attentionSystem?.wake?.("live_start", activeConfig.conversationWindowMs ?? 30000);
-  speechGate?.openAttentionWindow?.("live_start");
-
-  if (!useGeminiLive) {
-    ui.audioLevelMonitorToggle.checked = true;
-    setAudioLevelMonitorEnabled(true).catch((error) => {
-      ui.audioLevelMonitorToggle.checked = false;
-      log(`Audio activity monitor unavailable: ${error.message}`, "warn");
-      updateAlwaysListeningUi();
-    });
-  }
 
   await openCameraFromUi("user").catch((error) => {
     log(`Camera startup skipped: ${error.message}`, "warn");
   });
 
-  if (!useGeminiLive) {
-    voiceOutput?.speak?.({
-      text: "I'm awake.",
-      tone: "happy",
-      interrupt: true
-    });
-  }
-
   requestPoseScenario("pose_happy");
   log(
     useGeminiLive
-      ? "Gemini Live started: speech-to-speech ears, Gemini audio, camera, LOOI mode, and scenario movement permissions are enabled."
-      : "Local Brain Live started: brain, ears, speech, camera, LOOI mode, and scenario movement permissions are enabled.",
+      ? "Gemini Live started: Gemini audio, camera, LOOI mode, and movement are enabled."
+      : "Local Brain Live started: camera, LOOI mode, and movement are enabled.",
     "warn"
   );
-  updateAlwaysListeningUi();
+  updateAttentionUi();
   updateGeminiLiveUi();
-  updateEmbodimentUi();
   updateProductionChrome();
 }
 
 function primeLiveInputsFromUserGesture() {
-  if (!isGeminiLivePrimary()) {
-    primeSpeechFromUserGesture();
-  }
   primeCameraFromUserGesture();
-}
-
-function primeSpeechFromUserGesture() {
-  if (!speechInput) {
-    log("Speech input is still initializing.", "warn");
-    return;
-  }
-
-  speechInput.setLanguage?.(ui.speechLanguageInput.value.trim() || "en-US");
-  speechInput.setContinuous?.(true);
-  ui.continuousListeningToggle.checked = true;
-  ui.alwaysListeningToggle.checked = true;
-  speechInput.startAlwaysListening?.();
-  updateVoiceUi();
-  updateAlwaysListeningUi();
 }
 
 function primeCameraFromUserGesture() {
@@ -2781,31 +1769,20 @@ async function ensureOfficialRobotConnection() {
     return;
   }
 
-  if (simulatorMode) {
-    if (!robotClient.isConnected?.()) {
-      await robotClient.connect();
-    }
-    await applyCalibrationToRobot({ quiet: true }).catch((error) => {
-      log(`Simulator calibration apply failed: ${error.message}`, "warn");
-    });
-    return;
-  }
-
-  if (realRobotClient?.refreshStatus) {
-    await realRobotClient.refreshStatus().catch((error) => {
+  if (robotClient?.refreshStatus) {
+    await robotClient.refreshStatus().catch((error) => {
       log(`ESP32 gateway refresh failed: ${error.message}`, "warn");
     });
   }
 
-  if (!realRobotClient?.isConnected?.()) {
+  if (!robotClient?.isConnected?.()) {
     const nextUrl = ui.esp32UrlInput.value.trim() || activeConfig.defaultEsp32WsUrl;
-    await realRobotClient.connect(nextUrl).catch((error) => {
+    await robotClient.connect(nextUrl).catch((error) => {
       log(`ESP32 gateway is not connected yet: ${error.message}`, "warn");
     });
   }
 
-  if (realRobotClient?.isConnected?.()) {
-    setActiveRobotClient(realRobotClient);
+  if (robotClient?.isConnected?.()) {
     await applyCalibrationToRobot({ quiet: true }).catch((error) => {
       log(`Calibration apply during live startup failed: ${error.message}`, "warn");
     });
@@ -2862,9 +1839,7 @@ function updateProductionChrome() {
   const visionContext = getVisionContext();
   ui.localVisionDetail.textContent = visionContext.visibleLabels
     ? `Objects: ${visionContext.visibleLabels}`
-    : brainPolicy.localCameraAllowed
-      ? "No object metadata yet."
-      : "Local Brain camera actions are blocked until allowed.";
+    : "No object metadata yet.";
 
   if (ui.localVisionPreview && cameraInput?.stream) {
     ui.localVisionPreview.srcObject = cameraInput.stream;
@@ -2872,17 +1847,13 @@ function updateProductionChrome() {
     ui.localVisionPreview.srcObject = null;
   }
 
-  document.body.classList.toggle("local-brain-running", liveRunning);
   document.body.classList.toggle("local-motion-armed", brainPolicy.localMotionArmed);
-  document.body.classList.toggle("looi-mode-active", looiModeEnabled);
 }
 
 function updateConnectionState(status) {
   const state = status?.state ?? "disconnected";
-  const label = simulatorMode && status?.connected ? "simulated_connected" : state;
 
-  ui.connectionState.textContent = label;
-  ui.esp32Status.textContent = label;
+  ui.esp32Status.textContent = state;
 }
 
 function getLifeConnectionState(status) {
@@ -2890,25 +1861,7 @@ function getLifeConnectionState(status) {
     return "disconnected";
   }
 
-  return status.simulated || simulatorMode ? "simulated_connected" : "connected";
-}
-
-function renderTelemetry(telemetry) {
-  const data = telemetry ?? robotClient?.getLatestTelemetry?.() ?? null;
-
-  ui.telemetryRssi.textContent = formatMaybe(data?.rssi, (value) => `${value} dBm`);
-  ui.telemetryClients.textContent = formatMaybe(data?.clients);
-  ui.telemetryMotorState.textContent = formatMaybe(data?.motor_state);
-  ui.telemetryLeftSpeed.textContent = formatMaybe(data?.left_speed, formatNumber);
-  ui.telemetryRightSpeed.textContent = formatMaybe(data?.right_speed, formatNumber);
-  ui.telemetryMotionRemaining.textContent = formatMaybe(
-    data?.motion_remaining_ms,
-    (value) => `${Math.round(value)} ms`
-  );
-  ui.telemetryLastCommandAge.textContent = formatMaybe(
-    data?.last_command_age_ms,
-    (value) => `${Math.round(value)} ms`
-  );
+  return "connected";
 }
 
 function updateLifeStatus(state = lifeEngine?.getState?.()) {
@@ -2934,61 +1887,6 @@ function updateLifeEngineToggle() {
   }
 
   ui.lifeEngineToggle.textContent = lifeEngine.running ? "Pause Life Engine" : "Start Life Engine";
-}
-
-function updateSimulatorUi() {
-  const simulatorConnected = simulatorMode && simulatedRobotClient?.isConnected();
-
-  ui.simulatorState.textContent = simulatorMode
-    ? simulatorConnected
-      ? "active"
-      : "enabled_disconnected"
-    : "off";
-  ui.simulatorToggle.textContent = simulatorMode
-    ? "Disable Simulator Mode"
-    : "Enable Simulator Mode";
-  ui.simulatorNote.textContent = simulatorMode
-    ? "Simulator active: motor commands are logged, not sent to real ESP32."
-    : "Simulator inactive. Real ESP32 commands use the WebSocket body controller.";
-  document.body.classList.toggle("simulator-active", simulatorMode);
-}
-
-function updateCalibrationUi(settings = bodyCalibration?.getSettings?.()) {
-  const values = settings ?? {
-    maxSpeed: 0.4,
-    gentleSpeed: 0.18,
-    turnSpeed: 0.18,
-    wiggleSpeed: 0.2,
-    rampMs: 150,
-    leftTrim: 1,
-    rightTrim: 1,
-    deadband: 0.03,
-    minPwm: 210,
-    motionIntensityScale: 1,
-    idleMotionEnabled: true
-  };
-
-  setInputValue(ui.calibrationMaxSpeed, values.maxSpeed);
-  setInputValue(ui.calibrationGentleSpeed, values.gentleSpeed);
-  setInputValue(ui.calibrationTurnSpeed, values.turnSpeed);
-  setInputValue(ui.calibrationWiggleSpeed, values.wiggleSpeed);
-  setInputValue(ui.calibrationRampMs, values.rampMs);
-  setInputValue(ui.calibrationLeftTrim, values.leftTrim);
-  setInputValue(ui.calibrationRightTrim, values.rightTrim);
-  setInputValue(ui.calibrationDeadband, values.deadband);
-  setInputValue(ui.calibrationMinPwm, values.minPwm);
-  setInputValue(ui.calibrationMotionIntensityScale, values.motionIntensityScale);
-  ui.calibrationIdleMotionEnabled.checked = values.idleMotionEnabled !== false;
-
-  ui.calibrationArmButton.textContent = calibrationTestArmed
-    ? "Disarm Calibration Test"
-    : "Arm Calibration Test";
-  ui.calibrationArmState.textContent = calibrationTestArmed
-    ? "ARMED - test buttons may move the body"
-    : "DISARMED - test movement blocked";
-  ui.calibrationArmState.classList.toggle("calibration-state--armed", calibrationTestArmed);
-  ui.calibrationArmState.classList.toggle("calibration-state--disarmed", !calibrationTestArmed);
-  document.body.classList.toggle("calibration-armed", calibrationTestArmed);
 }
 
 function updatePersonalityUi(profile = personalityTuning?.getProfile?.()) {
@@ -3028,63 +1926,6 @@ function updateLifeEventsUi(status = lifeEventEmitter?.getStatus?.()) {
     : "--";
 }
 
-function renderRobotConfig(config) {
-  if (!ui.robotConfigDisplay) {
-    return;
-  }
-
-  ui.robotConfigDisplay.textContent = config
-    ? JSON.stringify(config, null, 2)
-    : "No robot config received yet.";
-}
-
-function renderCommandHistory(history = commandQueue?.getRecentCommands?.() ?? []) {
-  if (!ui.recentCommandHistory) {
-    return;
-  }
-
-  if (!history.length) {
-    ui.recentCommandHistory.textContent = "No movement commands yet.";
-    return;
-  }
-
-  ui.recentCommandHistory.textContent = history
-    .slice(0, 12)
-    .map((entry) => {
-      const time = new Date(entry.timestamp).toLocaleTimeString();
-      return `${time} ${entry.status} ${entry.label} lin=${formatNumber(entry.linear)} ang=${formatNumber(entry.angular)} dur=${Math.round(entry.durationMs)} ramp=${Math.round(entry.rampMs)}`;
-    })
-    .join("\n");
-}
-
-function renderMotionDebug(telemetry = robotClient?.getLatestTelemetry?.()) {
-  if (!ui.motionDebugDisplay) {
-    return;
-  }
-
-  if (!telemetry) {
-    ui.motionDebugDisplay.textContent = "No motion telemetry yet.";
-    return;
-  }
-
-  ui.motionDebugDisplay.textContent = JSON.stringify(
-    {
-      motor_state: telemetry.motor_state,
-      left_speed: telemetry.left_speed,
-      right_speed: telemetry.right_speed,
-      current_left_speed: telemetry.current_left_speed,
-      current_right_speed: telemetry.current_right_speed,
-      target_left_speed: telemetry.target_left_speed,
-      target_right_speed: telemetry.target_right_speed,
-      ramp_ms: telemetry.ramp_ms,
-      motion_label: telemetry.motion_label,
-      motion_remaining_ms: telemetry.motion_remaining_ms
-    },
-    null,
-    2
-  );
-}
-
 function updateLocalBrainUi() {
   const status = localBrainEngine?.getStatus?.() ?? {
     running: false,
@@ -3101,13 +1942,7 @@ function updateLocalBrainUi() {
   const geminiStatus = geminiLiveRuntime?.getStatus?.() ?? {};
   const geminiPrimaryActive = Boolean(geminiStatus.running || geminiStatus.connecting || geminiStatus.connected);
 
-  ui.localBrainEnabledToggle.checked = Boolean(brainPolicy.localBrainEnabled);
   ui.localMotionArmedToggle.checked = Boolean(brainPolicy.localMotionArmed);
-  ui.localCameraAllowedToggle.checked = Boolean(brainPolicy.localCameraAllowed);
-  ui.localSpeechAllowedToggle.checked = Boolean(brainPolicy.localSpeechAllowed);
-  if (ui.allowFollowMovementToggle) {
-    ui.allowFollowMovementToggle.checked = Boolean(brainPolicy.allowFollowMovement);
-  }
   updateFollowTuningUi();
 
   ui.localBrainState.textContent = geminiPrimaryActive
@@ -3150,7 +1985,7 @@ function updateLocalBrainUi() {
 
   document.body.classList.toggle("local-motion-armed", Boolean(brainPolicy.localMotionArmed));
   renderLocalBrainThoughts();
-  updateAlwaysListeningUi();
+  updateAttentionUi();
   updateProductionChrome();
 }
 
@@ -3182,6 +2017,9 @@ function updateGeminiLiveUi(status = geminiLiveRuntime?.getStatus?.() ?? {}) {
   if (ui.geminiLiveAudioState) {
     ui.geminiLiveAudioState.textContent = status.audioPlaying ? "playing" : "idle";
   }
+
+  ui.listeningState.textContent = String(Boolean(status.micStreaming || lifeEngine?.getState?.().isListening));
+  ui.speakingState.textContent = String(Boolean(status.audioPlaying || lifeEngine?.getState?.().isSpeaking));
 
   if (ui.geminiLiveOutputState) {
     ui.geminiLiveOutputState.textContent =
@@ -3344,32 +2182,17 @@ function patchBrainPolicy(partial = {}) {
   updateLocalBrainUi();
 }
 
-function armFollowMovementForScenario({ requestedLabel = "", resolvedLabel = "" } = {}) {
-  const wasFullyArmed = Boolean(
-    brainPolicy.localMotionArmed &&
-    brainPolicy.allowFollowMovement
-  );
+function armMovementForScenario({ requestedLabel = "", resolvedLabel = "" } = {}) {
+  const wasArmed = Boolean(brainPolicy.localMotionArmed);
 
   patchBrainPolicy({
-    localMotionArmed: true,
-    allowFollowMovement: true
+    localMotionArmed: true
   });
 
-  if (!wasFullyArmed) {
+  if (!wasArmed) {
     const targetText = resolvedLabel || requestedLabel || "target";
-    log(`Follow movement auto-armed for ${targetText}.`, "warn");
+    log(`Movement auto-armed for ${targetText}.`, "warn");
   }
-}
-
-function disarmFollowMovementForScenario({ reason = "follow_stop" } = {}) {
-  if (!brainPolicy.allowFollowMovement) {
-    return;
-  }
-
-  patchBrainPolicy({
-    allowFollowMovement: false
-  });
-  log(`Follow movement disabled after follow exit (${reason}).`, "info");
 }
 
 function getPolicy() {
@@ -3377,12 +2200,12 @@ function getPolicy() {
 }
 
 async function runScenarioFromUi(name, args = {}) {
-  if (!toolExecutor?.executeBridgeAction) {
+  if (!toolExecutor?.executeAction) {
     log("Scenario runtime is still initializing.", "warn");
     return null;
   }
 
-  const result = await toolExecutor.executeBridgeAction({
+  const result = await toolExecutor.executeAction({
     id: `ui_scenario_${name}_${Date.now()}`,
     source: "local",
     type: "run_scenario",
@@ -3392,12 +2215,11 @@ async function runScenarioFromUi(name, args = {}) {
     },
     reason: `ui_scenario:${name}`
   });
-  updateEmbodimentUi();
   return result;
 }
 
 function requestPoseScenario(name, { minIntervalMs = 650 } = {}) {
-  if (!toolExecutor?.executeBridgeAction) {
+  if (!toolExecutor?.executeAction) {
     return null;
   }
 
@@ -3411,153 +2233,6 @@ function requestPoseScenario(name, { minIntervalMs = 650 } = {}) {
   return runScenarioFromUi(name).catch((error) => {
     log(`Pose scenario ${name} failed: ${error.message}`, "warn");
     return null;
-  });
-}
-
-async function simulatorDemoRoutine() {
-  if (!simulatorMode) {
-    await enableSimulatorMode();
-  }
-
-  const previousMotionArmed = brainPolicy.localMotionArmed;
-  patchBrainPolicy({
-    localMotionArmed: true
-  });
-
-  const sequence = ["ack_yes", "look_left", "look_right", "come_closer", "back_up", "body_talking"];
-
-  for (const name of sequence) {
-    await runScenarioFromUi(name);
-    await waitMs(220);
-  }
-
-  patchBrainPolicy({ localMotionArmed: previousMotionArmed });
-  log("Simulator scenario demo complete.");
-}
-
-async function wheelsLiftedSafetyRoutine() {
-  if (!robotClient?.isConnected?.() || simulatorMode) {
-    throw new Error("Connect the real ESP32 first. This routine is for wheels-lifted hardware testing.");
-  }
-
-  if (!globalThis.confirm?.("Wheels lifted, robot supervised, stop control visible?")) {
-    return;
-  }
-
-  await immediateStop("wheels_lifted_precheck", "Precheck stop sent.", "warn");
-  const previousMotionArmed = brainPolicy.localMotionArmed;
-  patchBrainPolicy({ localMotionArmed: true });
-  await waitMs(250);
-  await commandQueue.enqueueMotion({ linear: 0.08, angular: 0, durationMs: 140, rampMs: 80, label: "wheels_lifted_tiny_forward" });
-  await commandQueue.stopMotion("wheels_lifted_forward_stop");
-  await waitMs(250);
-  await commandQueue.enqueueMotion({ linear: -0.08, angular: 0, durationMs: 140, rampMs: 80, label: "wheels_lifted_tiny_back" });
-  await commandQueue.stopMotion("wheels_lifted_back_stop");
-  await waitMs(250);
-  await commandQueue.enqueueMotion({ linear: 0, angular: 0.08, durationMs: 140, rampMs: 80, label: "wheels_lifted_tiny_rotate" });
-  await commandQueue.stopMotion("wheels_lifted_done");
-  patchBrainPolicy({ localMotionArmed: previousMotionArmed });
-  log("Wheels-lifted safety routine complete.", "warn");
-}
-
-function updateEmbodimentUi(statusOverride = null) {
-  const sequence = scenarioFrameSequencer?.getCurrentSequence?.();
-  const schedulerTask = priorityScheduler?.getCurrentTask?.();
-  const performance = statusOverride ?? performanceMonitor?.getStatus?.() ?? {};
-  const reliability = reliabilityManager?.getStatus?.() ?? {};
-  const wakeLock = wakeLockManager?.getStatus?.() ?? {};
-
-  if (ui.looiModeToggle) ui.looiModeToggle.checked = looiModeEnabled;
-  if (ui.keepRobotAwakeToggle) ui.keepRobotAwakeToggle.checked = keepRobotAwakeEnabled && wakeLock.requested !== false;
-
-  if (ui.currentSequenceState) {
-    ui.currentSequenceState.textContent = sequence ? `${sequence.name} · ${sequence.source}` : "idle";
-  }
-
-  if (ui.schedulerState) {
-    ui.schedulerState.textContent = schedulerTask ? "running" : priorityScheduler?.getQueue?.().length ? "queued" : "idle";
-  }
-
-  if (ui.currentPriorityTask) {
-    ui.currentPriorityTask.textContent = schedulerTask ? `${schedulerTask.type} · p${schedulerTask.priority}` : "--";
-  }
-
-  if (ui.fpsDisplay) {
-    ui.fpsDisplay.textContent = Number(performance.fps) > 0 ? `${Math.round(performance.fps)} fps` : "--";
-  }
-
-  if (ui.performanceModeDisplay) {
-    ui.performanceModeDisplay.textContent = performance.running === false ? "off" : "monitoring";
-  }
-
-  if (ui.wakeLockState) {
-    ui.wakeLockState.textContent = wakeLock.active ? "active" : wakeLock.supported ? "available" : "unsupported";
-  }
-
-  if (ui.reliabilityModeDisplay) {
-    ui.reliabilityModeDisplay.textContent = reliability.mode ?? "normal";
-  }
-
-  renderSequenceHistory();
-  renderRuntimeWarnings(performance.warnings ?? []);
-  document.body.classList.toggle("looi-mode-active", looiModeEnabled);
-  document.body.classList.toggle("sequence-running", Boolean(sequence));
-  document.body.classList.toggle("wake-lock-active", Boolean(wakeLock.active));
-
-  return {
-    sequence,
-    schedulerTask,
-    performance,
-    reliability,
-    wakeLock
-  };
-}
-
-function renderSequenceHistory(history = scenarioFrameSequencer?.getHistory?.({ limit: 8 }) ?? []) {
-  if (!ui.sequenceHistoryList) {
-    return;
-  }
-
-  ui.sequenceHistoryList.replaceChildren();
-  if (!history.length) {
-    const empty = document.createElement("div");
-    empty.className = "sequence-history-item";
-    empty.innerHTML = "<strong>No sequences yet</strong><span>Run a scenario to see local frame execution.</span>";
-    ui.sequenceHistoryList.append(empty);
-    return;
-  }
-
-  history.forEach((entry) => {
-    const item = document.createElement("div");
-    item.className = `sequence-history-item${entry.partial ? " sequence-history-item--partial" : ""}`;
-    const title = document.createElement("strong");
-    title.textContent = `${entry.sequence} · ${entry.reason}`;
-    const detail = document.createElement("span");
-    detail.textContent = `${new Date(entry.timestamp).toLocaleTimeString()} · frames=${entry.executedFrames ?? 0} · skipped=${entry.skippedFrames?.join(",") || "none"}`;
-    item.append(title, detail);
-    ui.sequenceHistoryList.append(item);
-  });
-}
-
-function renderRuntimeWarnings(warnings = performanceMonitor?.getStatus?.().warnings ?? []) {
-  if (!ui.runtimeWarningsList) {
-    return;
-  }
-
-  ui.runtimeWarningsList.replaceChildren();
-  if (!warnings.length) {
-    const empty = document.createElement("div");
-    empty.className = "runtime-warning-item";
-    empty.textContent = "No runtime warnings.";
-    ui.runtimeWarningsList.append(empty);
-    return;
-  }
-
-  warnings.slice(0, 6).forEach((warning) => {
-    const item = document.createElement("div");
-    item.className = "runtime-warning-item runtime-warning-item--warn";
-    item.textContent = `${new Date(warning.timestamp).toLocaleTimeString()} · ${warning.message}`;
-    ui.runtimeWarningsList.append(item);
   });
 }
 
@@ -3608,7 +2283,7 @@ function renderLocalEvents(events = localEventBus?.getRecentEvents?.({ limit: 30
   if (!events.length) {
     const empty = document.createElement("div");
     empty.className = "local-event-item";
-    empty.innerHTML = "<strong>No local events yet</strong><span>Speech, text, camera, telemetry, and life events appear here.</span>";
+    empty.innerHTML = "<strong>No local events yet</strong><span>Text, camera, telemetry, and life events appear here.</span>";
     ui.localEventList.append(empty);
     return;
   }
@@ -3630,260 +2305,22 @@ function renderLocalEvents(events = localEventBus?.getRecentEvents?.({ limit: 30
   });
 }
 
-function updateAlwaysListeningUi() {
-  const speechStatus = speechInput?.getStatus?.() ?? {
-    supported: false,
-    listening: false,
-    starting: false,
-    alwaysListening: false
-  };
+function updateAttentionUi() {
   const geminiStatus = geminiLiveRuntime?.getStatus?.() ?? {};
-  const geminiPrimaryActive = Boolean(geminiStatus.running || geminiStatus.connecting || geminiStatus.connected);
-  const gateStatus = speechGate?.getStatus?.() ?? {
-    attentionOpen: false,
-    attentionRemainingMs: 0,
-    ignoredCount: 0,
-    relevantCount: 0,
-    lastResult: null
-  };
   const attentionStatus = attentionSystem?.update?.() ?? {
     mode: "idle",
     attentionRemainingMs: 0,
     stopCooldownRemainingMs: 0
   };
-  const audioStatus = audioLevelMonitor?.getStatus?.() ?? {
-    supported: false,
-    running: false,
-    level: 0,
-    lastActivityAt: 0
-  };
-  const transcripts = speechGate?.getRecentTranscripts?.({ limit: 20 }) ?? [];
-  const lastAccepted = transcripts.find((entry) => entry.accepted);
-  const lastIgnored = transcripts.find((entry) => !entry.accepted);
-
-  if (ui.alwaysListeningToggle) {
-    ui.alwaysListeningToggle.checked = Boolean(speechStatus.alwaysListening);
-  }
-
-  if (ui.earsState) {
-    ui.earsState.textContent = geminiPrimaryActive
-      ? geminiStatus.micStreaming
-        ? "Gemini Live"
-        : geminiStatus.connecting
-          ? "Gemini starting"
-          : "Gemini connected"
-      : speechStatus.alwaysListening
-      ? speechStatus.listening
-        ? "ears on"
-        : speechStatus.starting
-          ? "starting"
-          : "restarting"
-      : speechStatus.listening
-        ? "manual listening"
-        : speechStatus.starting
-          ? "starting"
-        : "ears off";
-    ui.earsState.classList.toggle(
-      "ears-state--on",
-      Boolean(geminiPrimaryActive || speechStatus.alwaysListening || speechStatus.listening || speechStatus.starting)
-    );
-    ui.earsState.classList.toggle(
-      "ears-state--off",
-      !geminiPrimaryActive && !speechStatus.alwaysListening && !speechStatus.listening && !speechStatus.starting
-    );
-  }
-
-  if (ui.speechGateState) {
-    ui.speechGateState.textContent = `${gateStatus.relevantCount} accepted / ${gateStatus.ignoredCount} ignored`;
-  }
-
-  if (ui.attentionModeState) {
-    ui.attentionModeState.textContent = attentionStatus.mode;
-    ui.attentionModeState.classList.toggle("attention-state--active", ["attentive", "conversation", "busy"].includes(attentionStatus.mode));
-    ui.attentionModeState.classList.toggle("attention-state--stop", attentionStatus.mode === "stop_cooldown");
-  }
-
-  if (ui.attentionWindowRemaining) {
-    const remaining = Math.max(
-      Number(attentionStatus.attentionRemainingMs || 0),
-      Number(gateStatus.attentionRemainingMs || 0)
-    );
-    ui.attentionWindowRemaining.textContent = remaining > 0 ? `${Math.ceil(remaining / 1000)}s` : "--";
-  }
-
-  if (ui.lastSpeechClassification) {
-    ui.lastSpeechClassification.textContent = gateStatus.lastResult?.classification ?? "--";
-  }
-
-  if (ui.lastAcceptedTranscript) {
-    ui.lastAcceptedTranscript.textContent = lastAccepted
-      ? `${lastAccepted.text} (${lastAccepted.classification})`
-      : "--";
-  }
-
-  if (ui.lastIgnoredTranscript) {
-    ui.lastIgnoredTranscript.textContent = lastIgnored
-      ? `${lastIgnored.text} (${lastIgnored.classification})`
-      : "--";
-  }
-
-  updateSpeechRecognitionDiagnostics(speechStatus);
-
-  if (ui.audioLevelMonitorToggle) {
-    ui.audioLevelMonitorToggle.checked = Boolean(audioStatus.running);
-  }
-
-  if (ui.audioLevelDisplay && !audioStatus.running) {
-    ui.audioLevelDisplay.textContent = audioStatus.supported ? "off" : "unsupported";
-  }
-
-  if (ui.voiceActivityState) {
-    const active = Number(audioStatus.lastActivityAt || 0) > Date.now() - 1600;
-    ui.voiceActivityState.textContent = audioStatus.running
-      ? active
-        ? "voice activity"
-        : "quiet"
-      : "off";
-    ui.voiceActivityState.classList.toggle("voice-state--active", active);
-  }
 
   updateGeminiLiveUi(geminiStatus);
 
-  document.body.classList.toggle(
-    "ears-on",
-    Boolean(geminiPrimaryActive || speechStatus.alwaysListening || speechStatus.listening)
-  );
-  document.body.classList.toggle("attention-active", ["attentive", "conversation", "busy"].includes(attentionStatus.mode));
-  document.body.classList.toggle("stop-cooldown", attentionStatus.mode === "stop_cooldown");
 }
 
-function updateSpeechRecognitionDiagnostics(speechStatus = speechInput?.getStatus?.() ?? {}) {
-  if (ui.speechRecognitionSupportDetail) {
-    ui.speechRecognitionSupportDetail.textContent = speechStatus.supported
-      ? speechStatus.secureContext
-        ? "supported + secure"
-        : "supported, insecure context"
-      : "unsupported";
-  }
-
-  if (ui.speechRecognitionStateDetail) {
-    ui.speechRecognitionStateDetail.textContent = speechStatus.listening
-      ? "listening"
-      : speechStatus.starting
-        ? "starting"
-      : speechStatus.alwaysListening
-        ? `waiting restart (${speechStatus.restartBackoffMs ?? 0}ms)`
-        : "stopped";
-  }
-
-  if (ui.speechRecognitionAttemptCount) {
-    ui.speechRecognitionAttemptCount.textContent = String(speechStatus.startAttemptCount ?? 0);
-  }
-
-  if (ui.speechRecognitionResultCount) {
-    ui.speechRecognitionResultCount.textContent =
-      `${speechStatus.finalResultCount ?? 0} final / ${speechStatus.interimResultCount ?? 0} interim`;
-  }
-
-  if (ui.speechRecognitionLastResult) {
-    ui.speechRecognitionLastResult.textContent = speechStatus.lastResultAt
-      ? `${Math.max(0, Math.round((Date.now() - Number(speechStatus.lastResultAt)) / 1000))}s ago`
-      : "--";
-  }
-
-  if (ui.speechRecognitionLastError) {
-    ui.speechRecognitionLastError.textContent = speechStatus.lastError
-      ? `${speechStatus.lastError}${speechStatus.lastErrorAt ? ` · ${Math.max(0, Math.round((Date.now() - Number(speechStatus.lastErrorAt)) / 1000))}s ago` : ""}`
-      : "--";
-    ui.speechRecognitionLastError.classList.toggle("voice-state--warn", Boolean(speechStatus.lastError));
-  }
-
-  renderSpeechRecognitionDebugLog(speechStatus.debugEvents ?? []);
-}
-
-function renderSpeechRecognitionDebugLog(events = []) {
-  if (!ui.speechRecognitionDebugLog) {
-    return;
-  }
-
-  ui.speechRecognitionDebugLog.replaceChildren();
-
-  if (!events.length) {
-    const empty = document.createElement("div");
-    empty.className = "speech-debug-entry";
-    empty.innerHTML = "<strong>No speech recognition events yet</strong><span>Start listening, then speak near the phone.</span>";
-    ui.speechRecognitionDebugLog.append(empty);
-    return;
-  }
-
-  events.slice(0, 8).forEach((event) => {
-    const item = document.createElement("div");
-    item.className = `speech-debug-entry speech-debug-entry--${event.type ?? "event"}`;
-
-    const title = document.createElement("strong");
-    title.textContent = `${event.type ?? "event"} · ${event.timestamp ? new Date(event.timestamp).toLocaleTimeString() : "--"}`;
-
-    const detail = document.createElement("span");
-    detail.textContent = event.message ?? "";
-
-    item.append(title, detail);
-    ui.speechRecognitionDebugLog.append(item);
-  });
-}
-
-function updateVoiceUi() {
-  const speechStatus = speechInput?.getStatus?.() ?? {
-    supported: false,
-    listening: false,
-    starting: false,
-    secureContext: globalThis.isSecureContext !== false
-  };
-  const voiceStatus = voiceOutput?.getStatus?.() ?? {
-    supported: false,
-    muted: false,
-    speaking: false
-  };
+function updateOutputAudioUi() {
   const geminiStatus = geminiLiveRuntime?.getStatus?.() ?? {};
-  const geminiPrimaryActive = Boolean(geminiStatus.running || geminiStatus.connecting || geminiStatus.connected);
-
-  ui.speechSupportState.textContent = geminiPrimaryActive
-    ? geminiStatus.micStreaming
-      ? "Gemini Live mic"
-      : geminiStatus.connecting
-        ? "Gemini starting"
-        : "Gemini connected"
-    : speechStatus.supported
-    ? speechStatus.lastError
-      ? `error: ${speechStatus.lastError}`
-      : speechStatus.listening
-      ? "listening"
-      : speechStatus.starting
-      ? "starting"
-      : "supported"
-    : "unsupported";
-  ui.speechSupportState.classList.toggle("voice-state--active", Boolean(geminiPrimaryActive || speechStatus.listening || speechStatus.starting));
-  ui.speechSupportState.classList.toggle("voice-state--warn", geminiPrimaryActive ? Boolean(geminiStatus.lastError) : !speechStatus.supported || Boolean(speechStatus.lastError));
-  ui.speechSecureWarning.textContent = geminiPrimaryActive
-    ? `Gemini Live primary voice path. Input transcript: ${geminiStatus.lastInputTranscript || "--"}`
-    : speechStatus.lastError
-    ? `Speech error: ${speechStatus.lastError}. Check microphone permission for this site on the phone.`
-    : speechStatus.secureContext
-      ? `Microphone access may require user permission. Results: ${speechStatus.finalResultCount ?? 0} final / ${speechStatus.interimResultCount ?? 0} interim.`
-      : "Speech recognition usually requires HTTPS or localhost.";
-  ui.voiceSupportState.textContent = geminiPrimaryActive
-    ? geminiStatus.audioPlaying
-      ? "Gemini audio"
-      : "Gemini primary"
-    : voiceStatus.supported
-    ? voiceStatus.muted
-      ? "muted"
-      : "supported"
-    : "unsupported";
-  ui.voiceSupportState.classList.toggle("voice-state--active", Boolean(geminiStatus.audioPlaying || voiceStatus.speaking));
-  ui.voiceSupportState.classList.toggle("voice-state--warn", geminiPrimaryActive ? Boolean(geminiStatus.lastError) : !voiceStatus.supported || voiceStatus.muted);
-  ui.speakingState.textContent = String(Boolean(geminiStatus.audioPlaying || voiceStatus.speaking || lifeEngine?.getState?.().isSpeaking));
-  ui.muteSpeechToggle.checked = Boolean(voiceStatus.muted);
-  updateAlwaysListeningUi();
+  ui.speakingState.textContent = String(Boolean(geminiStatus.audioPlaying || lifeEngine?.getState?.().isSpeaking));
+  updateAttentionUi();
   updateProductionChrome();
 }
 
@@ -3935,15 +2372,8 @@ async function startObjectDetectionFromUi() {
     throw new Error("Object detector is not initialized.");
   }
 
-  if (!brainPolicy.localVisionEnabled) {
-    throw new Error("Local object vision is disabled.");
-  }
-
   const cameraStatus = cameraInput?.getCameraStatus?.() ?? {};
   if (!cameraStatus.running) {
-    if (!brainPolicy.localCameraAllowed) {
-      throw new Error("Start the camera or enable Local Camera Allowed first.");
-    }
     const result = await cameraInput.startCamera({ facingMode: cameraStatus.facingMode || "user" });
     handleCameraCommandResult(result);
     if (!result?.ok) {
@@ -3952,7 +2382,6 @@ async function startObjectDetectionFromUi() {
   }
 
   const status = await objectDetectorEngine.start();
-  face?.setVisionIndicator?.(Boolean(status.running), "detecting");
   updateVisionUi();
   return status;
 }
@@ -4021,14 +2450,7 @@ function getVisionContext() {
 }
 
 function isFollowVisionModeActive() {
-  const scenario = visionState?.getStatus?.().scenario ?? {};
-  const scenarioActive = Boolean(
-    scenario.active &&
-    scenario.type === "follow_object" &&
-    scenario.state !== "idle" &&
-    scenario.state !== "not_found"
-  );
-  return Boolean(followTargetController?.isRunning?.() || scenarioActive);
+  return Boolean(followTargetController?.isRunning?.());
 }
 
 function sendFollowStateContext(reason = "follow_context") {
@@ -4055,7 +2477,8 @@ function isFollowStateContextReason(reason = "") {
     "vision_follow_started",
     "vision_follow_stopped",
     "vision_follow_not_found",
-    "vision_target_lost"
+    "vision_target_lost",
+    "vision_target_reacquired"
   ].includes(reason);
 }
 
@@ -4162,17 +2585,21 @@ function updateVisionUi() {
   if (ui.visibleObjectLabels) {
     ui.visibleObjectLabels.textContent = context.visibleLabels || "--";
   }
+  const followLabel = followStatus.targetLabel || activeTarget?.label || "";
+  const followState = followStatus.running ? followStatus.state : (context.scenario?.state ?? "idle");
+  const followVisible = followStatus.running ? followStatus.targetVisible : activeTarget?.visible;
+
   if (ui.activeFollowTarget) {
-    ui.activeFollowTarget.textContent = activeTarget?.label
-      ? `${activeTarget.label} · ${activeTarget.visible ? "visible" : "not visible"}`
+    ui.activeFollowTarget.textContent = followLabel
+      ? `${followLabel} · ${followVisible ? "visible" : "not visible"}`
       : "--";
   }
   if (ui.followScenarioState) {
-    ui.followScenarioState.textContent = context.scenario?.state ?? "idle";
+    ui.followScenarioState.textContent = followState ?? "idle";
   }
   if (ui.followControllerState) {
     ui.followControllerState.textContent = followStatus.running
-      ? `running · motion ${followStatus.motionAllowed ? "allowed" : `held: ${followStatus.motionHeldReason ?? "unknown"}`}`
+      ? `${followStatus.state ?? "running"} · motion ${followStatus.motionAllowed ? "allowed" : `held: ${followStatus.motionHeldReason ?? "unknown"}`}`
       : "stopped";
   }
   drawObjectDetectionOverlays(objectDetectorEngine?.lastResult ?? { detections: [] });
@@ -4359,41 +2786,18 @@ function logOverlayDiagnostics(canvas, result = {}, size = {}) {
   });
 }
 
-function setupVoiceList() {
-  if (!voiceOutput?.isSupported?.()) {
-    ui.voiceSelect.replaceChildren(new Option("Speech synthesis unavailable", ""));
-    return;
-  }
-
-  const populate = () => {
-    const voices = voiceOutput.getVoices();
-    ui.voiceSelect.replaceChildren(new Option("Default voice", ""));
-
-    voices.forEach((voice) => {
-      const label = `${voice.name}${voice.lang ? ` (${voice.lang})` : ""}`;
-      ui.voiceSelect.append(new Option(label, voice.name));
-    });
-  };
-
-  populate();
-
-  if (globalThis.speechSynthesis) {
-    globalThis.speechSynthesis.onvoiceschanged = populate;
-  }
-}
-
 function isGeminiLivePrimary() {
   return Boolean(activeConfig.geminiLiveEnabled && geminiLiveRuntime);
+}
+
+function isBrainLive() {
+  return Boolean(localBrainEngine?.isRunning?.() || geminiLiveRuntime?.getStatus?.().running);
 }
 
 function getExecutionPolicy() {
   return {
     source: "local",
     localMotionArmed: brainPolicy.localMotionArmed,
-    localCameraAllowed: brainPolicy.localCameraAllowed,
-    localSpeechAllowed: brainPolicy.localSpeechAllowed,
-    localVisionEnabled: brainPolicy.localVisionEnabled,
-    allowFollowMovement: brainPolicy.allowFollowMovement,
     followLostTimeoutMs: brainPolicy.followLostTimeoutMs,
     followTargetCenterX: brainPolicy.followTargetCenterX,
     followCenterDeadband: brainPolicy.followCenterDeadband,
@@ -4401,83 +2805,7 @@ function getExecutionPolicy() {
     maxObjectFollowSpeed: brainPolicy.maxObjectFollowSpeed,
     followCommandDurationMs: brainPolicy.followCommandDurationMs,
     followCommandRefreshMs: brainPolicy.followCommandRefreshMs,
-    simulatorMode,
-    robotConnected: Boolean(robotClient?.isConnected?.()),
-    allowSpeak: brainPolicy.localSpeechAllowed,
-    allowNonPhysical: true,
-    cloudMotionArmed: false,
-    cloudCameraAllowed: false
-  };
-}
-
-function getStatusSnapshot() {
-  const lifeState = lifeEngine?.getState?.() ?? {};
-
-  return {
-    localFirstMode: true,
-    localPolicy: getPolicy(),
-    attention: attentionSystem?.getStatus?.() ?? null,
-    speechGate: speechGate?.getStatus?.() ?? null,
-    simulatorMode,
-    localBrainRunning: Boolean(localBrainEngine?.isRunning?.()),
-    geminiLive: geminiLiveRuntime?.getStatus?.() ?? null,
-    looiModeEnabled,
-    sequenceStatus: {
-      current: scenarioFrameSequencer?.getCurrentSequence?.() ?? null,
-      running: Boolean(scenarioFrameSequencer?.isRunning?.())
-    },
-    performanceStatus: performanceMonitor?.getStatus?.() ?? null,
-    robotConnected: Boolean(robotClient?.isConnected?.()),
-    connectionState: ui.connectionState.textContent,
-    lifeState: {
-      mood: lifeState.mood,
-      energy: lifeState.energy,
-      boredom: lifeState.boredom,
-      fear: lifeState.fear,
-      curiosity: lifeState.curiosity,
-      affection: lifeState.affection,
-      loneliness: lifeState.loneliness,
-      comfort: lifeState.comfort,
-      attentionTarget: lifeState.attentionTarget,
-      userVisible: lifeState.userVisible,
-      userDistance: lifeState.userDistance,
-      userPosition: lifeState.userPosition,
-      isSpeaking: lifeState.isSpeaking,
-      isListening: lifeState.isListening,
-      battery: lifeState.battery,
-      obstacle: lifeState.obstacle,
-      currentBehavior: lifeState.currentBehavior,
-      interactionCount: lifeState.interactionCount,
-      stopRespectUntil: lifeState.stopRespectUntil,
-      connectionState: lifeState.connectionState,
-      robotMotorState: lifeState.robotMotorState
-    },
-    personality: describePersonalityForRuntime(personalityTuning?.getProfile?.()),
-    lifeSignals: {
-      loneliness: lifeState.loneliness,
-      comfort: lifeState.comfort,
-      interactionCount: lifeState.interactionCount,
-      stopRespectActive: Number(lifeState.stopRespectUntil || 0) > Date.now(),
-      lifeEventsEnabled
-    },
-    telemetry: robotClient?.getLatestTelemetry?.() ?? null,
-    latestAction: latestActionResult,
-    calibration: bodyCalibration?.getSettings?.() ?? null,
-    recentCommands: commandQueue?.getRecentCommands?.({ limit: 5 }) ?? [],
-    camera: compactCameraStatus(cameraInput?.getCameraStatus?.()),
-    vision: getVisionContext(),
-    recentObjectReference,
-    voice: {
-      speechListening: Boolean(speechInput?.getStatus?.().listening),
-      alwaysListening: Boolean(speechInput?.getStatus?.().alwaysListening),
-      geminiLive: geminiLiveRuntime?.getStatus?.() ?? null,
-      speechSupported: Boolean(speechInput?.isSupported?.()),
-      voiceOutputSupported: Boolean(voiceOutput?.isSupported?.()),
-      voiceMuted: Boolean(voiceOutput?.getStatus?.().muted),
-      isSpeaking: Boolean(voiceOutput?.isSpeaking?.()),
-      lastTranscript
-    },
-    browserTime: new Date().toISOString()
+    robotConnected: Boolean(robotClient?.isConnected?.())
   };
 }
 
@@ -4489,19 +2817,16 @@ function getRuntimeContext() {
     lifeState,
     latestTelemetry: robotClient?.getLatestTelemetry?.() ?? null,
     robotTelemetry: robotClient?.getLatestTelemetry?.() ?? null,
-    connectionState: ui.connectionState.textContent,
-    simulatorMode,
+    connectionState: ui.esp32Status.textContent,
     robotConnected: Boolean(robotClient?.isConnected?.()),
     localPolicy: getPolicy(),
     attention: attentionSystem?.getStatus?.() ?? null,
-    speechGate: speechGate?.getStatus?.() ?? null,
     sequenceStatus: {
       current: scenarioFrameSequencer?.getCurrentSequence?.() ?? null,
       history: scenarioFrameSequencer?.getHistory?.({ limit: 5 }) ?? []
     },
     performanceStatus: performanceMonitor?.getStatus?.() ?? null,
     reliabilityStatus: reliabilityManager?.getStatus?.() ?? null,
-    audioActivity: audioLevelMonitor?.getStatus?.() ?? null,
     geminiLive: geminiLiveRuntime?.getStatus?.() ?? null,
     calibration: bodyCalibration?.getSettings?.() ?? null,
     personality: describePersonalityForRuntime(personalityTuning?.getProfile?.()),
@@ -4519,9 +2844,10 @@ function getRuntimeContext() {
     latestObservation: cameraStatus.observation,
     vision: getVisionContext(),
     recentObjectReference,
-    speechStatus: speechInput?.getStatus?.() ?? null,
-    voiceStatus: voiceOutput?.getStatus?.() ?? null,
-    voice: getStatusSnapshot().voice,
+    audioStatus: {
+      geminiLive: geminiLiveRuntime?.getStatus?.() ?? null,
+      isSpeaking: Boolean(geminiLiveRuntime?.getStatus?.().audioPlaying || lifeState?.isSpeaking)
+    },
     browserTimestamp: new Date().toISOString()
   };
 }
@@ -4611,14 +2937,6 @@ function parseJsonObject(value, fallback = {}) {
     return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : fallback;
   } catch {
     return fallback;
-  }
-}
-
-function loadUseFinalSpeechOnly() {
-  try {
-    return globalThis.localStorage?.getItem?.(SPEECH_FINAL_ONLY_STORAGE_KEY) === "true";
-  } catch {
-    return false;
   }
 }
 
@@ -4757,16 +3075,6 @@ function getSpeedSetting() {
 function getDurationSetting() {
   const maxDuration = activeConfig.maxDurationMs ?? PUBLIC_CONFIG.maxDurationMs;
   return clampNumber(ui.durationSlider.value, 100, maxDuration, DEFAULT_DURATION_MS);
-}
-
-function clampNumber(value, min, max, fallback) {
-  const numericValue = Number(value);
-
-  if (!Number.isFinite(numericValue)) {
-    return fallback;
-  }
-
-  return Math.min(max, Math.max(min, numericValue));
 }
 
 function formatNumber(value) {

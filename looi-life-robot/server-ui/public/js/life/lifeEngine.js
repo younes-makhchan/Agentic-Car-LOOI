@@ -2,6 +2,7 @@ import {
   createPersonalityProfile,
   DEFAULT_PERSONALITY_PROFILE
 } from "../personality/personalityProfile.js";
+import { stopCommandQueueMotion } from "../core/runtimeUtils.js";
 import { DEFAULT_LIMITS } from "./safetyGate.js";
 import {
   clamp01,
@@ -156,10 +157,6 @@ export class LifeEngine {
     return this.getState();
   }
 
-  getPersonalityProfile() {
-    return createPersonalityProfile(this.personalityProfile);
-  }
-
   applyPersonalityToDrives() {
     const traits = this.personalityProfile?.coreTraits ?? DEFAULT_PERSONALITY_PROFILE.coreTraits;
 
@@ -175,23 +172,6 @@ export class LifeEngine {
     this.state.comfort = clamp01(
       this.state.comfort * 0.9 + (1 - Number(traits.shyness ?? 0.35)) * 0.1
     );
-  }
-
-  shouldStayQuiet() {
-    return Date.now() < Number(this.state.silenceUntil || 0);
-  }
-
-  respectStopCooldown(durationMs = 5000) {
-    const duration = Math.min(15000, Math.max(1000, Number(durationMs) || 5000));
-    const until = Date.now() + duration;
-    this.state.stopRespectUntil = Math.max(Number(this.state.stopRespectUntil || 0), until);
-    this.state.silenceUntil = Math.max(Number(this.state.silenceUntil || 0), until);
-    this.state.currentBehavior = "soft_idle";
-    this.state.fear = updateDriveValue(this.state.fear, 0.08);
-    this.state.comfort = updateDriveValue(this.state.comfort, -0.08);
-    setMood(this.state, "shy");
-    this.emitStatus();
-    return until;
   }
 
   patchState(partialState, reason = "manual_patch") {
@@ -240,9 +220,7 @@ export class LifeEngine {
     this.state.robotMotorState = telemetry.motor_state ?? this.state.robotMotorState;
     this.state.isMoving =
       Boolean(telemetry.motor_state) && telemetry.motor_state !== "stopped";
-    if (telemetry.simulated) {
-      this.state.connectionState = "simulated_connected";
-    } else if (Number(telemetry.clients) > 0 || this.robotClient?.isConnected?.()) {
+    if (Number(telemetry.clients) > 0 || this.robotClient?.isConnected?.()) {
       this.state.connectionState = "connected";
     }
 
@@ -281,7 +259,6 @@ export class LifeEngine {
 
     switch (nextEvent.type) {
       case "user_text":
-      case "user_speech":
         this.state.lastInteractionAt = now;
         this.state.interactionCount += 1;
         this.state.attentionTarget = "user";
@@ -337,12 +314,6 @@ export class LifeEngine {
     return this.getState();
   }
 
-  clearRequestedBehavior() {
-    this.state.requestedBehavior = null;
-    this.state.requestedBehaviorArgs = null;
-    this.emitStatus();
-  }
-
   setListening(isListening) {
     this.state.isListening = Boolean(isListening);
     if (this.state.isListening) {
@@ -367,20 +338,6 @@ export class LifeEngine {
       stopCommandQueueMotion(this.commandQueue, "life_obstacle")?.catch?.((error) => {
         this.log(`Obstacle stop failed: ${error.message}`, "error");
       });
-    }
-    this.emitStatus();
-  }
-
-  setUserVisible(userVisible, distance = "unknown", position = "unknown") {
-    const wasVisible = this.state.userVisible;
-    this.state.userVisible = Boolean(userVisible);
-    this.state.userDistance = distance;
-    this.state.userPosition = position;
-    this.state.attentionTarget = userVisible ? "user" : "none";
-    if (userVisible) {
-      this.state.lastUserSeenAt = Date.now();
-      this.state.loneliness = updateDriveValue(this.state.loneliness, -0.08);
-      this.state.comfort = updateDriveValue(this.state.comfort, wasVisible ? 0.01 : 0.04);
     }
     this.emitStatus();
   }
@@ -446,24 +403,11 @@ export class LifeEngine {
       return;
     }
 
-    if (value.kind === "simulate_boredom") {
-      this.state.boredom = clamp01(value.boredom ?? 0.86);
-      this.state.curiosity = Math.max(this.state.curiosity, clamp01(value.curiosity ?? 0.82));
-      this.state.lastInteractionAt = Date.now() - 20000;
-      setMood(this.state, "curious");
-    }
-
-    if (value.kind === "simulate_low_energy") {
-      this.state.energy = clamp01(value.energy ?? 0.12);
-      this.state.boredom = Math.min(this.state.boredom, 0.25);
-      setMood(this.state, "sleepy");
-    }
-
-    if (typeof value.boredom === "number" && value.kind !== "simulate_boredom") {
+    if (typeof value.boredom === "number") {
       this.patchState({ boredom: value.boredom }, "system_event");
     }
 
-    if (typeof value.energy === "number" && value.kind !== "simulate_low_energy") {
+    if (typeof value.energy === "number") {
       this.patchState({ energy: value.energy }, "system_event");
     }
   }
@@ -487,7 +431,7 @@ export class LifeEngine {
     }
     const recentUserEvent = this.state.recentEvents.find(
       (event) =>
-        (event.type === "user_text" || event.type === "user_speech") &&
+        event.type === "user_text" &&
         now - Number(event.timestamp || 0) < 1200
     );
 
@@ -608,14 +552,6 @@ function normalizeObservationValue(value) {
 
 function normalizeUserPosition(position) {
   return ["left", "center", "right"].includes(position) ? position : "unknown";
-}
-
-function stopCommandQueueMotion(commandQueue, reason) {
-  if (commandQueue?.stopMotion) {
-    return commandQueue.stopMotion(reason);
-  }
-
-  return commandQueue?.cancelMotion?.(reason);
 }
 
 function compactObservation(observation = {}) {

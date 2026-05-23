@@ -2,7 +2,6 @@ export class RuleBrainFallback {
   classifyText(text, context = {}) {
     const gateClassification =
       context.triggerEvent?.payload?.classification ??
-      context.speechGateResult?.classification ??
       null;
 
     if (["background", "noise"].includes(gateClassification)) {

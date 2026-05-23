@@ -35,7 +35,7 @@ export function summarizeVisibleObjects(objects = []) {
   );
 }
 
-export function buildVisibleLabels(objects = []) {
+function buildVisibleLabels(objects = []) {
   return [
     ...new Set(
       objects

@@ -30,9 +30,7 @@ assert.equal(bus.clear() >= 2, true);
 assert.equal(bus.getRecentEvents().length, 0);
 
 const defaultPolicy = createDefaultBrainPolicy();
-assert.equal(defaultPolicy.localBrainEnabled, true);
 assert.equal(defaultPolicy.localMotionArmed, false);
-assert.equal(defaultPolicy.localCameraAllowed, false);
 assert.equal(defaultPolicy.maxThoughtsPerMinute, 12);
 const clampedPolicy = clampBrainPolicy({
   localMotionArmed: true,
@@ -75,6 +73,7 @@ assert.equal(invalidJson.ok, false);
 
 let policy = createDefaultBrainPolicy();
 const executedActions = [];
+let scenarioName = "come_closer";
 const engine = new LocalBrainEngine({
   eventBus: new LocalEventBus({ logger: () => {} }),
   lifeEngine: {
@@ -87,7 +86,7 @@ const engine = new LocalBrainEngine({
     }
   },
   toolExecutor: {
-    async executeBridgeAction(action) {
+    async executeAction(action) {
       executedActions.push(action);
       return {
         status: "completed",
@@ -101,10 +100,9 @@ const engine = new LocalBrainEngine({
   getPolicy: () => policy,
   getRuntimeContext: () => ({
     lifeState: { mood: "neutral", boredom: 0.1, stopRespectUntil: 0 },
-    simulatorMode: true,
     robotConnected: true
   }),
-  adapter: scenarioAdapter("come_closer"),
+  adapter: scenarioAdapter(() => scenarioName),
   fallback,
   logger: () => {}
 });
@@ -114,7 +112,7 @@ assert.equal(firstThought.results[0].status, "completed");
 assert.equal(firstThought.results[0].type, "run_scenario");
 assert.equal(executedActions[0].args.name, "come_closer");
 
-engine.setAdapter(scenarioAdapter("still"));
+scenarioName = "still";
 const stillThought = await engine.thinkNow("manual");
 assert.equal(stillThought.results[0].status, "completed");
 assert.equal(executedActions.at(-1).args.name, "still");
@@ -123,7 +121,7 @@ policy = {
   ...policy,
   localMotionArmed: true
 };
-engine.setAdapter(scenarioAdapter("back_up"));
+scenarioName = "back_up";
 const armedThought = await engine.thinkNow("manual");
 assert.equal(armedThought.results[0].status, "completed");
 assert.equal(executedActions.some((action) => action.type === "run_scenario" && action.args.name === "back_up"), true);
@@ -143,12 +141,13 @@ function scenarioAdapter(name) {
       return true;
     },
     async think() {
+      const scenarioName = typeof name === "function" ? name() : name;
       return {
         ok: true,
         source: "test",
         action: {
           type: "run_scenario",
-          args: { name }
+          args: { name: scenarioName }
         },
         reason: `test_${name}`
       };

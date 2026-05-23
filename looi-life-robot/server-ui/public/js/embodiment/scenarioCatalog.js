@@ -10,9 +10,9 @@ import { finishTellMeAboutYourself, showTellMeAboutYourself } from "./scenarioAc
 import { showKiss } from "./scenarioActions/kissActions.js";
 
 const PERMISSIONS = Object.freeze({
-  none: Object.freeze({ motion: false, camera: false, speech: false }),
-  motion: Object.freeze({ motion: true, camera: false, speech: false }),
-  cameraWithOptionalMotion: Object.freeze({ motion: "optional", camera: true, speech: false })
+  none: Object.freeze({ motion: false, camera: false }),
+  motion: Object.freeze({ motion: true, camera: false }),
+  cameraWithOptionalMotion: Object.freeze({ motion: "optional", camera: true })
 });
 
 const SCENARIO_DEFINITIONS = Object.freeze({
@@ -345,8 +345,7 @@ const SCENARIO_DEFINITIONS = Object.freeze({
   })
 });
 
-export const SCENARIO_NAMES = Object.freeze(Object.keys(SCENARIO_DEFINITIONS));
-export const SCENARIO_PROMPT_LIST = SCENARIO_NAMES.join(", ");
+const SCENARIO_NAMES = Object.freeze(Object.keys(SCENARIO_DEFINITIONS));
 const MODEL_VISIBLE_SCENARIOS = Object.freeze(
   Object.values(SCENARIO_DEFINITIONS).filter((definition) => definition.modelVisible !== false)
 );

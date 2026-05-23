@@ -2,7 +2,67 @@ import assert from "node:assert/strict";
 import { BodyCalibration } from "../public/js/robot/bodyCalibration.js";
 import { CommandQueue } from "../public/js/robot/commandQueue.js";
 import { LifeEngine } from "../public/js/life/lifeEngine.js";
-import { SimulatedESP32Client } from "../public/js/robot/simulatedEsp32Client.js";
+
+class TestRobotClient {
+  constructor() {
+    this.connected = false;
+    this.latestConfig = {};
+    this.latestTelemetry = {
+      motor_state: "stopped",
+      motion_label: ""
+    };
+  }
+
+  connect() {
+    this.connected = true;
+  }
+
+  disconnect() {
+    this.connected = false;
+  }
+
+  isConnected() {
+    return this.connected;
+  }
+
+  sendConfigUpdate(config) {
+    this.latestConfig = { ...config };
+    return "test_config_update";
+  }
+
+  getLatestConfig() {
+    return { ...this.latestConfig };
+  }
+
+  sendMotion({ durationMs = 0, label = "motion" } = {}) {
+    this.latestTelemetry = {
+      ...this.latestTelemetry,
+      motor_state: "moving",
+      motion_label: label
+    };
+    setTimeout(() => {
+      this.latestTelemetry = {
+        ...this.latestTelemetry,
+        motor_state: "stopped",
+        motion_label: ""
+      };
+    }, Math.max(0, Number(durationMs) || 0));
+    return "test_motion";
+  }
+
+  stop() {
+    this.latestTelemetry = {
+      ...this.latestTelemetry,
+      motor_state: "stopped",
+      motion_label: ""
+    };
+    return "test_stop";
+  }
+
+  getLatestTelemetry() {
+    return { ...this.latestTelemetry };
+  }
+}
 
 const logs = [];
 const calibration = new BodyCalibration({
@@ -13,7 +73,7 @@ const defaults = calibration.getSettings();
 assert.equal(defaults.maxSpeed, 0.4);
 assert.equal(defaults.rampMs, 150);
 
-const clamped = calibration.patchSettings({
+const clamped = calibration.importJson({
   maxSpeed: 2,
   leftTrim: 9,
   rightTrim: 0,
@@ -40,21 +100,18 @@ assert.deepEqual(Object.keys(esp32Config).sort(), [
   "right_trim"
 ]);
 
-const simulator = new SimulatedESP32Client({
-  logger: (message, level = "info") => logs.push({ level, message })
-});
-await simulator.connect();
-const applyResult = await calibration.applyToRobot(simulator);
+const robot = new TestRobotClient();
+robot.connect();
+const applyResult = await calibration.applyToRobot(robot);
 assert.equal(applyResult.ok, true);
-assert.equal(simulator.getLatestConfig().max_speed, 0.4);
+assert.equal(robot.getLatestConfig().max_speed, 0.4);
 
 const commandEvents = [];
 const queue = new CommandQueue({
-  robotClient: simulator,
+  robotClient: robot,
   maxSpeed: calibration.getSettings().maxSpeed,
   logger: (message, level = "info") => logs.push({ level, message })
 });
-queue.onCommand((entry) => commandEvents.push(entry));
 
 await queue.enqueueMotion({
   linear: 0.12,
@@ -63,8 +120,9 @@ await queue.enqueueMotion({
   rampMs: 30,
   label: "smoke_calibration_motion"
 });
+commandEvents.push(...queue.getRecentCommands({ limit: 5 }));
 assert.equal(commandEvents.some((entry) => entry.label === "smoke_calibration_motion"), true);
-assert.equal(simulator.getLatestTelemetry().motion_label, "");
+assert.equal(robot.getLatestTelemetry().motion_label, "");
 
 const faceEvents = [];
 const lifeEngine = new LifeEngine({
@@ -79,12 +137,12 @@ const lifeEngine = new LifeEngine({
       faceEvents.push({ type: "blink" });
     }
   },
-  robotClient: simulator,
+  robotClient: robot,
   commandQueue: queue,
   calibration,
   logger: (message, level = "info") => logs.push({ level, message })
 });
-lifeEngine.setConnectionState("simulated_connected");
+lifeEngine.setConnectionState("connected");
 
 lifeEngine.receiveObservation({
   timestamp: new Date().toISOString(),
@@ -97,12 +155,12 @@ lifeEngine.receiveObservation({
 assert.equal(lifeEngine.getState().userVisible, true);
 
 await queue.stopMotion("smoke_done");
-simulator.disconnect();
+robot.disconnect();
 
 console.log(
   JSON.stringify({
     ok: true,
-    config: simulator.getLatestConfig(),
+    config: robot.getLatestConfig(),
     commandEvents: commandEvents.length,
     faceEvents: faceEvents.length,
     logs: logs.length

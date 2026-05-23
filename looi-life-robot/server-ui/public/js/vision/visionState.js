@@ -63,29 +63,25 @@ export class VisionState {
       return null;
     }
 
+    const aliases = uniqueLabels([label, ...(target.aliases ?? []), ...getObjectAliases(label)]);
     const existing = target.trackId
       ? this.getTrackById(target.trackId)
-      : this.findObject([label, ...(target.aliases ?? [])]);
+      : this.findObject(aliases);
+    const trackId = existing?.trackId ?? existing?.id ?? target.trackId ?? null;
+    const visible = target.visible ?? isFreshTrack(existing);
+
     this.state.activeTarget = {
       label,
-      aliases: getObjectAliases(label),
-      trackId: target.trackId ?? existing?.trackId ?? existing?.id ?? null,
-      visible: Boolean(existing?.visible),
+      aliases,
+      trackId,
+      visible,
       confidence: existing?.confidence ?? null,
       position: existing?.position ?? "unknown",
       distance: existing?.distance ?? "unknown",
-      lostForMs: existing?.lostForMs ?? 0,
-      lastSeenAt: existing?.lastSeenAt ?? null,
+      lostForMs: target.lostForMs ?? existing?.lostForMs ?? 0,
+      lastSeenAt: target.lastSeenAt ?? existing?.lastSeenAt ?? null,
       setAt: new Date().toISOString()
     };
-    this.setScenario({
-      active: true,
-      type: "follow_object",
-      targetLabel: label,
-      targetTrackId: this.state.activeTarget.trackId,
-      state: existing?.visible ? "following" : "searching",
-      reason: "target_set"
-    });
     return this.getActiveTarget();
   }
 
@@ -120,14 +116,6 @@ export class VisionState {
         lastUpdateAt: now
       };
     }
-  }
-
-  getVisibleObjects() {
-    return this.state.visibleObjects.map(compactTrack);
-  }
-
-  getObjectSummary() {
-    return this.state.summary;
   }
 
   getObjectMetadataForBrain() {
@@ -186,12 +174,7 @@ export class VisionState {
       .map(compactTrack)[0] ?? null;
   }
 
-  isObjectVisible(label) {
-    return Boolean(this.findObject(label)?.visible);
-  }
-
   getActiveTarget() {
-    this.refreshActiveTarget();
     return this.state.activeTarget ? { ...this.state.activeTarget } : null;
   }
 
@@ -206,9 +189,12 @@ export class VisionState {
       return;
     }
 
-    const track = target.trackId
-      ? this.getTrackById(target.trackId)
-      : this.findObject(target.aliases ?? target.label);
+    let track = target.trackId ? this.getTrackById(target.trackId) : null;
+
+    if (!isFreshTrack(track)) {
+      const candidate = this.findObject(target.aliases ?? target.label);
+      track = isFreshTrack(candidate) ? candidate : track;
+    }
 
     if (!track) {
       this.state.activeTarget = {
@@ -219,10 +205,12 @@ export class VisionState {
       return;
     }
 
+    const trackId = track.id ?? track.trackId ?? target.trackId;
+    const visible = isFreshTrack(track);
     this.state.activeTarget = {
       ...target,
-      trackId: track.id ?? track.trackId ?? target.trackId,
-      visible: Boolean(track.visible),
+      trackId,
+      visible,
       confidence: track.confidence,
       position: track.position,
       distance: track.distance,
@@ -286,6 +274,14 @@ function compactTrack(track = {}) {
     trackId: track.id ?? track.trackId,
     bbox: track.bbox ? { ...track.bbox } : {}
   };
+}
+
+function uniqueLabels(labels = []) {
+  return [...new Set(labels.map(canonicalObjectLabel).filter(Boolean))];
+}
+
+function isFreshTrack(track) {
+  return Boolean(track?.visible && !track.lostAt);
 }
 
 function compareTrackQuality(a, b) {

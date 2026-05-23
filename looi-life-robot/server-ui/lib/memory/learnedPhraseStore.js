@@ -38,28 +38,6 @@ export class LearnedPhraseStore {
     return safeEntry;
   }
 
-  async updatePhrase(id, patch = {}) {
-    const phrases = await this.readAll();
-    const index = phrases.findIndex((entry) => entry.id === id);
-
-    if (index < 0) {
-      return null;
-    }
-
-    const updated = createEntry({
-      ...phrases[index],
-      ...sanitizePatch(patch),
-      id: phrases[index].id,
-      createdAt: phrases[index].createdAt,
-      lastUsedAt: phrases[index].lastUsedAt ?? null,
-      useCount: phrases[index].useCount ?? 0
-    });
-
-    phrases[index] = updated;
-    await this.writeAll(phrases);
-    return updated;
-  }
-
   async removePhrase(id) {
     const phrases = await this.readAll();
     const next = phrases.filter((entry) => entry.id !== id);
@@ -70,21 +48,6 @@ export class LearnedPhraseStore {
 
     await this.writeAll(next);
     return { ok: true, id };
-  }
-
-  async findMatches(text) {
-    const normalizedText = normalizePhrase(text);
-
-    if (!normalizedText) {
-      return [];
-    }
-
-    const phrases = await this.readAll();
-    return phrases
-      .map((entry) => matchEntry(normalizedText, entry))
-      .filter(Boolean)
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 5);
   }
 
   async recordUse(id) {
@@ -102,22 +65,6 @@ export class LearnedPhraseStore {
     };
     await this.writeAll(phrases);
     return phrases[index];
-  }
-
-  async importPhrases(entries = []) {
-    if (!Array.isArray(entries)) {
-      throw Object.assign(new Error("learned phrases import requires an array"), {
-        statusCode: 400
-      });
-    }
-
-    const safeEntries = entries.slice(0, MAX_PHRASES).map((entry) => createEntry(entry));
-    await this.writeAll(safeEntries);
-    return safeEntries;
-  }
-
-  async exportPhrases() {
-    return this.readAll();
   }
 
   async readAll() {
@@ -140,7 +87,7 @@ export class LearnedPhraseStore {
   }
 }
 
-export function normalizePhrase(text) {
+function normalizePhrase(text) {
   if (typeof text !== "string") {
     return "";
   }
@@ -189,40 +136,6 @@ function createEntry(entry = {}) {
     createdAt: sanitizeIso(entry.createdAt) || new Date().toISOString(),
     lastUsedAt: sanitizeIso(entry.lastUsedAt),
     useCount: clampInteger(entry.useCount, 0, 1_000_000, 0)
-  };
-}
-
-function sanitizePatch(patch = {}) {
-  return patch && typeof patch === "object" && !Array.isArray(patch) ? patch : {};
-}
-
-function matchEntry(normalizedText, entry = {}) {
-  const phrase = normalizePhrase(entry.normalizedPhrase || entry.phrase);
-
-  if (!phrase || !SAFE_LEARNED_ACTIONS.has(entry.action)) {
-    return null;
-  }
-
-  if (
-    normalizedText !== phrase &&
-    !normalizedText.includes(` ${phrase} `) &&
-    !normalizedText.startsWith(`${phrase} `) &&
-    !normalizedText.endsWith(` ${phrase}`)
-  ) {
-    return null;
-  }
-
-  const exact = normalizedText === phrase;
-  return {
-    source: "learned_phrase",
-    id: entry.id,
-    phrase: entry.phrase,
-    normalizedPhrase: phrase,
-    meaning: entry.meaning,
-    action: entry.action,
-    args: entry.args,
-    confidence: entry.confidence,
-    score: exact ? 1 : 0.86
   };
 }
 

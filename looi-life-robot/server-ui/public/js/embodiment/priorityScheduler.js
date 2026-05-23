@@ -3,7 +3,7 @@ const DEFAULT_DEDUPE_MS = 650;
 export const PRIORITY_LEVELS = Object.freeze({
   immediate_stop: 100,
   local_stop_phrase: 90,
-  user_speech_attention: 80,
+  user_input_attention: 80,
   direct_user_command: 70,
   local_brain_action: 60,
   camera_user_tracking: 50,
@@ -87,14 +87,6 @@ export class PriorityScheduler {
     if (this.currentTask && Number(this.currentTask.priority || 0) < priority) {
       this.interruptCurrent(reason);
     }
-  }
-
-  getCurrentTask() {
-    return this.currentTask ? compactTask(this.currentTask) : null;
-  }
-
-  getQueue() {
-    return this.queue.map(compactTask);
   }
 
   clear() {

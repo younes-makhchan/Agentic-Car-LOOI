@@ -1,19 +1,17 @@
+import { clampInteger, waitMs } from "../core/runtimeUtils.js";
 import { parseBrainResponse } from "./actionParser.js";
 import { BrainLatencyBudget } from "./brainLatencyBudget.js";
 import { clampBrainPolicy, createDefaultBrainPolicy } from "./brainPolicy.js";
 
 const PHYSICAL_ACTIONS = new Set();
-const CAMERA_ACTIONS = new Set();
 
 const THOUGHT_EVENTS = new Set([
-  "user_speech",
   "user_text",
   "camera_observation",
   "system"
 ]);
 
 const LLM_TRIGGER_EVENT_TYPES = new Set([
-  "user_speech",
   "user_text"
 ]);
 
@@ -99,17 +97,6 @@ export class LocalBrainEngine {
 
   async thinkNow(reason = "manual", triggerEvent = null) {
     const policy = this.policy();
-
-    if (!policy.localBrainEnabled && reason !== "local_stop_phrase") {
-      return this.recordThought({
-        reason,
-        triggerEvent,
-        response: null,
-        results: [],
-        skipped: true,
-        message: "Local Brain is disabled."
-      });
-    }
 
     if (this.processing) {
       return this.recordThought({
@@ -211,55 +198,11 @@ export class LocalBrainEngine {
       return null;
     }
 
-    const policy = this.policy();
-
-    if (!policy.localBrainEnabled) {
-      return null;
-    }
-
     if (!this.shouldThinkAboutEvent(event)) {
       return null;
     }
 
     return this.requestEventThought(event, event.payload?.gateReason ?? "event");
-  }
-
-  async handleSpeechGateResult(result = {}, transcript = {}) {
-    if (result.shouldImmediateStop) {
-      const event = transcript.event ?? {
-        type: "local_stop_phrase",
-        payload: {
-          text: transcript.text,
-          classification: result.classification,
-          reason: result.reason
-        },
-        source: transcript.source ?? "speech",
-        timestamp: transcript.timestamp ?? new Date().toISOString()
-      };
-      return this.executeStopNow(event);
-    }
-
-    const hasSpeechText = hasUserSpeechText(transcript, result);
-
-    if (!hasSpeechText) {
-      return null;
-    }
-
-    const event = transcript.event ?? {
-      type: transcript.source === "typed" ? "user_text" : "user_speech",
-      payload: {
-        text: transcript.text,
-        classification: result.classification,
-        accepted: result.accepted,
-        shouldTriggerBrain: result.shouldTriggerBrain,
-        suggestedIntent: result.suggestedIntent,
-        gateReason: result.reason
-      },
-      source: transcript.source ?? "speech",
-      timestamp: transcript.timestamp ?? new Date().toISOString()
-    };
-
-    return this.requestEventThought(event, result.reason ?? "speech_gate");
   }
 
   async requestEventThought(event, reason = "event") {
@@ -270,7 +213,7 @@ export class LocalBrainEngine {
     const policy = this.policy();
     const now = Date.now();
 
-    if (!policy.localBrainEnabled || !this.shouldThinkAboutEvent(event)) {
+    if (!this.shouldThinkAboutEvent(event)) {
       return null;
     }
 
@@ -289,8 +232,8 @@ export class LocalBrainEngine {
     }
 
     const payload = event?.payload ?? {};
-    if (event?.type === "user_speech" || event?.type === "user_text") {
-      if (!hasUserSpeechText(event.payload, event)) {
+    if (event?.type === "user_text") {
+      if (!hasUserText(event.payload, event)) {
         return false;
       }
 
@@ -327,9 +270,9 @@ export class LocalBrainEngine {
         isSpeaking: brainRuntimeContext.lifeState?.isSpeaking,
         isListening: brainRuntimeContext.lifeState?.isListening
       },
-      speech: {
-        listening: brainRuntimeContext.speechStatus?.listening,
-        speaking: brainRuntimeContext.voiceStatus?.speaking
+      audio: {
+        listening: brainRuntimeContext.geminiLive?.micStreaming,
+        speaking: brainRuntimeContext.audioStatus?.isSpeaking
       },
       recentEvents:
         brainRuntimeContext.recentEvents ??
@@ -356,14 +299,6 @@ export class LocalBrainEngine {
       ...thought,
       results: thought.results?.map((result) => ({ ...result })) ?? []
     }));
-  }
-
-  setAdapter(adapter) {
-    this.primaryAdapter = adapter;
-  }
-
-  setFallback(fallback) {
-    this.fallback = fallback;
   }
 
   async checkAdapterStatus() {
@@ -399,7 +334,7 @@ export class LocalBrainEngine {
       return;
     }
 
-    ["user_speech", "user_text", "camera_observation", "local_stop_phrase", "system"].forEach(
+    ["user_text", "camera_observation", "local_stop_phrase", "system"].forEach(
       (type) => {
         this.unsubscribers.push(this.eventBus.subscribe(type, (event) => this.handleEvent(event)));
       }
@@ -487,7 +422,7 @@ export class LocalBrainEngine {
       return false;
     }
 
-    return hasUserSpeechText(payload, context.triggerEvent);
+    return hasUserText(payload, context.triggerEvent);
   }
 
   async executeStopNow(event) {
@@ -500,7 +435,7 @@ export class LocalBrainEngine {
       },
       reason: "Local stop phrase"
     };
-    const result = await this.toolExecutor?.executeBridgeAction?.(action);
+    const result = await this.toolExecutor?.executeAction?.(action);
     this.lastThoughtAt = Date.now();
     const thought = this.recordThought({
       reason: "local_stop_phrase",
@@ -558,7 +493,7 @@ export class LocalBrainEngine {
       `STEP 3 ACTION ${executableAction.type}: ${JSON.stringify(executableAction.args)}`
     );
 
-    if (!this.toolExecutor?.executeBridgeAction) {
+    if (!this.toolExecutor?.executeAction) {
       return {
         status: "failed",
         type,
@@ -568,7 +503,7 @@ export class LocalBrainEngine {
       };
     }
 
-    const result = await this.toolExecutor.executeBridgeAction(executableAction);
+    const result = await this.toolExecutor.executeAction(executableAction);
     return result ?? {
       status: "failed",
       type,
@@ -588,10 +523,6 @@ export class LocalBrainEngine {
         return rejected(action, "Local Motion is disarmed.", true);
       }
 
-    }
-
-    if (CAMERA_ACTIONS.has(action.type) && !policy.localCameraAllowed) {
-      return rejected(action, "Local Camera is not allowed for the Local Brain.", false);
     }
 
     return null;
@@ -668,11 +599,10 @@ function rejected(action, message, physical, detail = {}) {
 }
 
 function wait(ms) {
-  const delay = clampInteger(ms, 0, 10000, 0);
-  return delay > 0 ? new Promise((resolve) => globalThis.setTimeout(resolve, delay)) : Promise.resolve();
+  return waitMs(ms, { maxMs: 10000 });
 }
 
-function hasUserSpeechText(...sources) {
+function hasUserText(...sources) {
   return sources.some((source) => {
     if (!source || typeof source !== "object") {
       return false;
@@ -724,14 +654,4 @@ function stripLargeMediaScalar(value) {
   }
 
   return value.length > 1000 ? `${value.slice(0, 1000)}...` : value;
-}
-
-function clampInteger(value, min, max, fallback) {
-  const numeric = Number(value);
-
-  if (!Number.isFinite(numeric)) {
-    return fallback;
-  }
-
-  return Math.min(max, Math.max(min, Math.round(numeric)));
 }

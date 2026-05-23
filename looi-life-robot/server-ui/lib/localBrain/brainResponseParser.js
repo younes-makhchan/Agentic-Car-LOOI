@@ -2,7 +2,7 @@ import {
   normalizeRunScenarioName
 } from "../../public/js/embodiment/scenarioCatalog.js";
 
-export const LOCAL_BRAIN_ALLOWED_ACTIONS = new Set(["run_scenario"]);
+const LOCAL_BRAIN_ALLOWED_ACTIONS = new Set(["run_scenario"]);
 
 const UNSAFE_ARG_KEYS = new Set([
   "pwm",
@@ -91,7 +91,7 @@ export function normalizeBrainResponse(parsed, defaults = {}) {
   };
 }
 
-export function normalizeAction(action) {
+function normalizeAction(action) {
   const errors = [];
 
   if (!action) {

@@ -1,3 +1,4 @@
+import { clampNumber } from "../core/runtimeUtils.js";
 import { canonicalObjectLabel } from "./objectLabelUtils.js";
 
 const FOLLOW_MODES = new Set(["cautious", "gentle", "curious"]);
@@ -6,7 +7,7 @@ const DEFAULT_FOLLOW_CENTER_X = 0.5;
 const DEFAULT_FOLLOW_CENTER_DEADBAND = 0.115;
 const DEFAULT_FOLLOW_STEER_GAIN = 0.9;
 const DEFAULT_MAX_FOLLOW_ANGULAR = 0.036;
-const FOLLOW_STALE_GRACE_MS = 700;
+const DEFAULT_FOLLOW_LOST_TIMEOUT_MS = 3000;
 const DEFAULT_FOLLOW_COMMAND_DURATION_MS = 30;
 const DEFAULT_FOLLOW_COMMAND_REFRESH_MS = 70;
 
@@ -20,7 +21,7 @@ export class FollowTargetController {
     getPolicy,
     logger,
     tickMs = 50,
-    lostTimeoutMs = 2000
+    lostTimeoutMs = DEFAULT_FOLLOW_LOST_TIMEOUT_MS
   } = {}) {
     this.visionState = visionState;
     this.objectTracker = objectTracker;
@@ -30,16 +31,19 @@ export class FollowTargetController {
     this.getPolicy = getPolicy;
     this.logger = logger;
     this.tickMs = clampNumber(tickMs, 20, 1000, 50);
-    this.lostTimeoutMs = clampNumber(lostTimeoutMs, 500, 8000, 2000);
+    this.lostTimeoutMs = clampNumber(lostTimeoutMs, 500, 8000, DEFAULT_FOLLOW_LOST_TIMEOUT_MS);
     this.running = false;
     this.targetLabel = null;
     this.targetTrackId = null;
     this.mode = "gentle";
+    this.state = "idle";
+    this.targetVisible = false;
+    this.lostForMs = 0;
+    this.lostSince = null;
     this.timer = null;
     this.lastSteeringAt = 0;
     this.lastSeenAt = null;
     this.lostAnnounced = false;
-    this.paused = false;
     this.lastSteering = null;
     this.followMotionActive = false;
     this.lastMovementHeldReason = null;
@@ -61,30 +65,29 @@ export class FollowTargetController {
     this.targetLabel = targetLabel || this.targetLabel;
     this.targetTrackId = trackId ?? this.targetTrackId;
     this.mode = FOLLOW_MODES.has(mode) ? mode : "gentle";
+    const startingTrack = trackId
+      ? this.objectTracker?.getTrackById?.(trackId)
+      : this.objectTracker?.findBestTrackByLabel?.(targetLabel);
+    const startingVisible = isFreshTrack(startingTrack);
+
     this.running = true;
-    this.paused = false;
     this.lostAnnounced = false;
+    this.state = startingVisible ? "following" : "searching";
+    this.targetVisible = startingVisible;
+    this.lostForMs = startingVisible ? 0 : this.lostTimeoutMs;
+    this.lostSince = startingVisible ? null : new Date().toISOString();
     this.lastSteeringAt = 0;
     this.lastSteering = null;
     this.followMotionActive = false;
     this.lastMovementHeldReason = null;
     this.lastCommandLogAt = 0;
-    this.lastSeenAt = Date.now();
-    this.visionState?.setActiveTarget?.({
-      label: this.targetLabel,
-      trackId: this.targetTrackId
-    });
-    this.visionState?.setScenario?.({
-      active: true,
-      type: "follow_object",
-      targetLabel: this.targetLabel,
-      targetTrackId: this.targetTrackId,
-      state: "following",
-      lostSince: null,
-      reason: "follow_started"
-    });
+    this.lastSeenAt = startingVisible ? Date.now() : null;
+    this.targetTrackId = startingTrack?.id ?? startingTrack?.trackId ?? this.targetTrackId;
+    this.updateVisionMirror("follow_started");
     this.eventBus?.publish?.("vision_follow_started", this.getTarget(), { source: "vision" });
-    this.log(`[roboflow] follow started target=${this.targetLabel} track=${this.targetTrackId ?? "none"} mode=${this.mode}`);
+    this.log(
+      `[roboflow] follow started target=${this.targetLabel} track=${this.targetTrackId ?? "none"} state=${this.state} mode=${this.mode} lostTimeout=${Math.round(this.lostTimeoutMs)}ms ${formatTuningForLog(this.getTuning())}`
+    );
     this.scheduleTick();
     return {
       ok: true,
@@ -95,7 +98,10 @@ export class FollowTargetController {
   stop(reason = "follow_stop") {
     const wasRunning = this.running;
     this.running = false;
-    this.paused = false;
+    this.state = "idle";
+    this.targetVisible = false;
+    this.lostForMs = 0;
+    this.lostSince = null;
     this.clearTimer();
     this.stopMotion(reason);
     this.visionState?.clearActiveTarget?.(reason);
@@ -119,32 +125,18 @@ export class FollowTargetController {
     };
   }
 
-  pause(reason = "follow_pause") {
-    this.paused = true;
-    this.stopMotion(reason);
-  }
-
-  resume(reason = "follow_resume") {
-    if (!this.running) {
-      return;
-    }
-
-    this.paused = false;
-    this.eventBus?.publish?.("vision_follow_resumed", { reason, target: this.getTarget() }, { source: "vision" });
-  }
-
   tick() {
-    if (!this.running || this.paused) {
+    if (!this.running) {
       return this.getStatus();
     }
 
     const track = this.resolveTrack();
     const lostForMs = this.computeLostForMs(track);
-    const targetVisibleNow = Boolean(track && track.visible && !track.lostAt && lostForMs < FOLLOW_STALE_GRACE_MS);
+    const targetVisibleNow = isFreshTrack(track);
 
     if (!targetVisibleNow) {
-      if (track?.visible && lostForMs < this.lostTimeoutMs) {
-        this.handleTargetStale(track, lostForMs);
+      if (lostForMs < this.lostTimeoutMs) {
+        this.handleTargetSearching(track, lostForMs);
         return this.getStatus();
       }
 
@@ -153,20 +145,26 @@ export class FollowTargetController {
     }
 
     this.lastSeenAt = Date.now();
-    this.lostAnnounced = false;
-    this.visionState?.setActiveTarget?.({
-      label: track.label,
-      trackId: track.id
-    });
-    this.visionState?.setScenario?.({
-      active: true,
-      type: "follow_object",
-      targetLabel: track.label,
-      targetTrackId: track.id,
-      state: "following",
-      lostSince: null,
-      reason: "target_visible"
-    });
+    this.targetLabel = track.label ?? this.targetLabel;
+    this.targetTrackId = track.id ?? track.trackId ?? this.targetTrackId;
+    this.targetVisible = true;
+    this.lostForMs = 0;
+    this.lostSince = null;
+    const wasLost = this.state === "lost" || this.lostAnnounced;
+    this.state = "following";
+    this.updateVisionMirror("target_visible");
+
+    if (wasLost) {
+      this.lostAnnounced = false;
+      this.log(`[roboflow] target reacquired label=${this.targetLabel} track=${this.targetTrackId ?? "none"}`);
+      this.eventBus?.publish?.("vision_target_reacquired", {
+        label: this.targetLabel,
+        targetLabel: this.targetLabel,
+        trackId: this.targetTrackId
+      }, { source: "vision", priority: 4 });
+    } else {
+      this.lostAnnounced = false;
+    }
 
     const steering = this.computeSteeringForTarget(track);
     this.logTargetPosition(track, steering);
@@ -221,10 +219,13 @@ export class FollowTargetController {
       mode: this.mode,
       tickMs: this.tickMs,
       lostTimeoutMs: this.lostTimeoutMs,
+      state: this.state,
+      targetVisible: this.targetVisible,
+      lostForMs: this.lostForMs,
+      lostSince: this.lostSince,
       lastSteeringAt: this.lastSteeringAt,
       lastSeenAt: this.lastSeenAt,
       lostAnnounced: this.lostAnnounced,
-      paused: this.paused,
       tuning: this.getTuning(),
       lastSteering: this.lastSteering,
       followMotionActive: this.followMotionActive,
@@ -372,23 +373,18 @@ export class FollowTargetController {
     this.stopMotion("follow_target_lost");
 
     const label = this.targetLabel ?? "object";
-    const lostSince = this.lastSeenAt ? new Date(this.lastSeenAt).toISOString() : new Date().toISOString();
-    this.visionState?.setScenario?.({
-      active: true,
-      type: "follow_object",
-      targetLabel: label,
-      targetTrackId: this.targetTrackId,
-      state: lostForMs >= this.lostTimeoutMs ? "lost" : "searching",
-      lostSince,
-      reason: "target_lost"
-    });
+    this.state = "lost";
+    this.targetVisible = false;
+    this.lostForMs = lostForMs;
+    this.lostSince = this.lostSince ?? (this.lastSeenAt ? new Date(this.lastSeenAt).toISOString() : new Date().toISOString());
+    this.updateVisionMirror("target_lost");
 
-    if (lostForMs < this.lostTimeoutMs || this.lostAnnounced) {
+    if (this.lostAnnounced) {
       return;
     }
 
     this.lostAnnounced = true;
-    this.log(`[roboflow] target lost label=${label} lostForMs=${Math.round(lostForMs)}`, "warn");
+    this.log(`[roboflow] target lost label=${label} lostForMs=${Math.round(lostForMs)} state=lost`, "warn");
     this.eventBus?.publish?.("vision_target_lost", {
       label,
       targetLabel: label,
@@ -396,17 +392,14 @@ export class FollowTargetController {
     }, { source: "vision", priority: 4 });
   }
 
-  handleTargetStale(track = {}, lostForMs = 0) {
-    this.stopMotion("follow_target_stale_frame");
-    this.visionState?.setScenario?.({
-      active: true,
-      type: "follow_object",
-      targetLabel: track.label ?? this.targetLabel,
-      targetTrackId: this.targetTrackId,
-      state: "following",
-      lostSince: null,
-      reason: "target_frame_stale"
-    });
+  handleTargetSearching(track = {}, lostForMs = 0) {
+    this.stopMotion("follow_target_searching");
+    this.state = "searching";
+    this.targetVisible = false;
+    this.lostForMs = lostForMs;
+    this.lostSince = this.lostSince ?? (this.lastSeenAt ? new Date(this.lastSeenAt).toISOString() : new Date().toISOString());
+    this.updateVisionMirror("target_searching");
+
     const now = Date.now();
     if (now - this.lastStaleLogAt < FOLLOW_POSITION_LOG_INTERVAL_MS) {
       return;
@@ -414,24 +407,9 @@ export class FollowTargetController {
 
     this.lastStaleLogAt = now;
     this.log(
-      `[roboflow] follow holding stale target label=${track.label ?? this.targetLabel ?? "object"} track=${track.id ?? this.targetTrackId ?? "none"} staleForMs=${Math.round(lostForMs)}`,
+      `[roboflow] follow searching target=${track?.label ?? this.targetLabel ?? "object"} track=${track?.id ?? this.targetTrackId ?? "none"} lostForMs=${Math.round(lostForMs)} notifyAfter=${Math.round(this.lostTimeoutMs)}ms`,
       "debug"
     );
-  }
-
-  setTarget(labelOrTrack) {
-    if (typeof labelOrTrack === "string") {
-      this.targetLabel = canonicalObjectLabel(labelOrTrack);
-      this.targetTrackId = null;
-      return this.getTarget();
-    }
-
-    if (labelOrTrack && typeof labelOrTrack === "object") {
-      this.targetLabel = canonicalObjectLabel(labelOrTrack.label) || this.targetLabel;
-      this.targetTrackId = labelOrTrack.id ?? labelOrTrack.trackId ?? this.targetTrackId;
-    }
-
-    return this.getTarget();
   }
 
   resolveTrack() {
@@ -462,12 +440,34 @@ export class FollowTargetController {
   }
 
   computeLostForMs(track) {
-    if (track?.lostForMs) {
-      return Number(track.lostForMs);
+    const trackLostForMs = Number(track?.lostForMs);
+    if (Number.isFinite(trackLostForMs)) {
+      return trackLostForMs;
     }
 
     const lastSeenAt = Number(track?.lastSeenAt ?? this.lastSeenAt ?? 0);
     return lastSeenAt ? Math.max(0, Date.now() - lastSeenAt) : this.lostTimeoutMs;
+  }
+
+  updateVisionMirror(reason = "follow_state") {
+    if (this.running && this.targetLabel) {
+      this.visionState?.setActiveTarget?.({
+        label: this.targetLabel,
+        trackId: this.targetTrackId,
+        visible: this.targetVisible,
+        lostForMs: this.lostForMs,
+        lastSeenAt: this.lastSeenAt
+      });
+      this.visionState?.setScenario?.({
+        active: true,
+        type: "follow_object",
+        targetLabel: this.targetLabel,
+        targetTrackId: this.targetTrackId,
+        state: this.state,
+        lostSince: this.lostSince,
+        reason
+      });
+    }
   }
 
   canMove() {
@@ -476,10 +476,6 @@ export class FollowTargetController {
 
     if (!policy.localMotionArmed) {
       return { allowed: false, reason: "local_motion_disarmed" };
-    }
-
-    if (!policy.allowFollowMovement) {
-      return { allowed: false, reason: "follow_movement_disallowed" };
     }
 
     if (!policy.robotConnected) {
@@ -543,8 +539,6 @@ export class FollowTargetController {
   policy() {
     return {
       localMotionArmed: false,
-      allowFollowMovement: false,
-      localSpeechAllowed: true,
       robotConnected: false,
       followTargetCenterX: DEFAULT_FOLLOW_CENTER_X,
       followCenterDeadband: DEFAULT_FOLLOW_CENTER_DEADBAND,
@@ -563,11 +557,6 @@ export class FollowTargetController {
   }
 }
 
-function clampNumber(value, min, max, fallback) {
-  const numeric = Number(value);
-  return Number.isFinite(numeric) ? Math.min(max, Math.max(min, numeric)) : fallback;
-}
-
 function formatNumber(value) {
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric.toFixed(2) : "unknown";
@@ -576,6 +565,10 @@ function formatNumber(value) {
 function formatPixel(value) {
   const numeric = Number(value);
   return Number.isFinite(numeric) ? String(Math.round(numeric)) : "unknown";
+}
+
+function formatTuningForLog(tuning = {}) {
+  return `speed=${formatNumber(tuning.maxAngular)} duration=${Math.round(Number(tuning.commandDurationMs ?? 0))}ms interval=${Math.round(Number(tuning.commandRefreshMs ?? 0))}ms tolerance=${formatNumber(tuning.centerDeadband)}`;
 }
 
 function isFreshTrack(track) {

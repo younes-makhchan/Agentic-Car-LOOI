@@ -10,7 +10,7 @@ export class MockBrainAdapter {
   async think(context = {}) {
     const event = context.triggerEvent ?? latestEvent(context.recentEvents);
     const text = normalizeText(extractText(event));
-    const classification = event?.payload?.classification ?? context.speechGateResult?.classification ?? null;
+    const classification = event?.payload?.classification ?? null;
 
     if (["background", "noise"].includes(classification)) {
       return response({ reason: "background_ignored", confidence: 0.72 });
