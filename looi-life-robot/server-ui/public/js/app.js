@@ -42,7 +42,7 @@ import { VisionScenarioManager } from "./vision/visionScenarioManager.js";
 const DEFAULT_SPEED = 0.2;
 const DEFAULT_DURATION_MS = 400;
 const LOCAL_VISION_SIZE_STORAGE_KEY = "looi.localVisionWidgetSizePx.v2";
-const FOLLOW_TUNING_STORAGE_KEY = "looi.followTuning.v2";
+const FOLLOW_TUNING_STORAGE_KEY = "looi.followTuning.v3";
 const FOLLOW_TUNING_PRESETS = Object.freeze({
   case1: Object.freeze({
     label: "Case 1",
@@ -214,16 +214,6 @@ const ui = {
   objectMaxResultsInput: document.getElementById("objectMaxResultsInput"),
   objectCategoryAllowlistInput: document.getElementById("objectCategoryAllowlistInput"),
   followTuningPresetSelect: document.getElementById("followTuningPresetSelect"),
-  followRotationSpeedSlider: document.getElementById("followRotationSpeedSlider"),
-  followRotationSpeedValue: document.getElementById("followRotationSpeedValue"),
-  followCommandDurationSlider: document.getElementById("followCommandDurationSlider"),
-  followCommandDurationValue: document.getElementById("followCommandDurationValue"),
-  followCommandIntervalSlider: document.getElementById("followCommandIntervalSlider"),
-  followCommandIntervalValue: document.getElementById("followCommandIntervalValue"),
-  followCenterXSlider: document.getElementById("followCenterXSlider"),
-  followCenterXValue: document.getElementById("followCenterXValue"),
-  followErrorXToleranceSlider: document.getElementById("followErrorXToleranceSlider"),
-  followErrorXToleranceValue: document.getElementById("followErrorXToleranceValue"),
   objectDetectorState: document.getElementById("objectDetectorState"),
   objectDetectorModel: document.getElementById("objectDetectorModel"),
   objectDetectorWorkflow: document.getElementById("objectDetectorWorkflow"),
@@ -235,7 +225,6 @@ const ui = {
   objectDetectionError: document.getElementById("objectDetectionError"),
   objectDetectionList: document.getElementById("objectDetectionList"),
   visibleObjectLabels: document.getElementById("visibleObjectLabels"),
-  visionMetadataPreview: document.getElementById("visionMetadataPreview"),
   followTargetLabelInput: document.getElementById("followTargetLabelInput"),
   setFollowTargetButton: document.getElementById("setFollowTargetButton"),
   stopFollowingButton: document.getElementById("stopFollowingButton"),
@@ -1177,17 +1166,6 @@ ui.objectCategoryAllowlistInput?.addEventListener("change", () => {
 });
 ui.followTuningPresetSelect?.addEventListener("change", () => {
   applyFollowPresetFromUi();
-});
-[
-  ui.followRotationSpeedSlider,
-  ui.followCommandDurationSlider,
-  ui.followCommandIntervalSlider,
-  ui.followCenterXSlider,
-  ui.followErrorXToleranceSlider
-].forEach((slider) => {
-  slider?.addEventListener("input", () => {
-    applyFollowTuningFromUi();
-  });
 });
 ui.setFollowTargetButton?.addEventListener("click", () => {
   const label = ui.followTargetLabelInput?.value?.trim();
@@ -4169,9 +4147,6 @@ function updateVisionUi() {
   if (ui.visibleObjectLabels) {
     ui.visibleObjectLabels.textContent = context.visibleLabels || "--";
   }
-  if (ui.visionMetadataPreview) {
-    ui.visionMetadataPreview.textContent = JSON.stringify(context, null, 2);
-  }
   if (ui.activeFollowTarget) {
     ui.activeFollowTarget.textContent = activeTarget?.label
       ? `${activeTarget.label} · ${activeTarget.visible ? "visible" : "not visible"}`
@@ -4186,21 +4161,6 @@ function updateVisionUi() {
       : "stopped";
   }
   drawObjectDetectionOverlays(objectDetectorEngine?.lastResult ?? { detections: [] });
-}
-
-function applyFollowTuningFromUi() {
-  const nextTuning = {
-    maxObjectFollowSpeed: clampNumber(ui.followRotationSpeedSlider?.value, 0, 0.12, brainPolicy.maxObjectFollowSpeed),
-    followCommandDurationMs: Math.round(clampNumber(ui.followCommandDurationSlider?.value, 0, 600, brainPolicy.followCommandDurationMs)),
-    followCommandRefreshMs: Math.round(clampNumber(ui.followCommandIntervalSlider?.value, 0, 300, brainPolicy.followCommandRefreshMs)),
-    followTargetCenterX: clampNumber(ui.followCenterXSlider?.value, 0.25, 0.75, brainPolicy.followTargetCenterX),
-    followCenterDeadband: clampNumber(ui.followErrorXToleranceSlider?.value, 0.005, 0.2, brainPolicy.followCenterDeadband)
-  };
-
-  patchBrainPolicy(nextTuning);
-  saveFollowTuningSettings(nextTuning);
-  updateFollowTuningUi(undefined, { syncPreset: true });
-  updateVisionUi();
 }
 
 function applyFollowPresetFromUi() {
@@ -4225,37 +4185,7 @@ function applyFollowPresetFromUi() {
 
 function updateFollowTuningUi(followStatus = followTargetController?.getStatus?.() ?? {}, { syncPreset = true } = {}) {
   if (ui.followTuningPresetSelect && syncPreset) {
-    setSelectValue(ui.followTuningPresetSelect, findMatchingFollowPresetId() ?? "custom", "Custom");
-  }
-  if (ui.followRotationSpeedSlider) {
-    setInputValue(ui.followRotationSpeedSlider, formatFollowValue(brainPolicy.maxObjectFollowSpeed, 3));
-  }
-  if (ui.followRotationSpeedValue) {
-    ui.followRotationSpeedValue.textContent = formatFollowValue(brainPolicy.maxObjectFollowSpeed, 3);
-  }
-  if (ui.followCommandDurationSlider) {
-    setInputValue(ui.followCommandDurationSlider, String(Math.round(Number(brainPolicy.followCommandDurationMs) || 0)));
-  }
-  if (ui.followCommandDurationValue) {
-    ui.followCommandDurationValue.textContent = `${Math.round(Number(brainPolicy.followCommandDurationMs) || 0)} ms`;
-  }
-  if (ui.followCommandIntervalSlider) {
-    setInputValue(ui.followCommandIntervalSlider, String(Math.round(Number(brainPolicy.followCommandRefreshMs) || 0)));
-  }
-  if (ui.followCommandIntervalValue) {
-    ui.followCommandIntervalValue.textContent = `${Math.round(Number(brainPolicy.followCommandRefreshMs) || 0)} ms`;
-  }
-  if (ui.followCenterXSlider) {
-    setInputValue(ui.followCenterXSlider, formatFollowValue(brainPolicy.followTargetCenterX, 2));
-  }
-  if (ui.followCenterXValue) {
-    ui.followCenterXValue.textContent = formatFollowValue(brainPolicy.followTargetCenterX, 2);
-  }
-  if (ui.followErrorXToleranceSlider) {
-    setInputValue(ui.followErrorXToleranceSlider, formatFollowValue(brainPolicy.followCenterDeadband, 3));
-  }
-  if (ui.followErrorXToleranceValue) {
-    ui.followErrorXToleranceValue.textContent = formatFollowValue(brainPolicy.followCenterDeadband, 3);
+    setSelectValue(ui.followTuningPresetSelect, findMatchingFollowPresetId() ?? DEFAULT_FOLLOW_TUNING_PRESET);
   }
 
   if (ui.followCurrentErrorX) {
@@ -4742,7 +4672,8 @@ function loadFollowTuningSettings() {
       return {};
     }
 
-    return normalizeStoredFollowTuning(JSON.parse(stored));
+    const normalized = normalizeStoredFollowTuning(JSON.parse(stored));
+    return findMatchingFollowPresetId(normalized) ? normalized : {};
   } catch {
     return {};
   }
