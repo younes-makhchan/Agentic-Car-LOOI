@@ -84,6 +84,36 @@
         padding: 14px;
       }
 
+      .device-picker {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+        padding: 14px;
+      }
+
+      label {
+        display: grid;
+        gap: 7px;
+        color: var(--muted);
+        font-size: 0.76rem;
+        font-weight: 800;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+
+      select {
+        min-height: 44px;
+        width: 100%;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 14px;
+        padding: 0 12px;
+        background: rgba(0, 0, 0, 0.24);
+        color: var(--text);
+        font: inherit;
+        text-transform: none;
+        letter-spacing: 0;
+      }
+
       button {
         min-height: 44px;
         border: 1px solid rgba(255, 255, 255, 0.16);
@@ -207,7 +237,8 @@
 
       @media (max-width: 760px) {
         .status-grid,
-        .camera-grid {
+        .camera-grid,
+        .device-picker {
           grid-template-columns: 1fr;
         }
 
@@ -231,8 +262,24 @@
         <button id="startBothButton" class="primary" type="button">Start Front + Back</button>
         <button id="startFrontButton" type="button">Start Front Only</button>
         <button id="startBackButton" type="button">Start Back Only</button>
+        <button id="refreshDevicesButton" type="button">Refresh Devices</button>
         <button id="checkButton" type="button">Check Streams</button>
         <button id="stopButton" class="danger" type="button">Stop All</button>
+      </section>
+
+      <section class="device-picker" aria-label="Camera device selection">
+        <label for="frontDeviceSelect">
+          Front camera device
+          <select id="frontDeviceSelect">
+            <option value="">Auto front using facingMode</option>
+          </select>
+        </label>
+        <label for="backDeviceSelect">
+          Back camera device
+          <select id="backDeviceSelect">
+            <option value="">Auto back using facingMode</option>
+          </select>
+        </label>
       </section>
 
       <section class="status-grid" aria-live="polite">
@@ -296,8 +343,11 @@
         startBothButton: document.getElementById("startBothButton"),
         startFrontButton: document.getElementById("startFrontButton"),
         startBackButton: document.getElementById("startBackButton"),
+        refreshDevicesButton: document.getElementById("refreshDevicesButton"),
         checkButton: document.getElementById("checkButton"),
         stopButton: document.getElementById("stopButton"),
+        frontDeviceSelect: document.getElementById("frontDeviceSelect"),
+        backDeviceSelect: document.getElementById("backDeviceSelect"),
         browserStatus: document.getElementById("browserStatus"),
         frontStatus: document.getElementById("frontStatus"),
         backStatus: document.getElementById("backStatus"),
@@ -323,8 +373,12 @@
       ui.startBothButton.addEventListener("click", startBoth);
       ui.startFrontButton.addEventListener("click", () => startOne("front"));
       ui.startBackButton.addEventListener("click", () => startOne("back"));
+      ui.refreshDevicesButton.addEventListener("click", refreshDevices);
       ui.checkButton.addEventListener("click", updateUi);
       ui.stopButton.addEventListener("click", stopAll);
+      refreshDevices().catch((error) => {
+        log(`Initial device list failed: ${error.message}`);
+      });
 
       async function startBoth() {
         stopAll({ quiet: true });
@@ -371,10 +425,11 @@
         }
 
         const facingMode = which === "back" ? "environment" : "user";
+        const deviceId = getSelectedDeviceId(which);
         try {
-          const stream = await getCameraStream(facingMode);
+          const stream = await getCameraStream({ facingMode, deviceId });
           attachStream(which, stream);
-          log(`${which} camera started: ${describeStream(stream)}`);
+          log(`${which} camera started: ${describeStream(stream)}${deviceId ? ` deviceId=${shortId(deviceId)}` : ""}`);
           startMonitor();
           return { ok: true, stream };
         } catch (error) {
@@ -385,12 +440,22 @@
         }
       }
 
-      async function getCameraStream(facingMode) {
+      async function getCameraStream({ facingMode, deviceId = "" } = {}) {
         const baseVideo = {
           width: { ideal: 640 },
           height: { ideal: 480 },
           frameRate: { ideal: 24, max: 30 }
         };
+
+        if (deviceId) {
+          return navigator.mediaDevices.getUserMedia({
+            video: {
+              ...baseVideo,
+              deviceId: { exact: deviceId }
+            },
+            audio: false
+          });
+        }
 
         try {
           return await navigator.mediaDevices.getUserMedia({
@@ -412,6 +477,54 @@
         }
       }
 
+      async function refreshDevices() {
+        if (!navigator.mediaDevices?.enumerateDevices) {
+          log("enumerateDevices unavailable.");
+          return;
+        }
+
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const cameras = devices.filter((device) => device.kind === "videoinput");
+        fillDeviceSelect(ui.frontDeviceSelect, cameras, "Auto front using facingMode");
+        fillDeviceSelect(ui.backDeviceSelect, cameras, "Auto back using facingMode");
+        autoSelectLikelyDevices(cameras);
+        log(`Found ${cameras.length} video input device(s). If labels are blank, start one camera once to grant permission, then refresh.`);
+      }
+
+      function fillDeviceSelect(select, cameras, autoLabel) {
+        const previousValue = select.value;
+        select.replaceChildren();
+        select.append(new Option(autoLabel, ""));
+        cameras.forEach((device, index) => {
+          const label = device.label || `Camera ${index + 1} (${shortId(device.deviceId)})`;
+          select.append(new Option(label, device.deviceId));
+        });
+        if ([...select.options].some((option) => option.value === previousValue)) {
+          select.value = previousValue;
+        }
+      }
+
+      function autoSelectLikelyDevices(cameras) {
+        if (!ui.frontDeviceSelect.value) {
+          const front = cameras.find((device) => /front|user|face/i.test(device.label));
+          if (front) {
+            ui.frontDeviceSelect.value = front.deviceId;
+          }
+        }
+
+        if (!ui.backDeviceSelect.value) {
+          const back = cameras.find((device) => /back|rear|environment|wide|main/i.test(device.label));
+          if (back) {
+            ui.backDeviceSelect.value = back.deviceId;
+          }
+        }
+      }
+
+      function getSelectedDeviceId(which) {
+        const select = which === "back" ? ui.backDeviceSelect : ui.frontDeviceSelect;
+        return select.value || "";
+      }
+
       function attachStream(which, stream) {
         stopStream(which === "back" ? backStream : frontStream);
 
@@ -422,6 +535,8 @@
           frontStream = stream;
           ui.frontVideo.srcObject = stream;
         }
+
+        refreshDevices().catch(() => {});
 
         stream.getVideoTracks().forEach((track) => {
           track.addEventListener("ended", () => {
@@ -530,6 +645,10 @@
       function setStatus(element, text, className) {
         element.textContent = text;
         element.className = className;
+      }
+
+      function shortId(id) {
+        return String(id || "").slice(0, 8) || "unknown";
       }
 
       function log(message) {
