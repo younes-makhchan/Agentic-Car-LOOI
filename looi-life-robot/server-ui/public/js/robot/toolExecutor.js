@@ -180,7 +180,7 @@ export class ToolExecutor {
     }
 
     this.log(
-      `STEP 4 RUN_SCENARIO name=${normalizedArgs.name} label=${normalizedArgs.label || "none"} mode=${normalizedArgs.mode}`
+      `STEP 4 RUN_SCENARIO name=${normalizedArgs.name} label=${normalizedArgs.label || "none"} mode=${normalizedArgs.mode} camera=${normalizedArgs.camera}`
     );
 
     if (normalizedArgs.name === "follow_target") {
@@ -271,7 +271,8 @@ export class ToolExecutor {
     }
 
     return this.executeScenario(scenario, action, {
-      motionPermission
+      motionPermission,
+      requestArgs: normalizedArgs
     });
   }
 
@@ -405,11 +406,12 @@ export class ToolExecutor {
     };
   }
 
-  async executeScenario(scenario, action, { motionPermission } = {}) {
+  async executeScenario(scenario, action, { motionPermission, requestArgs = {} } = {}) {
     const usesMotion = scenarioUsesMotion(scenario);
     const requiresMotion = scenarioRequiresMotion(scenario);
     const requiresCamera = scenarioRequiresCamera(scenario);
-    const frames = Array.isArray(scenario.sequence) ? [...scenario.sequence] : [];
+    const execution = scenarioExecutionMode(scenario);
+    const frames = buildScenarioFramesForRequest(scenario, requestArgs);
 
     if (this.activeScenario) {
       return this.buildResult("rejected", {
@@ -432,98 +434,150 @@ export class ToolExecutor {
 
     const token = ++this.scenarioToken;
     this.activeScenario = scenario.name;
-    this.log(`STEP 4 SCENARIO_START ${scenario.name}`);
+    this.log(`STEP 4 SCENARIO_START ${scenario.name} execution=${execution}`);
 
-    try {
-      const scenarioArgs = {
-        name: `scenario_${scenario.name}`,
-        frames,
-        scenario: scenario.name,
-        requiresMotion: usesMotion,
-        cooldownMs: scenario.cooldownMs,
-        interruptible: scenario.interruptible,
-        metadata: {
-          scenario: scenario.name
+    const scenarioArgs = {
+      name: `scenario_${scenario.name}`,
+      frames,
+      scenario: scenario.name,
+      request: {
+        camera: requestArgs.camera ?? "auto"
+      },
+      requiresMotion: usesMotion,
+      cooldownMs: scenario.cooldownMs,
+      interruptible: scenario.interruptible,
+      metadata: {
+        scenario: scenario.name
+      }
+    };
+    const routeAction = {
+      ...action,
+      type: "run_sequence",
+      reason: `run_scenario:${scenario.name}`,
+      args: scenarioArgs
+    };
+
+    const runScenarioRoute = async ({ buildFinalResult = true } = {}) => {
+      try {
+        const routeResult = await this.executeEmbodiedRoute(routeAction, {
+          physical: usesMotion,
+          allowMotion: motionPermission?.allowed === true,
+          allowCamera: requiresCamera,
+          args: scenarioArgs
+        });
+        const routeMotion = inspectRouteMotion(routeResult);
+
+        if (token !== this.scenarioToken) {
+          if (!buildFinalResult) {
+            this.log(`STEP 4 SCENARIO_ASYNC_INTERRUPTED ${scenario.name}`, "warn");
+            return null;
+          }
+
+          return this.buildResult("rejected", {
+            action,
+            executed: false,
+            physical: usesMotion,
+            message: `Scenario interrupted: ${scenario.name}`,
+            detail: {
+              scenario: scenario.name,
+              execution
+            }
+          });
         }
-      };
-      const routeAction = {
-        ...action,
-        type: "run_sequence",
-        reason: `run_scenario:${scenario.name}`,
-        args: scenarioArgs
-      };
 
-      const routeResult = await this.executeEmbodiedRoute(routeAction, {
-        physical: usesMotion,
-        allowMotion: motionPermission?.allowed === true,
-        allowCamera: requiresCamera,
-        args: scenarioArgs
+        if (
+          requiresMotion &&
+          (!routeResult || routeMotion.motionSkipped || routeResult.executed === false)
+        ) {
+          const permissionReason = motionPermission?.allowed === false ? motionPermission.reason : "";
+          const reason = routeMotion.reason || permissionReason || "motion_not_executed";
+          const status = reason === "robot_not_connected" || /not connected|disconnected/i.test(reason)
+            ? "failed"
+            : "rejected";
+
+          if (!buildFinalResult) {
+            this.log(`STEP 4 SCENARIO_ASYNC_FAILED ${scenario.name}: ${reason}`, "warn");
+            return null;
+          }
+
+          return this.buildResult(status, {
+            action,
+            executed: false,
+            physical: true,
+            message: `Scenario ${scenario.name} did not move: ${reason}`,
+            detail: {
+              scenario: scenario.name,
+              execution,
+              route: routeResult ?? null,
+              motionPermission
+            }
+          });
+        }
+
+        if (!routeResult || routeResult.status !== "completed") {
+          const reason = routeFailureReason(routeResult) || "route_not_executed";
+
+          if (!buildFinalResult) {
+            this.log(`STEP 4 SCENARIO_ASYNC_FAILED ${scenario.name}: ${reason}`, "warn");
+            return null;
+          }
+
+          return this.buildResult("rejected", {
+            action,
+            executed: false,
+            physical: usesMotion,
+            message: `Scenario ${scenario.name} did not execute: ${reason}`,
+            detail: {
+              scenario: scenario.name,
+              execution,
+              route: routeResult ?? null,
+              motionPermission
+            }
+          });
+        }
+
+        if (!buildFinalResult) {
+          this.log(`STEP 4 SCENARIO_ASYNC_COMPLETED ${scenario.name}`);
+          return routeResult;
+        }
+
+        return this.buildResult("completed", {
+          action,
+          executed: routeResult.executed !== false,
+          physical: usesMotion,
+          message: `Scenario completed: ${scenario.name}`,
+          detail: {
+            scenario: scenario.name,
+            execution,
+            route: routeResult ?? null,
+            actionDetails: extractRouteActionDetails(routeResult)
+          }
+        });
+      } finally {
+        if (token === this.scenarioToken) {
+          this.activeScenario = null;
+        }
+      }
+    };
+
+    if (execution === "parallel") {
+      runScenarioRoute({ buildFinalResult: false }).catch((error) => {
+        this.log(`STEP 4 SCENARIO_ASYNC_FAILED ${scenario.name}: ${error.message}`, "warn");
       });
-      const routeMotion = inspectRouteMotion(routeResult);
 
-      if (token !== this.scenarioToken) {
-        return this.buildResult("rejected", {
-          action,
-          executed: false,
-          physical: usesMotion,
-          message: `Scenario interrupted: ${scenario.name}`
-        });
-      }
-
-      if (
-        requiresMotion &&
-        (!routeResult || routeMotion.motionSkipped || routeResult.executed === false)
-      ) {
-        const permissionReason = motionPermission?.allowed === false ? motionPermission.reason : "";
-        const reason = routeMotion.reason || permissionReason || "motion_not_executed";
-        const status = reason === "robot_not_connected" || /not connected|disconnected/i.test(reason)
-          ? "failed"
-          : "rejected";
-
-        return this.buildResult(status, {
-          action,
-          executed: false,
-          physical: true,
-          message: `Scenario ${scenario.name} did not move: ${reason}`,
-          detail: {
-            scenario: scenario.name,
-            route: routeResult ?? null,
-            motionPermission
-          }
-        });
-      }
-
-      if (!routeResult || routeResult.status !== "completed") {
-        const reason = routeFailureReason(routeResult) || "route_not_executed";
-        return this.buildResult("rejected", {
-          action,
-          executed: false,
-          physical: usesMotion,
-          message: `Scenario ${scenario.name} did not execute: ${reason}`,
-          detail: {
-            scenario: scenario.name,
-            route: routeResult ?? null,
-            motionPermission
-          }
-        });
-      }
-
-      return this.buildResult("completed", {
+      return this.buildResult("queued", {
         action,
-        executed: routeResult.executed !== false,
+        executed: true,
         physical: usesMotion,
-        message: `Scenario completed: ${scenario.name}`,
+        message: `Scenario started in parallel: ${scenario.name}`,
         detail: {
           scenario: scenario.name,
-          route: routeResult ?? null,
-          actionDetails: extractRouteActionDetails(routeResult)
+          execution
         }
       });
-    } finally {
-      if (token === this.scenarioToken) {
-        this.activeScenario = null;
-      }
     }
+
+    return runScenarioRoute();
   }
 
   async executeStop(args = {}, action = {}) {
@@ -654,6 +708,7 @@ export class ToolExecutor {
         source: routedAction.source ?? "tool_executor",
         localPolicy: policy,
         lifeState: this.lifeEngine?.getState?.() ?? null,
+        runtimeContext: this.getRuntimeContext?.() ?? null,
         allowMotion,
         allowCamera,
         force,
@@ -916,6 +971,10 @@ function scenarioRequiresCamera(scenario = {}) {
   return scenarioPermissions(scenario).camera === true;
 }
 
+function scenarioExecutionMode(scenario = {}) {
+  return scenario.execution === "blocking" ? "blocking" : "parallel";
+}
+
 function inspectRouteMotion(routeResult = null) {
   const skippedFrames = routeResult?.detail?.route?.result?.skippedFrames
     ?? routeResult?.detail?.skippedFrames
@@ -964,6 +1023,11 @@ function normalizeFollowMode(mode) {
   return ["gentle", "curious", "cautious"].includes(mode) ? mode : "gentle";
 }
 
+function normalizeCameraChoice(value) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return ["auto", "front", "back"].includes(normalized) ? normalized : "auto";
+}
+
 function normalizeRunScenarioArgs(args = {}, { allowInternalScenario = false } = {}) {
   const nested = args.args && typeof args.args === "object" && !Array.isArray(args.args)
     ? args.args
@@ -978,6 +1042,29 @@ function normalizeRunScenarioArgs(args = {}, { allowInternalScenario = false } =
     name,
     label: normalizeShortText(args.label ?? args.targetLabel ?? nested.label ?? nested.targetLabel, 80),
     mode: normalizeFollowMode(mode),
-    reason: normalizeShortText(args.reason ?? nested.reason, 120)
+    reason: normalizeShortText(args.reason ?? nested.reason, 120),
+    camera: normalizeCameraChoice(args.camera ?? nested.camera)
   };
+}
+
+function buildScenarioFramesForRequest(scenario = {}, requestArgs = {}) {
+  const frames = Array.isArray(scenario.sequence) ? [...scenario.sequence] : [];
+  if (scenario.name !== "take_picture") {
+    return frames;
+  }
+
+  const camera = normalizeCameraChoice(requestArgs.camera);
+  return frames.map((frame) => {
+    if (frame?.type !== "action" || typeof frame.action !== "function") {
+      return frame;
+    }
+
+    return {
+      ...frame,
+      args: {
+        ...(frame.args ?? {}),
+        camera
+      }
+    };
+  });
 }

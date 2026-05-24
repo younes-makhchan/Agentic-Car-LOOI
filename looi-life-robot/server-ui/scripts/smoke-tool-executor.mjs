@@ -143,6 +143,47 @@ const cameraInput = {
     };
   }
 };
+const backCameraCalls = [];
+let backCameraRunning = false;
+const backCameraProbe = {
+  getStatus() {
+    return {
+      running: backCameraRunning,
+      cameraStatus: {
+        ...cameraStatus,
+        running: backCameraRunning,
+        facingMode: "environment"
+      }
+    };
+  },
+  async start({ targetLabel, reason }) {
+    backCameraCalls.push({ type: "start", targetLabel, reason });
+    backCameraRunning = true;
+    return { ok: true, status: this.getStatus() };
+  },
+  async stop(reason) {
+    backCameraCalls.push({ type: "stop", reason });
+    backCameraRunning = false;
+    return { ok: true, status: this.getStatus() };
+  },
+  async captureSnapshot({ includeDataUrl, maxWidth, targetLabel }) {
+    backCameraCalls.push({ type: "snapshot", includeDataUrl, maxWidth, targetLabel });
+    return {
+      ok: true,
+      status: this.getStatus(),
+      snapshot: {
+        timestamp: new Date().toISOString(),
+        facingMode: "environment",
+        source: "back_camera_probe",
+        width: maxWidth,
+        height: 180,
+        dataUrl: includeDataUrl ? "data:image/jpeg;base64,BB==" : null,
+        bytesApprox: 2,
+        note: "back camera probe thumbnail"
+      }
+    };
+  }
+};
 
 const lifeEngine = {
   getState() {
@@ -194,6 +235,7 @@ async function runMockFrames(frames = [], context = {}) {
       const actionResult = await frame.action({
         face,
         cameraInput,
+        backCameraProbe,
         commandQueue,
         lifeEngine,
         allowMotion: context.allowMotion !== false,
@@ -237,6 +279,10 @@ async function runMockFrames(frames = [], context = {}) {
     details,
     reason: skippedFrames.length ? "partial" : "completed"
   };
+}
+
+async function settleAsyncScenario() {
+  await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
 const executor = new ToolExecutor({
@@ -292,8 +338,10 @@ const internalPose = await executor.executeAction({
   type: "run_scenario",
   args: { name: "pose_happy" }
 });
-assert.equal(internalPose.status, "completed");
+assert.equal(internalPose.status, "queued");
 assert.equal(internalPose.detail.scenario, "pose_happy");
+assert.equal(internalPose.detail.execution, "parallel");
+await settleAsyncScenario();
 assert.equal(faceEvents.some((event) => event.type === "expression" && event.expression === "happy"), true);
 
 const disarmedScenario = await executor.executeAction({
@@ -314,9 +362,11 @@ const bodyScenario = await executor.executeAction({
   type: "run_scenario",
   args: { name: "body_talking" }
 });
-assert.equal(bodyScenario.status, "completed");
+assert.equal(bodyScenario.status, "queued");
 assert.equal(bodyScenario.physical, true);
+assert.equal(bodyScenario.detail.execution, "parallel");
 assert.equal("scenarioMovement" in bodyScenario.detail, false);
+await settleAsyncScenario();
 assert.equal(routedSequences.at(-1).action.args.frames.some((frame) => frame.label === "scenario_tiny_turn_left"), true);
 assert.equal(motions.some((motion) => motion.label === "scenario_tiny_turn_left"), true);
 
@@ -333,15 +383,45 @@ assert.equal(cameraCalls.some((call) => call.type === "snapshot"), true);
 assert.equal(faceEvents.some((event) => event.type === "take_picture"), true);
 assert.equal(faceEvents.some((event) => event.type === "show_photo"), true);
 
+const frontSnapshotsBeforeExplicitFrontPhoto = cameraCalls.filter((call) => call.type === "snapshot").length;
+const explicitFrontPhotoScenario = await executor.executeAction({
+  id: "scenario_photo_front",
+  source: "gemini_live",
+  type: "run_scenario",
+  args: { name: "take_picture", camera: "front" }
+});
+assert.equal(explicitFrontPhotoScenario.status, "completed");
+assert.equal(explicitFrontPhotoScenario.detail.actionDetails.at(-1).detail.cameraSource, "front");
+assert.equal(
+  cameraCalls.filter((call) => call.type === "snapshot").length,
+  frontSnapshotsBeforeExplicitFrontPhoto + 1
+);
+
+const frontSnapshotsBeforeBackPhoto = cameraCalls.filter((call) => call.type === "snapshot").length;
+const backPhotoScenario = await executor.executeAction({
+  id: "scenario_photo_back",
+  source: "gemini_live",
+  type: "run_scenario",
+  args: { name: "take_picture", camera: "back" }
+});
+assert.equal(backPhotoScenario.status, "completed");
+assert.equal(backPhotoScenario.detail.actionDetails.at(-1).detail.cameraSource, "back");
+assert.equal(cameraCalls.filter((call) => call.type === "snapshot").length, frontSnapshotsBeforeBackPhoto);
+assert.equal(backCameraCalls.some((call) => call.type === "start"), true);
+assert.equal(backCameraCalls.some((call) => call.type === "snapshot"), true);
+assert.equal(backCameraCalls.some((call) => call.type === "stop" && call.reason === "capture_complete"), true);
+
 const eatingScenario = await executor.executeAction({
   id: "scenario_eating",
   source: "gemini_live",
   type: "run_scenario",
   args: { name: "eating" }
 });
-assert.equal(eatingScenario.status, "completed");
+assert.equal(eatingScenario.status, "queued");
+assert.equal(eatingScenario.detail.execution, "parallel");
+await settleAsyncScenario();
 assert.equal(eatingActive, true);
-assert.equal(eatingScenario.detail.actionDetails.some((entry) => entry.action === "takeBite"), true);
+assert.equal(routedSequences.at(-1).action.args.scenario, "eating");
 assert.equal(faceEvents.some((event) => event.type === "take_bite"), true);
 
 const routesBeforeEatingExit = routedSequences.length;
@@ -351,7 +431,9 @@ const backUpAfterEating = await executor.executeAction({
   type: "run_scenario",
   args: { name: "back_up" }
 });
-assert.equal(backUpAfterEating.status, "completed");
+assert.equal(backUpAfterEating.status, "queued");
+assert.equal(backUpAfterEating.detail.execution, "parallel");
+await settleAsyncScenario();
 assert.equal(eatingActive, false);
 assert.equal(routedSequences.length, routesBeforeEatingExit + 2);
 assert.equal(routedSequences.at(-2).action.args.scenario, "finish_burger");
@@ -364,7 +446,9 @@ const secondEatingScenario = await executor.executeAction({
   type: "run_scenario",
   args: { name: "eating" }
 });
-assert.equal(secondEatingScenario.status, "completed");
+assert.equal(secondEatingScenario.status, "queued");
+assert.equal(secondEatingScenario.detail.execution, "parallel");
+await settleAsyncScenario();
 assert.equal(eatingActive, true);
 const routesBeforeDirectFinish = routedSequences.length;
 const directFinishBurger = await executor.executeAction({
@@ -384,9 +468,11 @@ const drinkingScenario = await executor.executeAction({
   type: "run_scenario",
   args: { name: "drinking" }
 });
-assert.equal(drinkingScenario.status, "completed");
+assert.equal(drinkingScenario.status, "queued");
+assert.equal(drinkingScenario.detail.execution, "parallel");
+await settleAsyncScenario();
 assert.equal(drinkingActive, true);
-assert.equal(drinkingScenario.detail.actionDetails.some((entry) => entry.action === "openDrink"), true);
+assert.equal(routedSequences.at(-1).action.args.scenario, "drinking");
 assert.equal(faceEvents.some((event) => event.type === "open_drink"), true);
 
 const routesBeforeDrinkExit = routedSequences.length;
@@ -396,7 +482,9 @@ const comeCloserAfterDrinking = await executor.executeAction({
   type: "run_scenario",
   args: { name: "come_closer" }
 });
-assert.equal(comeCloserAfterDrinking.status, "completed");
+assert.equal(comeCloserAfterDrinking.status, "queued");
+assert.equal(comeCloserAfterDrinking.detail.execution, "parallel");
+await settleAsyncScenario();
 assert.equal(drinkingActive, false);
 assert.equal(routedSequences.length, routesBeforeDrinkExit + 2);
 assert.equal(routedSequences.at(-2).action.args.scenario, "finish_drink");
@@ -409,7 +497,9 @@ const secondDrinkingScenario = await executor.executeAction({
   type: "run_scenario",
   args: { name: "drinking" }
 });
-assert.equal(secondDrinkingScenario.status, "completed");
+assert.equal(secondDrinkingScenario.status, "queued");
+assert.equal(secondDrinkingScenario.detail.execution, "parallel");
+await settleAsyncScenario();
 assert.equal(drinkingActive, true);
 const routesBeforeDuplicateDrink = routedSequences.length;
 const duplicateDrinkingScenario = await executor.executeAction({
@@ -441,8 +531,10 @@ const questionScenario = await executor.executeAction({
   type: "run_scenario",
   args: { name: "question" }
 });
-assert.equal(questionScenario.status, "completed");
-assert.equal(questionScenario.detail.actionDetails.some((entry) => entry.action === "showQuestion"), true);
+assert.equal(questionScenario.status, "queued");
+assert.equal(questionScenario.detail.execution, "parallel");
+await settleAsyncScenario();
+assert.equal(routedSequences.at(-1).action.args.scenario, "question");
 assert.equal(faceEvents.some((event) => event.type === "question"), true);
 
 const angryScenario = await executor.executeAction({
@@ -451,8 +543,10 @@ const angryScenario = await executor.executeAction({
   type: "run_scenario",
   args: { name: "angry" }
 });
-assert.equal(angryScenario.status, "completed");
-assert.equal(angryScenario.detail.actionDetails.some((entry) => entry.action === "showAngry"), true);
+assert.equal(angryScenario.status, "queued");
+assert.equal(angryScenario.detail.execution, "parallel");
+await settleAsyncScenario();
+assert.equal(routedSequences.at(-1).action.args.scenario, "angry");
 assert.equal(faceEvents.some((event) => event.type === "angry"), true);
 
 const lovingScenario = await executor.executeAction({
@@ -461,8 +555,10 @@ const lovingScenario = await executor.executeAction({
   type: "run_scenario",
   args: { name: "loving" }
 });
-assert.equal(lovingScenario.status, "completed");
-assert.equal(lovingScenario.detail.actionDetails.some((entry) => entry.action === "showLoving"), true);
+assert.equal(lovingScenario.status, "queued");
+assert.equal(lovingScenario.detail.execution, "parallel");
+await settleAsyncScenario();
+assert.equal(routedSequences.at(-1).action.args.scenario, "loving");
 assert.equal(faceEvents.some((event) => event.type === "loving"), true);
 
 const shockedScenario = await executor.executeAction({
@@ -471,8 +567,10 @@ const shockedScenario = await executor.executeAction({
   type: "run_scenario",
   args: { name: "shocked" }
 });
-assert.equal(shockedScenario.status, "completed");
-assert.equal(shockedScenario.detail.actionDetails.some((entry) => entry.action === "showShocked"), true);
+assert.equal(shockedScenario.status, "queued");
+assert.equal(shockedScenario.detail.execution, "parallel");
+await settleAsyncScenario();
+assert.equal(routedSequences.at(-1).action.args.scenario, "shocked");
 assert.equal(faceEvents.some((event) => event.type === "shocked"), true);
 
 const tellMeAboutYourselfScenario = await executor.executeAction({
@@ -481,11 +579,10 @@ const tellMeAboutYourselfScenario = await executor.executeAction({
   type: "run_scenario",
   args: { name: "tell_me_about_yourself" }
 });
-assert.equal(tellMeAboutYourselfScenario.status, "completed");
-assert.equal(
-  tellMeAboutYourselfScenario.detail.actionDetails.some((entry) => entry.action === "showTellMeAboutYourself"),
-  true
-);
+assert.equal(tellMeAboutYourselfScenario.status, "queued");
+assert.equal(tellMeAboutYourselfScenario.detail.execution, "parallel");
+await settleAsyncScenario();
+assert.equal(routedSequences.at(-1).action.args.scenario, "tell_me_about_yourself");
 assert.equal(faceEvents.some((event) => event.type === "tell_me_about_yourself"), true);
 assert.equal(tellingActive, true);
 
@@ -495,10 +592,12 @@ const kissScenario = await executor.executeAction({
   type: "run_scenario",
   args: { name: "kiss" }
 });
-assert.equal(kissScenario.status, "completed");
+assert.equal(kissScenario.status, "queued");
+assert.equal(kissScenario.detail.execution, "parallel");
+await settleAsyncScenario();
 assert.equal(routedSequences.at(-2).action.args.scenario, "finish_telling");
 assert.equal(faceEvents.some((event) => event.type === "finish_telling"), true);
-assert.equal(kissScenario.detail.actionDetails.some((entry) => entry.action === "showKiss"), true);
+assert.equal(routedSequences.at(-1).action.args.scenario, "kiss");
 assert.equal(faceEvents.some((event) => event.type === "kiss"), true);
 assert.equal(tellingActive, false);
 
@@ -621,7 +720,9 @@ const backUpWhileFollowing = await executor.executeAction({
   type: "run_scenario",
   args: { name: "back_up" }
 });
-assert.equal(backUpWhileFollowing.status, "completed");
+assert.equal(backUpWhileFollowing.status, "queued");
+assert.equal(backUpWhileFollowing.detail.execution, "parallel");
+await settleAsyncScenario();
 assert.equal(followRunning, false);
 assert.equal(routedSequences.length, routesBeforeFollowExit + 1);
 assert.equal(routedSequences.at(-1).action.args.scenario, "back_up");

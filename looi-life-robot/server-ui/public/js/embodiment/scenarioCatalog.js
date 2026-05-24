@@ -180,6 +180,7 @@ const SCENARIO_DEFINITIONS = Object.freeze({
     name: "finish_burger",
     description: "Finish and clear the active eating animation before doing something else.",
     permissions: PERMISSIONS.none,
+    execution: "blocking",
     sequence: [
       {
         type: "action",
@@ -213,6 +214,7 @@ const SCENARIO_DEFINITIONS = Object.freeze({
     name: "finish_drink",
     description: "Finish and clear the active drinking animation before doing something else.",
     permissions: PERMISSIONS.none,
+    execution: "blocking",
     sequence: [
       {
         type: "action",
@@ -302,6 +304,7 @@ const SCENARIO_DEFINITIONS = Object.freeze({
     name: "finish_telling",
     description: "Finish and clear the active self-introduction/interview animation.",
     permissions: PERMISSIONS.none,
+    execution: "blocking",
     sequence: [
       {
         type: "action",
@@ -330,6 +333,7 @@ const SCENARIO_DEFINITIONS = Object.freeze({
     name: "take_picture",
     description: "Take a local camera photo of the user and show a small preview.",
     permissions: PERMISSIONS.cameraWithOptionalMotion,
+    execution: "blocking",
     sequence: [
       {
         type: "action",
@@ -408,12 +412,14 @@ function scenario({
   cooldownMs = 0,
   interruptible = true,
   modelVisible = true,
-  lifecycle = null
+  lifecycle = null,
+  execution = "parallel"
 }) {
   return Object.freeze({
     name,
     description,
     permissions,
+    execution: normalizeScenarioExecution(execution),
     sequence: Object.freeze(sequence.map((frame) => Object.freeze({ ...frame }))),
     cooldownMs,
     interruptible,
@@ -430,6 +436,10 @@ function face(expression, intensity, eyeDirection, durationMs) {
     eyeDirection,
     durationMs
   };
+}
+
+function normalizeScenarioExecution(value) {
+  return value === "blocking" ? "blocking" : "parallel";
 }
 
 function buildActiveLifecycle(definition, context) {

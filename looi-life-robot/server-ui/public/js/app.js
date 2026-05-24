@@ -13,6 +13,7 @@ import { RuleBrainFallback } from "./localBrain/ruleBrainFallback.js";
 import { AttentionSystem } from "./localBrain/attentionSystem.js";
 import { BrainLatencyBudget } from "./localBrain/brainLatencyBudget.js";
 import { clampBrainPolicy, createDefaultBrainPolicy } from "./localBrain/brainPolicy.js";
+import { BackCameraProbe } from "./perception/backCameraProbe.js";
 import { CameraInput } from "./perception/camera.js";
 import { LifeEventEmitter } from "./personality/lifeEvents.js";
 import { describePersonalityForRuntime } from "./personality/personalityProfile.js";
@@ -73,6 +74,10 @@ const DEFAULT_FOLLOW_TUNING_PRESET = "case1";
 const LOCAL_VISION_SIZE_MIN = 70;
 const LOCAL_VISION_SIZE_MAX = 220;
 const LOCAL_VISION_SIZE_STEP = 10;
+const LOOI_ACTIVITY_SLOT_X = Object.freeze([-18, -9, 0, 9, 18]);
+const LOOI_ACTIVITY_TRIPLET_SEQUENCE = Object.freeze([0, 1, 2, 1]);
+const LOOI_ACTIVITY_STEP_MS = 1050;
+const LOOI_ACTIVITY_ORBIT_RADIUS = 9;
 
 const ui = {
   canvas: document.getElementById("faceCanvas"),
@@ -80,6 +85,8 @@ const ui = {
   productionStartButton: document.getElementById("productionStartButton"),
   productionStopButton: document.getElementById("productionStopButton"),
   localBrainQuickButton: document.getElementById("localBrainQuickButton"),
+  looiActivityIndicator: document.getElementById("looiActivityIndicator"),
+  looiActivityLabel: document.getElementById("looiActivityLabel"),
   settingsToggleButton: document.getElementById("settingsToggleButton"),
   settingsCloseButton: document.getElementById("settingsCloseButton"),
   settingsBackdrop: document.getElementById("settingsBackdrop"),
@@ -261,6 +268,7 @@ let performanceMonitor = null;
 let reliabilityManager = null;
 let geminiLiveRuntime = null;
 let cameraInput = null;
+let backCameraProbe = null;
 let objectDetectorEngine = null;
 let objectTracker = null;
 let visionState = null;
@@ -288,6 +296,11 @@ let poseScenarioLastRun = new Map();
 let localVisionWidgetSizePx = loadLocalVisionWidgetSize();
 let lastLogSignature = "";
 let lastOverlayDebugAt = 0;
+let looiActivityRaf = 0;
+let looiActivitySlotForDot = [0, 1, 2, 3, 4];
+let looiActivityActiveStep = 0;
+let looiActivityStepStart = 0;
+let looiActivityState = "listening";
 
 face = createFaceController(ui.canvas);
 applyLocalVisionWidgetSize(localVisionWidgetSizePx, { persist: false });
@@ -442,6 +455,9 @@ ui.localMotionArmedToggle.addEventListener("change", () => {
 
 ui.geminiVisionAssistToggle?.addEventListener("change", () => {
   geminiVisionAssistEnabled = Boolean(ui.geminiVisionAssistToggle.checked);
+  if (!geminiVisionAssistEnabled) {
+    stopBackCameraProbe("gemini_vision_disabled");
+  }
   syncGeminiVisionAssist("toggle");
   log(
     geminiVisionAssistEnabled
@@ -475,6 +491,7 @@ ui.startLocalBrainButton.addEventListener("click", () => {
 
 ui.stopLocalBrainButton.addEventListener("click", () => {
   stopGeminiVisionAssist("ui_stop_local_brain");
+  stopBackCameraProbe("ui_stop_local_brain");
   geminiLiveRuntime?.stop?.("ui_stop_local_brain");
   localBrainEngine?.stop?.();
   updateLocalBrainUi();
@@ -912,9 +929,19 @@ async function init() {
   priorityScheduler = new PriorityScheduler({
     logger: (message, level = "info") => log(message, level)
   });
+  backCameraProbe = new BackCameraProbe({
+    timeoutMs: activeConfig.backCameraProbeTimeoutMs ?? PUBLIC_CONFIG.backCameraProbeTimeoutMs ?? 30000,
+    frameIntervalMs: geminiVisionAssistIntervalMs,
+    frameSender: sendBackCameraProbeFrame,
+    onStop: ({ reason }) => {
+      syncGeminiVisionAssist(`back_camera_probe_stopped:${reason}`);
+    },
+    logger: (message, level = "info") => log(message, level)
+  });
   scenarioFrameSequencer = new ScenarioFrameSequencer({
     face,
     commandQueue,
+    backCameraProbe,
     lifeEngine,
     calibration: bodyCalibration,
     eventBus: localEventBus,
@@ -1038,11 +1065,7 @@ async function init() {
     "vision_target_lost",
     "vision_target_reacquired"
   ].forEach((type) => {
-    localEventBus.subscribe(type, () => {
-      updateVisionUi();
-      sendFollowStateContext(type);
-      syncGeminiVisionAssist(type);
-    });
+    localEventBus.subscribe(type, handleVisionFollowEvent);
   });
 
   localServerBrainAdapter = new LocalServerBrainAdapter({
@@ -1223,6 +1246,7 @@ async function immediateStop(reason, message, level = "warn") {
   }
 
   geminiLiveRuntime?.interrupt?.(reason);
+  stopBackCameraProbe(reason);
   scenarioFrameSequencer?.interrupt?.(reason, 100);
   priorityScheduler?.interruptBelow?.(100, reason);
   priorityScheduler?.clear?.();
@@ -1821,9 +1845,9 @@ function updateProductionChrome() {
   ui.localBrainQuickButton.textContent =
     liveRunning
       ? geminiRunning
-        ? "Gemini Live"
-        : "Local Brain Live"
-      : "Start Local Brain";
+        ? "LOOI Live"
+        : "LOOI Brain Live"
+      : "Start LOOI";
   ui.localBrainQuickButton.classList.toggle(
     "local-brain-quick-button--live",
     liveRunning
@@ -1879,6 +1903,7 @@ function updateLifeStatus(state = lifeEngine?.getState?.()) {
   ui.obstacleState.textContent = String(Boolean(state.obstacle));
   ui.listeningState.textContent = String(Boolean(state.isListening));
   ui.speakingState.textContent = String(Boolean(state.isSpeaking));
+  updateLooiActivityIndicator();
 }
 
 function updateLifeEngineToggle() {
@@ -2049,6 +2074,170 @@ function updateGeminiLiveUi(status = geminiLiveRuntime?.getStatus?.() ?? {}) {
       ? `${Math.round(Number(status.latencyMs))} ms`
       : "--";
   }
+
+  if (!status.connected && backCameraProbe?.getStatus?.().running) {
+    stopBackCameraProbe("gemini_disconnected");
+  }
+
+  updateLooiActivityIndicator(status);
+}
+
+function updateLooiActivityIndicator(geminiStatus = geminiLiveRuntime?.getStatus?.() ?? {}) {
+  if (!ui.looiActivityIndicator) {
+    return;
+  }
+
+  const lifeState = lifeEngine?.getState?.() ?? {};
+  const localBrainStatus = localBrainEngine?.getStatus?.() ?? {};
+  const looiSpeaking = Boolean(geminiStatus.audioPlaying || lifeState.isSpeaking);
+  const thinking = Boolean(
+    !looiSpeaking &&
+    (geminiStatus.thinking || localBrainStatus.processing)
+  );
+  const hearingUser = Boolean(!looiSpeaking && !thinking && geminiStatus.inputActive);
+  const state = thinking
+    ? "thinking"
+    : hearingUser
+      ? "hearing"
+      : "listening";
+  const label = thinking ? "Thinking" : "Listening";
+
+  setLooiActivityState(state, label);
+}
+
+function setLooiActivityState(state, label) {
+  if (!ui.looiActivityIndicator) {
+    return;
+  }
+
+  const previousState = looiActivityState;
+  looiActivityState = state;
+  ui.looiActivityIndicator.dataset.state = state;
+  ui.looiActivityIndicator.setAttribute("aria-label", `LOOI ${label.toLowerCase()}`);
+  if (ui.looiActivityLabel) {
+    ui.looiActivityLabel.textContent = label;
+  }
+
+  if (state === "thinking") {
+    if (previousState !== "thinking") {
+      startLooiThinkingDots();
+    }
+    return;
+  }
+
+  stopLooiThinkingDots();
+}
+
+function startLooiThinkingDots() {
+  const dots = getLooiActivityDots();
+  if (!dots.length) {
+    return;
+  }
+
+  stopLooiThinkingDots({ clearDots: false });
+  looiActivitySlotForDot = [0, 1, 2, 3, 4];
+  looiActivityActiveStep = 0;
+  looiActivityStepStart = performanceNow();
+  dots.forEach((dot, index) => {
+    dot.style.transform = `translate(-50%, -50%) translate(${LOOI_ACTIVITY_SLOT_X[looiActivitySlotForDot[index]]}px, 0px)`;
+    dot.style.opacity = "0.950";
+  });
+  looiActivityRaf = globalThis.requestAnimationFrame?.(drawLooiThinkingDots) ?? 0;
+}
+
+function stopLooiThinkingDots({ clearDots = true } = {}) {
+  if (looiActivityRaf) {
+    globalThis.cancelAnimationFrame?.(looiActivityRaf);
+    looiActivityRaf = 0;
+  }
+
+  if (!clearDots) {
+    return;
+  }
+
+  getLooiActivityDots().forEach((dot) => {
+    dot.style.transform = "";
+    dot.style.opacity = "";
+  });
+}
+
+function drawLooiThinkingDots(now) {
+  if (looiActivityState !== "thinking") {
+    stopLooiThinkingDots();
+    return;
+  }
+
+  const dots = getLooiActivityDots();
+  if (!dots.length) {
+    looiActivityRaf = 0;
+    return;
+  }
+
+  const elapsed = now - looiActivityStepStart;
+  const rawT = Math.min(1, elapsed / LOOI_ACTIVITY_STEP_MS);
+  const t = easeInOutCubic(rawT);
+  const startSlot = LOOI_ACTIVITY_TRIPLET_SEQUENCE[looiActivityActiveStep];
+  const pivotSlot = startSlot + 1;
+  const endSlot = startSlot + 2;
+
+  dots.forEach((dot, index) => {
+    const currentSlot = looiActivitySlotForDot[index];
+    const xBase = LOOI_ACTIVITY_SLOT_X[currentSlot];
+    let x = xBase;
+    let y = 0;
+    let scale = 1;
+    let opacity = 0.95;
+
+    if (currentSlot === pivotSlot) {
+      x = LOOI_ACTIVITY_SLOT_X[pivotSlot];
+      scale = 1 + 0.03 * Math.sin(t * Math.PI);
+      opacity = 1;
+    } else if (currentSlot === startSlot) {
+      const theta = Math.PI - Math.PI * t;
+      x = LOOI_ACTIVITY_SLOT_X[pivotSlot] + LOOI_ACTIVITY_ORBIT_RADIUS * Math.cos(theta);
+      y = -LOOI_ACTIVITY_ORBIT_RADIUS * Math.sin(theta);
+      scale = 1 - 0.04 * Math.sin(t * Math.PI);
+      opacity = 0.88 + 0.12 * Math.sin(t * Math.PI);
+    } else if (currentSlot === endSlot) {
+      const theta = Math.PI * t;
+      x = LOOI_ACTIVITY_SLOT_X[pivotSlot] + LOOI_ACTIVITY_ORBIT_RADIUS * Math.cos(theta);
+      y = LOOI_ACTIVITY_ORBIT_RADIUS * Math.sin(theta);
+      scale = 1 - 0.04 * Math.sin(t * Math.PI);
+      opacity = 0.88 + 0.12 * Math.sin(t * Math.PI);
+    }
+
+    dot.style.transform = `translate(-50%, -50%) translate(${x}px, ${y}px) scale(${scale})`;
+    dot.style.opacity = opacity.toFixed(3);
+  });
+
+  if (rawT >= 1) {
+    const leftDot = looiActivitySlotForDot.findIndex((slot) => slot === startSlot);
+    const rightDot = looiActivitySlotForDot.findIndex((slot) => slot === endSlot);
+
+    if (leftDot !== -1 && rightDot !== -1) {
+      looiActivitySlotForDot[leftDot] = endSlot;
+      looiActivitySlotForDot[rightDot] = startSlot;
+    }
+
+    looiActivityActiveStep = (looiActivityActiveStep + 1) % LOOI_ACTIVITY_TRIPLET_SEQUENCE.length;
+    looiActivityStepStart = now;
+  }
+
+  looiActivityRaf = globalThis.requestAnimationFrame?.(drawLooiThinkingDots) ?? 0;
+}
+
+function getLooiActivityDots() {
+  return Array.from(ui.looiActivityIndicator?.querySelectorAll?.(".looi-activity-points span") ?? []);
+}
+
+function easeInOutCubic(t) {
+  return t < 0.5
+    ? 4 * t * t * t
+    : 1 - ((-2 * t + 2) ** 3) / 2;
+}
+
+function performanceNow() {
+  return globalThis.performance?.now?.() ?? Date.now();
 }
 
 function syncGeminiVisionAssist(reason = "sync") {
@@ -2126,19 +2315,72 @@ async function sendGeminiVisionAssistFrame(reason = "frame") {
   }
 }
 
+async function sendBackCameraProbeFrame({
+  cameraInput: probeCameraInput,
+  targetLabel = "",
+  reason = "front_target_lost",
+  trigger = "interval"
+} = {}) {
+  const geminiStatus = geminiLiveRuntime?.getStatus?.() ?? {};
+  if (!geminiVisionAssistEnabled || !geminiStatus.connected || !probeCameraInput?.captureSnapshot) {
+    return false;
+  }
+
+  const cleanTarget = String(targetLabel || "object").trim();
+  const cleanReason = String(reason || "front_target_lost").trim();
+  const marker = `<camera_frame_hint>next_video_frame_source=back_camera target=${cleanTarget} reason=${cleanReason}</camera_frame_hint>`;
+  const markerSent = await geminiLiveRuntime.sendText?.(marker);
+  if (!markerSent) {
+    return false;
+  }
+
+  const result = await probeCameraInput.captureSnapshot({
+    includeDataUrl: true,
+    maxWidth: 320,
+    quality: 0.55,
+    emit: false,
+    record: false
+  });
+
+  if (!result?.ok || !result.snapshot?.dataUrl) {
+    throw new Error(result?.error ?? "back_snapshot_unavailable");
+  }
+
+  const sent = await geminiLiveRuntime.sendVideoFrame?.({
+    data: result.snapshot.dataUrl,
+    mimeType: "image/jpeg",
+    width: result.snapshot.width,
+    height: result.snapshot.height,
+    reason: `back_camera:${cleanTarget}:${trigger}`
+  });
+
+  if (sent) {
+    geminiVisionAssistLastFrameAt = Date.now();
+    updateGeminiVisionAssistUi(getGeminiVisionAssistState("back_camera_probe_frame"));
+    log(`[back-camera] frame sent target=${cleanTarget} reason=${cleanReason} trigger=${trigger}`, "debug");
+  }
+
+  return Boolean(sent);
+}
+
 function getGeminiVisionAssistState(reason = "") {
   const geminiStatus = geminiLiveRuntime?.getStatus?.() ?? {};
   const cameraStatus = cameraInput?.getCameraStatus?.() ?? {};
+  const backProbeStatus = backCameraProbe?.getStatus?.() ?? {};
+  const backProbeActive = Boolean(backProbeStatus.running || backProbeStatus.starting);
   const blockedReason = !geminiVisionAssistEnabled
     ? "disabled"
     : !geminiStatus.connected
       ? "gemini_not_connected"
-      : !cameraStatus.running
-        ? "camera_off"
-        : "running";
+      : backProbeActive
+        ? "back_camera_probe_active"
+        : !cameraStatus.running
+          ? "camera_off"
+          : "running";
   const shouldRun = Boolean(
     geminiVisionAssistEnabled &&
     geminiStatus.connected &&
+    !backProbeActive &&
     cameraStatus.running
   );
 
@@ -2147,6 +2389,7 @@ function getGeminiVisionAssistState(reason = "") {
     enabled: geminiVisionAssistEnabled,
     connected: Boolean(geminiStatus.connected),
     cameraRunning: Boolean(cameraStatus.running),
+    backCameraProbeActive: backProbeActive,
     followActive: isFollowVisionModeActive(),
     reason: shouldRun ? reason || "running" : blockedReason
   };
@@ -2451,6 +2694,74 @@ function getVisionContext() {
 
 function isFollowVisionModeActive() {
   return Boolean(followTargetController?.isRunning?.());
+}
+
+function handleVisionFollowEvent(event = {}) {
+  const type = event.type ?? "";
+  updateVisionUi();
+  sendFollowStateContext(type);
+
+  if (type === "vision_target_lost") {
+    startBackCameraProbeForLostTarget(event);
+  } else if ([
+    "vision_target_reacquired",
+    "vision_follow_stopped",
+    "vision_follow_not_found"
+  ].includes(type)) {
+    stopBackCameraProbe(type);
+  }
+
+  syncGeminiVisionAssist(type);
+}
+
+function startBackCameraProbeForLostTarget(event = {}) {
+  if (!backCameraProbe?.start) {
+    return false;
+  }
+
+  const geminiStatus = geminiLiveRuntime?.getStatus?.() ?? {};
+  if (!geminiVisionAssistEnabled || !geminiStatus.connected) {
+    log(
+      `[back-camera] probe skipped target=${getFollowEventTargetLabel(event) || "object"} reason=gemini_not_ready`,
+      "debug"
+    );
+    return false;
+  }
+
+  stopGeminiVisionAssist("back_camera_probe_starting");
+  backCameraProbe.start({
+    targetLabel: getFollowEventTargetLabel(event),
+    reason: "front_target_lost"
+  }).then((result) => {
+    if (!result?.ok) {
+      log(`[back-camera] probe unavailable: ${result?.error ?? "unknown"}`, "warn");
+      syncGeminiVisionAssist("back_camera_probe_failed");
+    }
+  }).catch((error) => {
+    log(`[back-camera] probe failed: ${error.message}`, "warn");
+    syncGeminiVisionAssist("back_camera_probe_failed");
+  });
+  return true;
+}
+
+function stopBackCameraProbe(reason = "back_camera_probe_stop") {
+  if (!backCameraProbe?.stop) {
+    return null;
+  }
+
+  return backCameraProbe.stop(reason).catch((error) => {
+    log(`[back-camera] probe stop failed: ${error.message}`, "warn");
+    return null;
+  });
+}
+
+function getFollowEventTargetLabel(event = {}) {
+  return String(
+    event.payload?.targetLabel ??
+    event.payload?.label ??
+    visionState?.getActiveTarget?.()?.label ??
+    ""
+  ).trim();
 }
 
 function sendFollowStateContext(reason = "follow_context") {
@@ -2812,6 +3123,7 @@ function getExecutionPolicy() {
 function getRuntimeContext() {
   const lifeState = lifeEngine?.getState?.() ?? null;
   const cameraStatus = compactCameraStatus(cameraInput?.getCameraStatus?.());
+  const backCameraProbeStatus = compactBackCameraProbeStatus(backCameraProbe?.getStatus?.());
 
   return {
     lifeState,
@@ -2841,6 +3153,7 @@ function getRuntimeContext() {
     recentLifeEvents: lifeState?.recentEvents ?? [],
     recentEvents: localEventBus?.getRecentEvents?.({ limit: 30 }) ?? [],
     cameraStatus,
+    backCameraProbeStatus,
     latestObservation: cameraStatus.observation,
     vision: getVisionContext(),
     recentObjectReference,
@@ -2880,6 +3193,20 @@ function compactCameraStatus(status = {}) {
     },
     latestObservation: observation ? compactObservationForEvent(observation) : null,
     observation: observation ? compactObservationForEvent(observation) : null
+  };
+}
+
+function compactBackCameraProbeStatus(status = {}) {
+  return {
+    running: Boolean(status?.running),
+    starting: Boolean(status?.starting),
+    targetLabel: status?.targetLabel ?? "",
+    reason: status?.reason ?? "",
+    startedAt: status?.startedAt ?? null,
+    stoppedAt: status?.stoppedAt ?? null,
+    lastFrameSentAt: status?.lastFrameSentAt ?? null,
+    lastError: status?.lastError ?? null,
+    cameraStatus: compactCameraStatus(status?.cameraStatus ?? {})
   };
 }
 

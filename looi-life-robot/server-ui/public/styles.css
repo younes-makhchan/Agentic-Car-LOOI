@@ -1075,60 +1075,6 @@ body {
   pointer-events: none;
 }
 
-.looi-thinking-indicator {
-  position: absolute;
-  z-index: 35;
-  right: clamp(8px, 1.4vw, 24px);
-  top: 50%;
-  display: flex;
-  flex-direction: column;
-  gap: clamp(6px, 0.7vw, 10px);
-  pointer-events: none;
-  opacity: 0;
-  transform: translateY(-50%);
-  transition: opacity 160ms ease;
-}
-
-.looi-thinking-indicator[hidden] {
-  display: none;
-}
-
-.looi-eye-system.is-thinking .looi-thinking-indicator {
-  opacity: 1;
-}
-
-.looi-thinking-indicator span {
-  width: clamp(7px, 0.8vw, 12px);
-  height: clamp(18px, 2vw, 34px);
-  border-radius: 999px;
-  background: #bdf3ff;
-  box-shadow: 0 0 10px rgba(95, 245, 255, 0.65);
-  opacity: 0.3;
-  transform-origin: center;
-  animation: looiThinkingTick 900ms ease-in-out infinite;
-}
-
-.looi-thinking-indicator span:nth-child(2) {
-  animation-delay: 120ms;
-}
-
-.looi-thinking-indicator span:nth-child(3) {
-  animation-delay: 240ms;
-}
-
-@keyframes looiThinkingTick {
-  0%,
-  100% {
-    opacity: 0.28;
-    transform: scaleY(0.65);
-  }
-
-  45% {
-    opacity: 1;
-    transform: scaleY(1);
-  }
-}
-
 .looi-eye-system.is-taking-picture .looi-eyes {
   animation: looiPictureEyesMove var(--photo-time) cubic-bezier(0.2, 0.9, 0.25, 1) both;
 }
@@ -4142,6 +4088,7 @@ body {
 .face-panel {
   position: fixed;
   inset: 0;
+  z-index: 0;
   display: grid;
   place-items: center;
   background:
@@ -4164,7 +4111,7 @@ body {
 .control-panel {
   position: fixed;
   inset: 0 0 0 auto;
-  z-index: 300;
+  z-index: 120;
   width: clamp(430px, 50vw, 920px);
   max-width: 94vw;
   height: 100vh;
@@ -4216,10 +4163,34 @@ body {
   min-height: 2.65rem;
 }
 
+.settings-quick-actions {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1rem;
+  border-color: rgba(126, 224, 186, 0.26);
+  background:
+    radial-gradient(circle at 14% 18%, rgba(126, 224, 186, 0.16), transparent 34%),
+    rgba(9, 16, 24, 0.86);
+}
+
+.settings-quick-actions h2,
+.settings-quick-actions p {
+  margin: 0;
+}
+
+.settings-quick-actions .button-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.settings-quick-actions button {
+  width: 100%;
+  min-height: 3rem;
+}
+
 .settings-backdrop {
   position: fixed;
   inset: 0;
-  z-index: -240;
+  z-index: 110;
   display: none;
   min-height: 0;
   padding: 0;
@@ -4240,20 +4211,141 @@ body {
 }
 
 .settings-open .production-actions {
-  z-index: 230;
+  z-index: 90;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .production-actions {
   position: fixed;
   top: max(1rem, env(safe-area-inset-top));
   right: max(1rem, env(safe-area-inset-right));
-  z-index: 38;
+  z-index: 100;
   display: flex;
   gap: 0.65rem;
   align-items: center;
   transition:
     opacity 140ms ease,
     transform 140ms ease;
+}
+
+.looi-activity-indicator {
+  --activity-dot: 5px;
+  display: grid;
+  justify-items: center;
+  gap: 0.26rem;
+  min-width: 3.4rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: rgba(255, 255, 255, 0.94);
+  pointer-events: none;
+  text-shadow: 0 0 8px rgba(255, 255, 255, 0.24);
+}
+
+.looi-activity-points {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  width: 52px;
+  height: 24px;
+  background: transparent;
+}
+
+.looi-activity-points span {
+  display: block;
+  width: var(--activity-dot);
+  height: var(--activity-dot);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 0 7px rgba(255, 255, 255, 0.62);
+  opacity: 0.92;
+  transition:
+    width 140ms ease,
+    height 140ms ease,
+    opacity 140ms ease,
+    transform 140ms ease;
+}
+
+.looi-activity-label {
+  min-height: 0.68rem;
+  color: rgba(255, 255, 255, 0.86);
+  font: 800 0.58rem/1 "IBM Plex Sans", "Segoe UI", sans-serif;
+  letter-spacing: 0.015em;
+  opacity: 0;
+  transform: translateY(-2px);
+  transition: opacity 120ms ease;
+}
+
+.looi-activity-indicator[data-state="listening"] .looi-activity-label,
+.looi-activity-indicator[data-state="hearing"] .looi-activity-label {
+  opacity: 1;
+}
+
+.looi-activity-indicator[data-state="listening"] .looi-activity-points span {
+  opacity: 0.95;
+}
+
+.looi-activity-indicator[data-state="hearing"] .looi-activity-points {
+  gap: 4px;
+}
+
+.looi-activity-indicator[data-state="hearing"] .looi-activity-points span {
+  width: 4px;
+  height: 17px;
+  border-radius: 999px;
+  animation: looiActivityWave 760ms ease-in-out infinite;
+}
+
+.looi-activity-indicator[data-state="hearing"] .looi-activity-points span:nth-child(1),
+.looi-activity-indicator[data-state="hearing"] .looi-activity-points span:nth-child(5) {
+  animation-duration: 560ms;
+}
+
+.looi-activity-points span:nth-child(2) {
+  animation-delay: 80ms;
+}
+
+.looi-activity-points span:nth-child(3) {
+  animation-delay: 160ms;
+}
+
+.looi-activity-points span:nth-child(4) {
+  animation-delay: 240ms;
+}
+
+.looi-activity-points span:nth-child(5) {
+  animation-delay: 320ms;
+}
+
+.looi-activity-indicator[data-state="thinking"] .looi-activity-points {
+  width: 52px;
+  height: 32px;
+}
+
+.looi-activity-indicator[data-state="thinking"] .looi-activity-points span {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 5px;
+  height: 5px;
+  transition: none;
+}
+
+@keyframes looiActivityWave {
+  0%,
+  100% {
+    opacity: 0.72;
+    transform: scaleY(0.36);
+  }
+
+  48% {
+    opacity: 1;
+    transform: scaleY(1.18);
+  }
 }
 
 .production-actions button {

@@ -265,10 +265,6 @@ function setThinking(isThinking) {
   }
 
   rootRef.classList.toggle("is-thinking", FACE_STATE.thinking);
-  const indicator = rootRef.querySelector(".looi-thinking-indicator");
-  if (indicator) {
-    indicator.hidden = !FACE_STATE.thinking;
-  }
 }
 
 function takePicture() {
@@ -831,16 +827,6 @@ function createEyeDom() {
   const kissHeart = document.createElement("div");
   kissHeart.className = "looi-kiss-heart";
 
-  const thinkingIndicator = document.createElement("div");
-  thinkingIndicator.className = "looi-thinking-indicator";
-  thinkingIndicator.hidden = true;
-  thinkingIndicator.setAttribute("aria-hidden", "true");
-  thinkingIndicator.innerHTML = `
-    <span></span>
-    <span></span>
-    <span></span>
-  `;
-
   const eyes = document.createElement("div");
   eyes.className = "looi-eyes";
   eyes.append(createEye(), createEye());
@@ -869,7 +855,6 @@ function createEyeDom() {
     followTarget,
     preview,
     cameraIcon,
-    thinkingIndicator,
     eyes
   );
   return fragment;

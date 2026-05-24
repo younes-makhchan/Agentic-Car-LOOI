@@ -1,4 +1,4 @@
-import { safeStringify } from "../core/runtimeUtils.js";
+import { clampNumber, safeStringify } from "../core/runtimeUtils.js";
 import {
   GEMINI_LIVE_INPUT_RATE,
   GEMINI_LIVE_OUTPUT_RATE,
@@ -10,6 +10,8 @@ import {
 const DEFAULT_WS_BASE =
   "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContentConstrained";
 const INPUT_BUFFER_SIZE = 2048;
+const INPUT_ACTIVE_LEVEL = 0.018;
+const INPUT_ACTIVE_HOLD_MS = 260;
 
 export class GeminiLiveRuntime {
   constructor({
@@ -62,7 +64,9 @@ export class GeminiLiveRuntime {
       receivedAudioChunks: 0,
       receivedAudioBytes: 0,
       queuedOutputChunks: 0,
-      lastInputLogAt: 0
+      lastInputLogAt: 0,
+      lastInputStatusAt: 0,
+      lastVoiceAt: 0
     };
     this.status = {
       enabled: false,
@@ -91,7 +95,11 @@ export class GeminiLiveRuntime {
       setupComplete: false,
       startedAt: 0,
       lastAudioAt: 0,
-      lastToolCallAt: 0
+      lastToolCallAt: 0,
+      inputLevel: 0,
+      inputActive: false,
+      lastInputAudioAt: 0,
+      lastVoiceAt: 0
     };
   }
 
@@ -409,6 +417,7 @@ export class GeminiLiveRuntime {
       }
 
       const input = event.inputBuffer.getChannelData(0);
+      const inputLevel = calculateRms(input);
       const pcm = float32ToPcm16(downsampleFloat32(input, audioContext.sampleRate, GEMINI_LIVE_INPUT_RATE));
 
       if (!pcm.byteLength) {
@@ -419,7 +428,8 @@ export class GeminiLiveRuntime {
         bytes: pcm.byteLength,
         inputRate: audioContext.sampleRate,
         outputRate: GEMINI_LIVE_INPUT_RATE,
-        samples: pcm.length
+        samples: pcm.length,
+        inputLevel
       });
       this.sendJson({
         realtimeInput: {
@@ -455,7 +465,7 @@ export class GeminiLiveRuntime {
     this.micStream = null;
     this.inputAudioContext?.close?.().catch?.(() => {});
     this.inputAudioContext = null;
-    this.patchStatus({ micStreaming: false });
+    this.patchStatus({ micStreaming: false, inputActive: false, inputLevel: 0 });
   }
 
   async handleTransportMessage(rawMessage) {
@@ -628,7 +638,7 @@ export class GeminiLiveRuntime {
         response: {
           output: {
             accepted,
-            queued: false,
+            queued: status === "queued",
             status,
             executed,
             physical: Boolean(result?.physical),
@@ -764,10 +774,29 @@ export class GeminiLiveRuntime {
     }, Math.max(100, Math.ceil(buffer.duration * 1000) + 60));
   }
 
-  recordInputAudioSent({ bytes, inputRate, outputRate, samples } = {}) {
+  recordInputAudioSent({ bytes, inputRate, outputRate, samples, inputLevel = 0 } = {}) {
     this.audioDebug.sentInputFrames += 1;
     this.audioDebug.sentInputBytes += Number(bytes) || 0;
     const now = this.now();
+    const cleanInputLevel = clampNumber(inputLevel, 0, 1, 0);
+
+    if (cleanInputLevel >= INPUT_ACTIVE_LEVEL) {
+      this.audioDebug.lastVoiceAt = now;
+    }
+
+    const inputActive = Boolean(this.audioDebug.lastVoiceAt && now - this.audioDebug.lastVoiceAt <= INPUT_ACTIVE_HOLD_MS);
+    if (
+      inputActive !== this.status.inputActive ||
+      now - this.audioDebug.lastInputStatusAt > 140
+    ) {
+      this.audioDebug.lastInputStatusAt = now;
+      this.patchStatus({
+        inputLevel: cleanInputLevel,
+        inputActive,
+        lastInputAudioAt: now,
+        lastVoiceAt: this.audioDebug.lastVoiceAt || this.status.lastVoiceAt
+      });
+    }
 
     if (
       this.audioDebug.sentInputFrames <= 5 ||
@@ -1185,6 +1214,20 @@ function downsampleFloat32(input, inputRate, outputRate) {
   return output;
 }
 
+function calculateRms(input) {
+  if (!input?.length) {
+    return 0;
+  }
+
+  let sum = 0;
+  for (let index = 0; index < input.length; index += 1) {
+    const sample = Number(input[index]) || 0;
+    sum += sample * sample;
+  }
+
+  return Math.sqrt(sum / input.length);
+}
+
 export function float32ToPcm16(input) {
   const output = new Int16Array(input.length);
 
@@ -1563,7 +1606,8 @@ function compactToolResult(result = null) {
     skippedFrames: Array.isArray(routeResult?.skippedFrames)
       ? routeResult.skippedFrames.slice(0, 8)
       : undefined,
-    scenario: result.detail?.scenario ?? null
+    scenario: result.detail?.scenario ?? null,
+    execution: result.detail?.execution ?? null
   };
 }
 

@@ -157,6 +157,10 @@ assert.deepEqual(
   setup.setup.tools[0].functionDeclarations.find((tool) => tool.name === "run_scenario").parameters.required,
   ["name"]
 );
+assert.deepEqual(
+  setup.setup.tools[0].functionDeclarations.find((tool) => tool.name === "run_scenario").parameters.properties.camera.enum,
+  ["auto", "front", "back"]
+);
 assert.equal(setup.setup.systemInstruction.parts[0].text.includes("move_forward_tiny"), false);
 assert.ok(setup.setup.systemInstruction.parts[0].text.includes("run_scenario"));
 assert.ok(setup.setup.systemInstruction.parts[0].text.includes("follow_target"));
@@ -561,7 +565,7 @@ fakeTransport.emit({
       {
         id: "picture_1",
         name: "run_scenario",
-        args: { name: "take_picture" }
+        args: { name: "take_picture", camera: "back" }
       }
     ]
   }
@@ -569,6 +573,15 @@ fakeTransport.emit({
 await wait(5);
 assert.equal(actions.at(-1).type, "run_scenario");
 assert.equal(actions.at(-1).args.name, "take_picture");
+assert.equal(actions.at(-1).args.camera, "back");
+
+const mappedInvalidCamera = geminiFunctionCallToAction({
+  id: "picture_invalid_camera",
+  name: "run_scenario",
+  args: { name: "take_picture", camera: "side" }
+});
+assert.equal(mappedInvalidCamera.ok, true);
+assert.equal(mappedInvalidCamera.action.args.camera, "auto");
 
 fakeTransport.emit({
   toolCall: {

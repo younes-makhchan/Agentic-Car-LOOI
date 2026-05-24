@@ -1,0 +1,545 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>LOOI Dual Camera Test</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #05070a;
+        --panel: rgba(14, 20, 30, 0.86);
+        --panel-strong: rgba(20, 30, 44, 0.95);
+        --line: rgba(255, 255, 255, 0.12);
+        --text: rgba(255, 255, 255, 0.92);
+        --muted: rgba(255, 255, 255, 0.62);
+        --good: #76f3b0;
+        --warn: #ffc66d;
+        --bad: #ff7b7b;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        min-height: 100vh;
+        margin: 0;
+        padding: max(18px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right))
+          max(18px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));
+        background:
+          radial-gradient(circle at 16% 8%, rgba(118, 243, 176, 0.14), transparent 26rem),
+          radial-gradient(circle at 88% 12%, rgba(122, 193, 255, 0.16), transparent 24rem),
+          linear-gradient(160deg, #030405, var(--bg));
+        color: var(--text);
+        font-family: "Avenir Next", "Segoe UI", sans-serif;
+      }
+
+      main {
+        width: min(1120px, 100%);
+        margin: 0 auto;
+        display: grid;
+        gap: 16px;
+      }
+
+      header,
+      section {
+        border: 1px solid var(--line);
+        border-radius: 22px;
+        background: var(--panel);
+        box-shadow: 0 24px 80px rgba(0, 0, 0, 0.34);
+        backdrop-filter: blur(18px);
+      }
+
+      header {
+        padding: 18px;
+      }
+
+      h1,
+      h2,
+      p {
+        margin: 0;
+      }
+
+      h1 {
+        font-size: clamp(1.55rem, 5vw, 3.2rem);
+        letter-spacing: -0.05em;
+      }
+
+      h2 {
+        font-size: 0.92rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      p {
+        color: var(--muted);
+        line-height: 1.55;
+      }
+
+      .controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        padding: 14px;
+      }
+
+      button {
+        min-height: 44px;
+        border: 1px solid rgba(255, 255, 255, 0.16);
+        border-radius: 999px;
+        padding: 0 16px;
+        background: rgba(255, 255, 255, 0.08);
+        color: var(--text);
+        font: inherit;
+        font-weight: 800;
+        cursor: pointer;
+      }
+
+      button.primary {
+        border-color: rgba(118, 243, 176, 0.42);
+        background: linear-gradient(180deg, rgba(118, 243, 176, 0.22), rgba(45, 120, 80, 0.22));
+      }
+
+      button.danger {
+        border-color: rgba(255, 123, 123, 0.42);
+        background: rgba(120, 28, 28, 0.45);
+      }
+
+      button:disabled {
+        cursor: not-allowed;
+        opacity: 0.45;
+      }
+
+      .status-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 10px;
+        padding: 14px;
+      }
+
+      .status-card {
+        min-height: 74px;
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        padding: 12px;
+        background: rgba(0, 0, 0, 0.22);
+      }
+
+      .status-card span {
+        display: block;
+        color: var(--muted);
+        font-size: 0.72rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+
+      .status-card strong {
+        display: block;
+        margin-top: 8px;
+        font-size: 0.96rem;
+      }
+
+      .good {
+        color: var(--good);
+      }
+
+      .warn {
+        color: var(--warn);
+      }
+
+      .bad {
+        color: var(--bad);
+      }
+
+      .camera-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 14px;
+        padding: 14px;
+      }
+
+      .camera-card {
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: 22px;
+        background: var(--panel-strong);
+      }
+
+      .camera-card header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        border: 0;
+        border-radius: 0;
+        padding: 12px 14px;
+        background: transparent;
+        box-shadow: none;
+      }
+
+      video {
+        display: block;
+        width: 100%;
+        aspect-ratio: 4 / 3;
+        background:
+          linear-gradient(135deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0)),
+          #020304;
+        object-fit: cover;
+      }
+
+      pre {
+        max-height: 280px;
+        margin: 0;
+        overflow: auto;
+        padding: 14px;
+        border-top: 1px solid var(--line);
+        color: rgba(255, 255, 255, 0.78);
+        font: 0.78rem/1.45 "SFMono-Regular", Consolas, monospace;
+        white-space: pre-wrap;
+      }
+
+      .explain {
+        display: grid;
+        gap: 10px;
+        padding: 14px;
+      }
+
+      @media (max-width: 760px) {
+        .status-grid,
+        .camera-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .controls {
+          display: grid;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>Dual Camera Test</h1>
+        <p>
+          This page tests whether this browser/device can keep the front and back cameras open as
+          separate live streams at the same time.
+        </p>
+      </header>
+
+      <section class="controls" aria-label="Camera controls">
+        <button id="startBothButton" class="primary" type="button">Start Front + Back</button>
+        <button id="startFrontButton" type="button">Start Front Only</button>
+        <button id="startBackButton" type="button">Start Back Only</button>
+        <button id="checkButton" type="button">Check Streams</button>
+        <button id="stopButton" class="danger" type="button">Stop All</button>
+      </section>
+
+      <section class="status-grid" aria-live="polite">
+        <div class="status-card">
+          <span>Browser</span>
+          <strong id="browserStatus">checking</strong>
+        </div>
+        <div class="status-card">
+          <span>Front stream</span>
+          <strong id="frontStatus">stopped</strong>
+        </div>
+        <div class="status-card">
+          <span>Back stream</span>
+          <strong id="backStatus">stopped</strong>
+        </div>
+        <div class="status-card">
+          <span>Dual result</span>
+          <strong id="dualStatus">not tested</strong>
+        </div>
+      </section>
+
+      <section class="camera-grid">
+        <article class="camera-card">
+          <header>
+            <h2>Front / User</h2>
+            <span id="frontTrackStatus" class="warn">no track</span>
+          </header>
+          <video id="frontVideo" autoplay playsinline muted></video>
+          <pre id="frontDetails">No front stream.</pre>
+        </article>
+
+        <article class="camera-card">
+          <header>
+            <h2>Back / Environment</h2>
+            <span id="backTrackStatus" class="warn">no track</span>
+          </header>
+          <video id="backVideo" autoplay playsinline muted></video>
+          <pre id="backDetails">No back stream.</pre>
+        </article>
+      </section>
+
+      <section>
+        <div class="explain">
+          <h2>What This Tests</h2>
+          <p>
+            The LOOI follow feature needs the front camera to stay alive for Roboflow. The back
+            probe only works if the browser can open a second camera without stopping or muting the
+            first stream.
+          </p>
+          <p>
+            Pass means both previews keep moving and both video tracks report <strong>live</strong>.
+            Fail means the second camera request errors, or opening it ends/mutes the first stream.
+          </p>
+        </div>
+        <pre id="logOutput">Ready.</pre>
+      </section>
+    </main>
+
+    <script type="module">
+      const ui = {
+        startBothButton: document.getElementById("startBothButton"),
+        startFrontButton: document.getElementById("startFrontButton"),
+        startBackButton: document.getElementById("startBackButton"),
+        checkButton: document.getElementById("checkButton"),
+        stopButton: document.getElementById("stopButton"),
+        browserStatus: document.getElementById("browserStatus"),
+        frontStatus: document.getElementById("frontStatus"),
+        backStatus: document.getElementById("backStatus"),
+        dualStatus: document.getElementById("dualStatus"),
+        frontTrackStatus: document.getElementById("frontTrackStatus"),
+        backTrackStatus: document.getElementById("backTrackStatus"),
+        frontDetails: document.getElementById("frontDetails"),
+        backDetails: document.getElementById("backDetails"),
+        frontVideo: document.getElementById("frontVideo"),
+        backVideo: document.getElementById("backVideo"),
+        logOutput: document.getElementById("logOutput")
+      };
+
+      let frontStream = null;
+      let backStream = null;
+      let monitorTimer = 0;
+
+      ui.browserStatus.textContent = navigator.mediaDevices?.getUserMedia
+        ? "getUserMedia available"
+        : "camera API unavailable";
+      ui.browserStatus.className = navigator.mediaDevices?.getUserMedia ? "good" : "bad";
+
+      ui.startBothButton.addEventListener("click", startBoth);
+      ui.startFrontButton.addEventListener("click", () => startOne("front"));
+      ui.startBackButton.addEventListener("click", () => startOne("back"));
+      ui.checkButton.addEventListener("click", updateUi);
+      ui.stopButton.addEventListener("click", stopAll);
+
+      async function startBoth() {
+        stopAll({ quiet: true });
+        log("Starting front camera first...");
+        const front = await startCamera("front");
+        if (!front.ok) {
+          updateUi();
+          return;
+        }
+
+        await wait(500);
+        log("Starting back camera without stopping front...");
+        const back = await startCamera("back");
+        if (!back.ok) {
+          updateUi();
+          return;
+        }
+
+        await wait(1000);
+        updateUi();
+        const frontLive = isStreamLive(frontStream);
+        const backLive = isStreamLive(backStream);
+        if (frontLive && backLive) {
+          setStatus(ui.dualStatus, "pass: both live", "good");
+          log("PASS: front and back streams are both live.");
+        } else {
+          setStatus(ui.dualStatus, "fail: stream stopped", "bad");
+          log(`FAIL: frontLive=${frontLive} backLive=${backLive}`);
+        }
+      }
+
+      async function startOne(which) {
+        const result = await startCamera(which);
+        if (result.ok) {
+          setStatus(ui.dualStatus, "single camera test", "warn");
+        }
+        updateUi();
+      }
+
+      async function startCamera(which) {
+        if (!navigator.mediaDevices?.getUserMedia) {
+          log("Camera API unavailable.");
+          return { ok: false };
+        }
+
+        const facingMode = which === "back" ? "environment" : "user";
+        try {
+          const stream = await getCameraStream(facingMode);
+          attachStream(which, stream);
+          log(`${which} camera started: ${describeStream(stream)}`);
+          startMonitor();
+          return { ok: true, stream };
+        } catch (error) {
+          log(`${which} camera failed: ${error.name || "Error"}: ${error.message}`);
+          setStatus(which === "back" ? ui.backStatus : ui.frontStatus, "failed", "bad");
+          setStatus(ui.dualStatus, "failed", "bad");
+          return { ok: false, error };
+        }
+      }
+
+      async function getCameraStream(facingMode) {
+        const baseVideo = {
+          width: { ideal: 640 },
+          height: { ideal: 480 },
+          frameRate: { ideal: 24, max: 30 }
+        };
+
+        try {
+          return await navigator.mediaDevices.getUserMedia({
+            video: {
+              ...baseVideo,
+              facingMode: { exact: facingMode }
+            },
+            audio: false
+          });
+        } catch (exactError) {
+          log(`${facingMode} exact request failed, trying ideal: ${exactError.message}`);
+          return navigator.mediaDevices.getUserMedia({
+            video: {
+              ...baseVideo,
+              facingMode: { ideal: facingMode }
+            },
+            audio: false
+          });
+        }
+      }
+
+      function attachStream(which, stream) {
+        stopStream(which === "back" ? backStream : frontStream);
+
+        if (which === "back") {
+          backStream = stream;
+          ui.backVideo.srcObject = stream;
+        } else {
+          frontStream = stream;
+          ui.frontVideo.srcObject = stream;
+        }
+
+        stream.getVideoTracks().forEach((track) => {
+          track.addEventListener("ended", () => {
+            log(`${which} track ended.`);
+            updateUi();
+          });
+          track.addEventListener("mute", () => {
+            log(`${which} track muted.`);
+            updateUi();
+          });
+          track.addEventListener("unmute", () => {
+            log(`${which} track unmuted.`);
+            updateUi();
+          });
+        });
+
+        updateUi();
+      }
+
+      function startMonitor() {
+        if (monitorTimer) {
+          return;
+        }
+
+        monitorTimer = window.setInterval(updateUi, 750);
+      }
+
+      function updateUi() {
+        renderStream("front", frontStream);
+        renderStream("back", backStream);
+
+        const frontLive = isStreamLive(frontStream);
+        const backLive = isStreamLive(backStream);
+        if (frontStream || backStream) {
+          setStatus(
+            ui.dualStatus,
+            frontLive && backLive ? "both live" : frontLive || backLive ? "partial" : "not live",
+            frontLive && backLive ? "good" : "warn"
+          );
+        }
+      }
+
+      function renderStream(which, stream) {
+        const live = isStreamLive(stream);
+        const statusEl = which === "back" ? ui.backStatus : ui.frontStatus;
+        const trackStatusEl = which === "back" ? ui.backTrackStatus : ui.frontTrackStatus;
+        const detailsEl = which === "back" ? ui.backDetails : ui.frontDetails;
+        const track = stream?.getVideoTracks?.()[0] ?? null;
+
+        if (!stream || !track) {
+          setStatus(statusEl, "stopped", "warn");
+          setStatus(trackStatusEl, "no track", "warn");
+          detailsEl.textContent = `No ${which} stream.`;
+          return;
+        }
+
+        setStatus(statusEl, live ? "live" : "not live", live ? "good" : "bad");
+        setStatus(trackStatusEl, `${track.readyState}${track.muted ? " muted" : ""}`, live ? "good" : "bad");
+        detailsEl.textContent = JSON.stringify(
+          {
+            id: stream.id,
+            trackId: track.id,
+            label: track.label || "label hidden/unavailable",
+            readyState: track.readyState,
+            muted: track.muted,
+            enabled: track.enabled,
+            settings: track.getSettings?.() ?? {}
+          },
+          null,
+          2
+        );
+      }
+
+      function stopAll({ quiet = false } = {}) {
+        stopStream(frontStream);
+        stopStream(backStream);
+        frontStream = null;
+        backStream = null;
+        ui.frontVideo.srcObject = null;
+        ui.backVideo.srcObject = null;
+        if (monitorTimer) {
+          window.clearInterval(monitorTimer);
+          monitorTimer = 0;
+        }
+        if (!quiet) {
+          log("Stopped all streams.");
+        }
+        updateUi();
+      }
+
+      function stopStream(stream) {
+        stream?.getTracks?.().forEach((track) => track.stop());
+      }
+
+      function isStreamLive(stream) {
+        const track = stream?.getVideoTracks?.()[0];
+        return Boolean(track && track.readyState === "live" && !track.muted && track.enabled);
+      }
+
+      function describeStream(stream) {
+        const track = stream?.getVideoTracks?.()[0];
+        const settings = track?.getSettings?.() ?? {};
+        return `${track?.label || "unknown camera"} ${settings.width || "?"}x${settings.height || "?"}`;
+      }
+
+      function setStatus(element, text, className) {
+        element.textContent = text;
+        element.className = className;
+      }
+
+      function log(message) {
+        const line = `[${new Date().toLocaleTimeString()}] ${message}`;
+        ui.logOutput.textContent = `${line}\n${ui.logOutput.textContent}`.slice(0, 12000);
+      }
+
+      function wait(ms) {
+        return new Promise((resolve) => window.setTimeout(resolve, ms));
+      }
+    </script>
+  </body>
+</html>
