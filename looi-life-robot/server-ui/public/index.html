@@ -356,6 +356,34 @@
             Camera access requires your browser permission. The Local Brain cannot request
             camera actions unless explicitly allowed.
           </p>
+          <div class="object-vision-panel">
+            <div class="object-vision-panel__header">
+              <div>
+                <h3>Camera Devices</h3>
+                <p>
+                  Choose exact phone cameras for the front follow stream and back probe.
+                  Defaults use camera 1 for front and camera 0 for back when available.
+                </p>
+              </div>
+              <button id="refreshCameraDevicesButton" type="button">
+                Refresh
+              </button>
+            </div>
+            <div class="slider-grid">
+              <label class="slider-field" for="frontCameraDeviceSelect">
+                <span>Front / follow camera</span>
+                <select id="frontCameraDeviceSelect">
+                  <option value="">Default camera 1 / front</option>
+                </select>
+              </label>
+              <label class="slider-field" for="backCameraDeviceSelect">
+                <span>Back / lost-target camera</span>
+                <select id="backCameraDeviceSelect">
+                  <option value="">Default camera 0 / back</option>
+                </select>
+              </label>
+            </div>
+          </div>
           <div class="object-vision-panel object-vision-panel--cloud">
             <div class="object-vision-panel__header">
               <div>

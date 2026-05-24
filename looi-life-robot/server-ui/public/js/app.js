@@ -39,6 +39,10 @@ import { VisionScenarioManager } from "./vision/visionScenarioManager.js";
 const DEFAULT_SPEED = 0.2;
 const DEFAULT_DURATION_MS = 400;
 const LOCAL_VISION_SIZE_STORAGE_KEY = "looi.localVisionWidgetSizePx.v2";
+const FRONT_CAMERA_DEVICE_STORAGE_KEY = "looi.frontCameraDeviceId.v1";
+const BACK_CAMERA_DEVICE_STORAGE_KEY = "looi.backCameraDeviceId.v1";
+const DEFAULT_FRONT_CAMERA_INDEX = 1;
+const DEFAULT_BACK_CAMERA_INDEX = 0;
 const FOLLOW_TUNING_STORAGE_KEY = "looi.followTuning.v3";
 const FOLLOW_TUNING_PRESETS = Object.freeze({
   case1: Object.freeze({
@@ -119,6 +123,9 @@ const ui = {
   cameraRunningState: document.getElementById("cameraRunningState"),
   cameraFacingMode: document.getElementById("cameraFacingMode"),
   cameraLastError: document.getElementById("cameraLastError"),
+  refreshCameraDevicesButton: document.getElementById("refreshCameraDevicesButton"),
+  frontCameraDeviceSelect: document.getElementById("frontCameraDeviceSelect"),
+  backCameraDeviceSelect: document.getElementById("backCameraDeviceSelect"),
   cameraVisionSupport: document.getElementById("cameraVisionSupport"),
   geminiVisionAssistToggle: document.getElementById("geminiVisionAssistToggle"),
   geminiVisionAssistIntervalSlider: document.getElementById("geminiVisionAssistIntervalSlider"),
@@ -289,6 +296,9 @@ let geminiVisionAssistIntervalMs = 1500;
 let geminiVisionAssistTimer = null;
 let geminiVisionAssistLastFrameAt = 0;
 let geminiVisionAssistSending = false;
+let cameraDevices = [];
+let frontCameraDeviceId = "";
+let backCameraDeviceId = "";
 let learnedPhraseCache = [];
 let lifeEventsEnabled = false;
 let settingsOpen = false;
@@ -517,6 +527,24 @@ ui.clearLocalEventsButton.addEventListener("click", () => {
   log(`Cleared ${cleared} local events.`);
 });
 
+ui.refreshCameraDevicesButton?.addEventListener("click", () => {
+  refreshCameraDevices().catch((error) => {
+    log(`Camera device refresh failed: ${error.message}`, "warn");
+  });
+});
+
+ui.frontCameraDeviceSelect?.addEventListener("change", () => {
+  frontCameraDeviceId = normalizeCameraDeviceId(ui.frontCameraDeviceSelect.value);
+  saveCameraDeviceId("front", frontCameraDeviceId);
+  log(`Front camera device set to ${formatCameraDeviceForLog(getFrontCameraDeviceId(), "front")}.`);
+});
+
+ui.backCameraDeviceSelect?.addEventListener("change", () => {
+  backCameraDeviceId = normalizeCameraDeviceId(ui.backCameraDeviceSelect.value);
+  saveCameraDeviceId("back", backCameraDeviceId);
+  log(`Back camera device set to ${formatCameraDeviceForLog(getBackCameraDeviceId(), "back")}.`);
+});
+
 ui.startFrontCameraButton.addEventListener("click", () => {
   openCameraFromUi("user").catch((error) => {
     log(`Front camera failed: ${error.message}`, "error");
@@ -530,7 +558,9 @@ ui.startBackCameraButton.addEventListener("click", () => {
 });
 
 ui.switchCameraButton.addEventListener("click", () => {
-  cameraInput?.switchCamera?.().then(handleCameraCommandResult).catch((error) => {
+  const currentFacingMode = cameraInput?.getCameraStatus?.().facingMode;
+  const nextFacingMode = currentFacingMode === "environment" ? "user" : "environment";
+  openCameraFromUi(nextFacingMode).catch((error) => {
     log(`Camera switch failed: ${error.message}`, "error");
   });
 });
@@ -827,6 +857,9 @@ async function init() {
   if (ui.geminiVisionAssistIntervalValue) {
     ui.geminiVisionAssistIntervalValue.textContent = `${Math.round(geminiVisionAssistIntervalMs)} ms`;
   }
+  frontCameraDeviceId = loadCameraDeviceId("front");
+  backCameraDeviceId = loadCameraDeviceId("back");
+  syncCameraDeviceSelects();
 
   localEventBus = new LocalEventBus({
     logger: (message, level = "info") => log(message, level)
@@ -932,6 +965,7 @@ async function init() {
   backCameraProbe = new BackCameraProbe({
     timeoutMs: activeConfig.backCameraProbeTimeoutMs ?? PUBLIC_CONFIG.backCameraProbeTimeoutMs ?? 30000,
     frameIntervalMs: geminiVisionAssistIntervalMs,
+    getDeviceId: getBackCameraDeviceId,
     frameSender: sendBackCameraProbeFrame,
     onStop: ({ reason }) => {
       syncGeminiVisionAssist(`back_camera_probe_stopped:${reason}`);
@@ -965,6 +999,9 @@ async function init() {
   cameraInput.onStatus(updateCameraUi);
   cameraInput.onObservation(handleCameraObservation);
   cameraInput.onSnapshot(handleCameraSnapshot);
+  await refreshCameraDevices({ quiet: true }).catch((error) => {
+    log(`Camera device refresh failed: ${error.message}`, "warn");
+  });
 
   visionState = new VisionState({
     logger: (message, level = "info") => log(message, level)
@@ -1380,13 +1417,157 @@ async function handleLocalTextInput(input = {}) {
   };
 }
 
+async function refreshCameraDevices({ quiet = false } = {}) {
+  if (!globalThis.navigator?.mediaDevices?.enumerateDevices) {
+    if (!quiet) {
+      log("Camera device list is unavailable in this browser.", "warn");
+    }
+    syncCameraDeviceSelects();
+    return [];
+  }
+
+  const devices = await globalThis.navigator.mediaDevices.enumerateDevices();
+  cameraDevices = devices.filter((device) => device.kind === "videoinput");
+  syncCameraDeviceSelects();
+
+  if (!quiet) {
+    const hasHiddenLabels = cameraDevices.some((device) => !device.label);
+    log(
+      `Camera devices refreshed: ${cameraDevices.length}. front=${formatCameraDeviceForLog(getFrontCameraDeviceId(), "front")} back=${formatCameraDeviceForLog(getBackCameraDeviceId(), "back")}${hasHiddenLabels ? " (labels may appear after camera permission)" : ""}.`
+    );
+  }
+
+  return cameraDevices;
+}
+
+function syncCameraDeviceSelects() {
+  populateCameraDeviceSelect(ui.frontCameraDeviceSelect, {
+    role: "front",
+    selectedDeviceId: getFrontCameraDeviceId(),
+    defaultIndex: DEFAULT_FRONT_CAMERA_INDEX
+  });
+  populateCameraDeviceSelect(ui.backCameraDeviceSelect, {
+    role: "back",
+    selectedDeviceId: getBackCameraDeviceId(),
+    defaultIndex: DEFAULT_BACK_CAMERA_INDEX
+  });
+}
+
+function populateCameraDeviceSelect(select, { role, selectedDeviceId, defaultIndex }) {
+  if (!select) {
+    return;
+  }
+
+  const cleanSelectedId = normalizeCameraDeviceId(selectedDeviceId);
+  const defaultLabel = role === "front"
+    ? `Default camera ${defaultIndex} / front`
+    : `Default camera ${defaultIndex} / back`;
+
+  select.replaceChildren();
+  select.append(new Option(defaultLabel, ""));
+
+  if (cleanSelectedId && !cameraDevices.some((device) => device.deviceId === cleanSelectedId)) {
+    select.append(new Option(`Saved ${role} camera (${shortCameraDeviceId(cleanSelectedId)})`, cleanSelectedId));
+  }
+
+  cameraDevices.forEach((device, index) => {
+    const label = device.label
+      ? `Camera ${index}: ${device.label}`
+      : `Camera ${index}${device.deviceId ? ` (${shortCameraDeviceId(device.deviceId)})` : ""}`;
+    select.append(new Option(label, device.deviceId || ""));
+  });
+
+  select.value = [...select.options].some((option) => option.value === cleanSelectedId)
+    ? cleanSelectedId
+    : "";
+}
+
+function getFrontCameraDeviceId() {
+  return normalizeCameraDeviceId(frontCameraDeviceId || getDefaultCameraDeviceId("front"));
+}
+
+function getBackCameraDeviceId() {
+  return normalizeCameraDeviceId(backCameraDeviceId || getDefaultCameraDeviceId("back"));
+}
+
+function getDefaultCameraDeviceId(role) {
+  const index = role === "back" ? DEFAULT_BACK_CAMERA_INDEX : DEFAULT_FRONT_CAMERA_INDEX;
+  const fallbackIndex = role === "front" ? DEFAULT_BACK_CAMERA_INDEX : DEFAULT_FRONT_CAMERA_INDEX;
+  return normalizeCameraDeviceId(
+    cameraDevices[index]?.deviceId ||
+    cameraDevices[fallbackIndex]?.deviceId ||
+    cameraDevices[0]?.deviceId ||
+    ""
+  );
+}
+
+function loadCameraDeviceId(role) {
+  const key = role === "back" ? BACK_CAMERA_DEVICE_STORAGE_KEY : FRONT_CAMERA_DEVICE_STORAGE_KEY;
+  try {
+    return normalizeCameraDeviceId(globalThis.localStorage?.getItem?.(key) ?? "");
+  } catch {
+    return "";
+  }
+}
+
+function saveCameraDeviceId(role, deviceId) {
+  const key = role === "back" ? BACK_CAMERA_DEVICE_STORAGE_KEY : FRONT_CAMERA_DEVICE_STORAGE_KEY;
+  try {
+    const cleanDeviceId = normalizeCameraDeviceId(deviceId);
+    if (cleanDeviceId) {
+      globalThis.localStorage?.setItem?.(key, cleanDeviceId);
+    } else {
+      globalThis.localStorage?.removeItem?.(key);
+    }
+  } catch {
+    // Camera selection still applies for the current session when storage is blocked.
+  }
+}
+
+function normalizeCameraDeviceId(deviceId) {
+  return typeof deviceId === "string" ? deviceId.trim() : "";
+}
+
+function formatCameraStatusFacing(status = {}) {
+  const facingMode = status.facingMode ?? "unknown";
+  const deviceId = normalizeCameraDeviceId(status.deviceId);
+  return deviceId
+    ? `${facingMode} · ${formatCameraDeviceForLog(deviceId, facingMode === "environment" ? "back" : "front")}`
+    : facingMode;
+}
+
+function formatCameraDeviceForLog(deviceId, role = "front") {
+  const cleanDeviceId = normalizeCameraDeviceId(deviceId);
+  if (!cleanDeviceId) {
+    const defaultIndex = role === "back" ? DEFAULT_BACK_CAMERA_INDEX : DEFAULT_FRONT_CAMERA_INDEX;
+    return `facingMode fallback (default camera ${defaultIndex} not enumerated)`;
+  }
+
+  const index = cameraDevices.findIndex((device) => device.deviceId === cleanDeviceId);
+  const label = index >= 0 ? cameraDevices[index]?.label : "";
+  return label
+    ? `camera ${index} ${label}`
+    : `camera ${index >= 0 ? index : "saved"} ${shortCameraDeviceId(cleanDeviceId)}`;
+}
+
+function shortCameraDeviceId(deviceId) {
+  return String(deviceId || "").slice(0, 8);
+}
+
 async function openCameraFromUi(facingMode) {
   if (!cameraInput) {
     log("Camera input is still initializing.", "warn");
     return;
   }
 
-  const result = await cameraInput.startCamera({ facingMode });
+  const normalizedFacingMode = facingMode === "environment" ? "environment" : "user";
+  const role = normalizedFacingMode === "environment" ? "back" : "front";
+  const deviceId = role === "back" ? getBackCameraDeviceId() : getFrontCameraDeviceId();
+  log(`Opening ${role} camera using ${formatCameraDeviceForLog(deviceId, role)}.`);
+  const result = await cameraInput.startCamera({
+    facingMode: normalizedFacingMode,
+    deviceId
+  });
   handleCameraCommandResult(result);
 }
 
@@ -1415,6 +1596,10 @@ function handleCameraCommandResult(result = {}) {
       visionScenarioManager?.stopFollowing?.("camera_stopped");
       drawObjectDetectionOverlays([]);
       syncGeminiVisionAssist("camera_stopped");
+    } else if (result.status?.running) {
+      refreshCameraDevices({ quiet: true }).catch((error) => {
+        log(`Camera device refresh failed: ${error.message}`, "warn");
+      });
     }
     syncGeminiVisionAssist("camera_started");
     log("Camera command completed.");
@@ -1780,7 +1965,10 @@ function primeCameraFromUserGesture() {
     return;
   }
 
-  cameraInput.startCamera?.({ facingMode: "user" })
+  cameraInput.startCamera?.({
+    facingMode: "user",
+    deviceId: getFrontCameraDeviceId()
+  })
     .then(handleCameraCommandResult)
     .catch((error) => {
       log(`Camera permission prime failed: ${error.message}`, "warn");
@@ -2591,7 +2779,7 @@ function updateCameraUi(status = cameraInput?.getCameraStatus?.()) {
     ? "Camera access may require user permission."
     : "Camera access usually requires HTTPS or localhost.";
   ui.cameraRunningState.textContent = cameraStatus.running ? "running" : "stopped";
-  ui.cameraFacingMode.textContent = cameraStatus.facingMode ?? "unknown";
+  ui.cameraFacingMode.textContent = formatCameraStatusFacing(cameraStatus);
   ui.cameraLastError.textContent = cameraStatus.lastError ?? "--";
   ui.cameraVisionSupport.textContent = cameraStatus.visionSupported?.faceDetector
     ? "FaceDetector supported"
@@ -2616,8 +2804,17 @@ async function startObjectDetectionFromUi() {
   }
 
   const cameraStatus = cameraInput?.getCameraStatus?.() ?? {};
-  if (!cameraStatus.running) {
-    const result = await cameraInput.startCamera({ facingMode: cameraStatus.facingMode || "user" });
+  const frontDeviceId = getFrontCameraDeviceId();
+  const needsFrontCamera = !cameraStatus.running ||
+    cameraStatus.facingMode !== "user" ||
+    Boolean(frontDeviceId && cameraStatus.deviceId !== frontDeviceId);
+
+  if (needsFrontCamera) {
+    log(`Starting Roboflow on front camera using ${formatCameraDeviceForLog(frontDeviceId, "front")}.`);
+    const result = await cameraInput.startCamera({
+      facingMode: "user",
+      deviceId: frontDeviceId
+    });
     handleCameraCommandResult(result);
     if (!result?.ok) {
       throw new Error(result?.error || "Camera could not start.");
@@ -3185,6 +3382,7 @@ function compactCameraStatus(status = {}) {
     secureContext: Boolean(status?.secureContext),
     running: Boolean(status?.running),
     facingMode: status?.facingMode ?? "unknown",
+    deviceId: status?.deviceId ?? "",
     lastError: status?.lastError ?? null,
     lastFrameAt: status?.lastFrameAt ?? null,
     lastSnapshotAt: status?.lastSnapshotAt ?? null,

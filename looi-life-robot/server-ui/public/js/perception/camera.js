@@ -33,6 +33,7 @@ export class CameraInput {
     this.running = false;
     this.stream = null;
     this.facingMode = this.defaultFacingMode;
+    this.deviceId = "";
     this.lastError = null;
     this.lastSnapshot = null;
     this.lastObservation = { ...DEFAULT_OBSERVATION };
@@ -56,8 +57,9 @@ export class CameraInput {
     return this.running;
   }
 
-  async startCamera({ facingMode = this.defaultFacingMode } = {}) {
+  async startCamera({ facingMode = this.defaultFacingMode, deviceId = "" } = {}) {
     const nextFacingMode = normalizeFacingMode(facingMode);
+    const nextDeviceId = normalizeDeviceId(deviceId);
 
     if (!this.supported) {
       return this.fail("Camera API is unavailable in this browser.");
@@ -68,17 +70,14 @@ export class CameraInput {
     try {
       await this.stopCamera({ quiet: true });
       const stream = await globalThis.navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: { ideal: nextFacingMode },
-          width: { ideal: 640 },
-          height: { ideal: 480 }
-        },
+        video: buildVideoConstraints(nextFacingMode, nextDeviceId),
         audio: false
       });
 
       this.stream = stream;
       this.running = true;
       this.facingMode = nextFacingMode;
+      this.deviceId = nextDeviceId || stream.getVideoTracks?.()[0]?.getSettings?.().deviceId || "";
       this.lastFrameAt = Date.now();
 
       if (this.videoElement) {
@@ -232,6 +231,7 @@ export class CameraInput {
       secureContext: this.secureContext,
       running: this.running,
       facingMode: this.running ? this.facingMode : this.facingMode || "unknown",
+      deviceId: this.deviceId,
       hasStream: Boolean(this.stream),
       lastError: this.lastError,
       lastFrameAt: this.lastFrameAt,
@@ -525,6 +525,29 @@ export class CameraInput {
 
 function normalizeFacingMode(facingMode) {
   return facingMode === "environment" ? "environment" : "user";
+}
+
+function normalizeDeviceId(deviceId) {
+  return typeof deviceId === "string" ? deviceId.trim() : "";
+}
+
+function buildVideoConstraints(facingMode, deviceId) {
+  const base = {
+    width: { ideal: 640 },
+    height: { ideal: 480 }
+  };
+
+  if (deviceId) {
+    return {
+      ...base,
+      deviceId: { exact: deviceId }
+    };
+  }
+
+  return {
+    ...base,
+    facingMode: { ideal: facingMode }
+  };
 }
 
 function positionFromCenter(centerRatio) {

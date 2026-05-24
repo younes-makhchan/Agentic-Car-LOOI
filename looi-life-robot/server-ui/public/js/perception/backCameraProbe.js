@@ -10,12 +10,14 @@ export class BackCameraProbe {
     frameSender,
     timeoutMs = DEFAULT_TIMEOUT_MS,
     frameIntervalMs = DEFAULT_FRAME_INTERVAL_MS,
+    getDeviceId,
     onStop
   } = {}) {
     this.logger = logger;
     this.frameSender = frameSender;
     this.timeoutMs = clampNumber(timeoutMs, 5000, 120000, DEFAULT_TIMEOUT_MS);
     this.frameIntervalMs = clampNumber(frameIntervalMs, 1000, 5000, DEFAULT_FRAME_INTERVAL_MS);
+    this.getDeviceId = getDeviceId;
     this.onStop = onStop;
     this.cameraInput = null;
     this.running = false;
@@ -54,7 +56,8 @@ export class BackCameraProbe {
 
     try {
       const camera = this.ensureCameraInput();
-      const result = await camera.startCamera({ facingMode: "environment" });
+      const deviceId = typeof this.getDeviceId === "function" ? this.getDeviceId() : "";
+      const result = await camera.startCamera({ facingMode: "environment", deviceId });
 
       if (!result?.ok) {
         this.lastError = result?.error ?? "back_camera_unavailable";
@@ -64,7 +67,7 @@ export class BackCameraProbe {
 
       this.running = true;
       this.startedAt = new Date().toISOString();
-      this.log(`probe started target=${this.targetLabel || "object"} reason=${this.reason} timeout=${Math.round(this.timeoutMs)}ms`);
+      this.log(`probe started target=${this.targetLabel || "object"} reason=${this.reason} device=${deviceId ? shortDeviceId(deviceId) : "auto"} timeout=${Math.round(this.timeoutMs)}ms`);
       this.scheduleTimeout();
       this.scheduleFrameLoop({ sendNow: true });
       return { ok: true, status: this.getStatus() };
@@ -149,6 +152,7 @@ export class BackCameraProbe {
       secureContext: typeof globalThis.isSecureContext === "boolean" ? globalThis.isSecureContext : false,
       running: false,
       facingMode: "environment",
+      deviceId: "",
       hasStream: false,
       lastError: this.lastError,
       lastFrameAt: null,
@@ -295,4 +299,8 @@ function createHiddenCanvasElement() {
   canvas.setAttribute("aria-hidden", "true");
   globalThis.document?.body?.append?.(canvas);
   return canvas;
+}
+
+function shortDeviceId(deviceId) {
+  return String(deviceId || "").slice(0, 8);
 }
