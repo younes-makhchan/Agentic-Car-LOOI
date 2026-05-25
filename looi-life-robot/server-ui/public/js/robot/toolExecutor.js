@@ -165,7 +165,7 @@ export class ToolExecutor {
     }
   }
 
-  async executeRunScenario(args = {}, action = {}) {
+  async executeRunScenario(args = {}, action = {}, { forceBlocking = false } = {}) {
     const normalizedArgs = normalizeRunScenarioArgs(args, {
       allowInternalScenario: action.source === "local"
     });
@@ -272,7 +272,8 @@ export class ToolExecutor {
 
     return this.executeScenario(scenario, action, {
       motionPermission,
-      requestArgs: normalizedArgs
+      requestArgs: normalizedArgs,
+      forceBlocking
     });
   }
 
@@ -390,7 +391,7 @@ export class ToolExecutor {
       reason: `scenario_exit:${activeLifecycle.name}->${nextScenarioName}`
     };
 
-    return this.executeRunScenario(exitAction.args, exitAction);
+    return this.executeRunScenario(exitAction.args, exitAction, { forceBlocking: true });
   }
 
   scenarioLifecycleContext() {
@@ -406,11 +407,11 @@ export class ToolExecutor {
     };
   }
 
-  async executeScenario(scenario, action, { motionPermission, requestArgs = {} } = {}) {
+  async executeScenario(scenario, action, { motionPermission, requestArgs = {}, forceBlocking = false } = {}) {
     const usesMotion = scenarioUsesMotion(scenario);
     const requiresMotion = scenarioRequiresMotion(scenario);
     const requiresCamera = scenarioRequiresCamera(scenario);
-    const execution = scenarioExecutionMode(scenario);
+    const execution = forceBlocking ? "blocking" : scenarioExecutionMode(scenario);
     const frames = buildScenarioFramesForRequest(scenario, requestArgs);
 
     if (this.activeScenario) {

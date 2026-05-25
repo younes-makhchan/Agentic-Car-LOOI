@@ -180,7 +180,6 @@ const SCENARIO_DEFINITIONS = Object.freeze({
     name: "finish_burger",
     description: "Finish and clear the active eating animation before doing something else.",
     permissions: PERMISSIONS.none,
-    execution: "blocking",
     sequence: [
       {
         type: "action",
@@ -214,7 +213,6 @@ const SCENARIO_DEFINITIONS = Object.freeze({
     name: "finish_drink",
     description: "Finish and clear the active drinking animation before doing something else.",
     permissions: PERMISSIONS.none,
-    execution: "blocking",
     sequence: [
       {
         type: "action",
@@ -304,7 +302,6 @@ const SCENARIO_DEFINITIONS = Object.freeze({
     name: "finish_telling",
     description: "Finish and clear the active self-introduction/interview animation.",
     permissions: PERMISSIONS.none,
-    execution: "blocking",
     sequence: [
       {
         type: "action",
@@ -333,7 +330,6 @@ const SCENARIO_DEFINITIONS = Object.freeze({
     name: "take_picture",
     description: "Take a local camera photo of the user and show a small preview.",
     permissions: PERMISSIONS.cameraWithOptionalMotion,
-    execution: "blocking",
     sequence: [
       {
         type: "action",

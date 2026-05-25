@@ -376,9 +376,12 @@ const photoScenario = await executor.executeAction({
   type: "run_scenario",
   args: { name: "take_picture" }
 });
-assert.equal(photoScenario.status, "completed");
+assert.equal(photoScenario.status, "queued");
 assert.equal(photoScenario.detail.scenario, "take_picture");
-assert.equal(photoScenario.detail.actionDetails.some((entry) => entry.action === "photoPoseAndCapture"), true);
+assert.equal(photoScenario.detail.execution, "parallel");
+await settleAsyncScenario();
+assert.equal(routedSequences.at(-1).action.args.scenario, "take_picture");
+assert.equal(routedSequences.at(-1).action.args.frames.at(-1).args.camera, "auto");
 assert.equal(cameraCalls.some((call) => call.type === "snapshot"), true);
 assert.equal(faceEvents.some((event) => event.type === "take_picture"), true);
 assert.equal(faceEvents.some((event) => event.type === "show_photo"), true);
@@ -390,8 +393,11 @@ const explicitFrontPhotoScenario = await executor.executeAction({
   type: "run_scenario",
   args: { name: "take_picture", camera: "front" }
 });
-assert.equal(explicitFrontPhotoScenario.status, "completed");
-assert.equal(explicitFrontPhotoScenario.detail.actionDetails.at(-1).detail.cameraSource, "front");
+assert.equal(explicitFrontPhotoScenario.status, "queued");
+assert.equal(explicitFrontPhotoScenario.detail.execution, "parallel");
+await settleAsyncScenario();
+assert.equal(routedSequences.at(-1).action.args.scenario, "take_picture");
+assert.equal(routedSequences.at(-1).action.args.frames.at(-1).args.camera, "front");
 assert.equal(
   cameraCalls.filter((call) => call.type === "snapshot").length,
   frontSnapshotsBeforeExplicitFrontPhoto + 1
@@ -404,8 +410,11 @@ const backPhotoScenario = await executor.executeAction({
   type: "run_scenario",
   args: { name: "take_picture", camera: "back" }
 });
-assert.equal(backPhotoScenario.status, "completed");
-assert.equal(backPhotoScenario.detail.actionDetails.at(-1).detail.cameraSource, "back");
+assert.equal(backPhotoScenario.status, "queued");
+assert.equal(backPhotoScenario.detail.execution, "parallel");
+await settleAsyncScenario();
+assert.equal(routedSequences.at(-1).action.args.scenario, "take_picture");
+assert.equal(routedSequences.at(-1).action.args.frames.at(-1).args.camera, "back");
 assert.equal(cameraCalls.filter((call) => call.type === "snapshot").length, frontSnapshotsBeforeBackPhoto);
 assert.equal(backCameraCalls.some((call) => call.type === "start"), true);
 assert.equal(backCameraCalls.some((call) => call.type === "snapshot"), true);
@@ -457,7 +466,9 @@ const directFinishBurger = await executor.executeAction({
   type: "run_scenario",
   args: { name: "finish_burger" }
 });
-assert.equal(directFinishBurger.status, "completed");
+assert.equal(directFinishBurger.status, "queued");
+assert.equal(directFinishBurger.detail.execution, "parallel");
+await settleAsyncScenario();
 assert.equal(eatingActive, false);
 assert.equal(routedSequences.length, routesBeforeDirectFinish + 1);
 assert.equal(routedSequences.at(-1).action.args.scenario, "finish_burger");
@@ -520,7 +531,9 @@ const directFinishDrink = await executor.executeAction({
   type: "run_scenario",
   args: { name: "finish_drink" }
 });
-assert.equal(directFinishDrink.status, "completed");
+assert.equal(directFinishDrink.status, "queued");
+assert.equal(directFinishDrink.detail.execution, "parallel");
+await settleAsyncScenario();
 assert.equal(drinkingActive, false);
 assert.equal(routedSequences.length, routesBeforeDirectFinishDrink + 1);
 assert.equal(routedSequences.at(-1).action.args.scenario, "finish_drink");
@@ -608,11 +621,11 @@ const directFinishTellingScenario = await executor.executeAction({
   type: "run_scenario",
   args: { name: "finish_telling" }
 });
-assert.equal(directFinishTellingScenario.status, "completed");
-assert.equal(
-  directFinishTellingScenario.detail.actionDetails.some((entry) => entry.action === "finishTellMeAboutYourself"),
-  true
-);
+assert.equal(directFinishTellingScenario.status, "queued");
+assert.equal(directFinishTellingScenario.detail.execution, "parallel");
+await settleAsyncScenario();
+assert.equal(routedSequences.at(-1).action.args.scenario, "finish_telling");
+assert.equal(faceEvents.some((event) => event.type === "finish_telling"), true);
 assert.equal(tellingActive, false);
 
 const followStarted = [];
