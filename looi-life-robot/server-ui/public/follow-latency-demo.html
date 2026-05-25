@@ -357,29 +357,59 @@ input[type="range"] {
 
       <div class="control-grid">
         <label>
-          <span>Constant rotation speed</span>
+          <span>Max rotation speed</span>
           <strong id="speedValue">0.050</strong>
-          <input id="speed" type="range" min="0" max="0.5" step="0.001" value="0.050" />
+          <input id="speed" type="range" min="0" max="0.5" step="0.001" value="0.160" />
+        </label>
+        <label>
+          <span>Min motor speed</span>
+          <strong id="minSpeedValue">0.080</strong>
+          <input id="minSpeed" type="range" min="0" max="0.3" step="0.001" value="0.080" />
+        </label>
+        <label>
+          <span>Kp proportional gain</span>
+          <strong id="kpValue">0.800</strong>
+          <input id="kp" type="range" min="0" max="2" step="0.01" value="0.80" />
+        </label>
+        <label>
+          <span>Kd damping gain</span>
+          <strong id="kdValue">0.030</strong>
+          <input id="kd" type="range" min="0" max="0.2" step="0.001" value="0.030" />
+        </label>
+        <label>
+          <span>Slow zone errorX</span>
+          <strong id="slowZoneValue">0.300</strong>
+          <input id="slowZone" type="range" min="0.05" max="0.5" step="0.005" value="0.300" />
         </label>
         <label>
           <span>Command duration</span>
-          <strong id="commandDurationValue">160 ms</strong>
-          <input id="commandDuration" type="range" min="0" max="600" step="10" value="160" />
+          <strong id="commandDurationValue">220 ms</strong>
+          <input id="commandDuration" type="range" min="0" max="600" step="10" value="220" />
         </label>
         <label>
           <span>Command interval</span>
-          <strong id="commandIntervalValue">90 ms</strong>
-          <input id="commandInterval" type="range" min="0" max="300" step="10" value="90" />
+          <strong id="commandIntervalValue">80 ms</strong>
+          <input id="commandInterval" type="range" min="0" max="300" step="10" value="80" />
         </label>
         <label>
           <span>ErrorX tolerance</span>
-          <strong id="toleranceValue">0.050</strong>
-          <input id="tolerance" type="range" min="0.005" max="0.200" step="0.005" value="0.050" />
+          <strong id="toleranceValue">0.140</strong>
+          <input id="tolerance" type="range" min="0.005" max="0.250" step="0.005" value="0.140" />
+        </label>
+        <label>
+          <span>Stable centered frames</span>
+          <strong id="stableFramesValue">3</strong>
+          <input id="stableFrames" type="range" min="1" max="8" step="1" value="3" />
+        </label>
+        <label>
+          <span>Sign flip hold</span>
+          <strong id="signFlipHoldValue">160 ms</strong>
+          <input id="signFlipHold" type="range" min="0" max="500" step="10" value="160" />
         </label>
         <label>
           <span>Max detection age to act</span>
-          <strong id="maxAgeValue">350 ms</strong>
-          <input id="maxAge" type="range" min="80" max="1500" step="10" value="350" />
+          <strong id="maxAgeValue">250 ms</strong>
+          <input id="maxAge" type="range" min="80" max="1500" step="10" value="250" />
         </label>
       </div>
 
@@ -455,12 +485,24 @@ const ui = {
   robotMotionLabel: document.getElementById("robotMotionLabel"),
   speed: document.getElementById("speed"),
   speedValue: document.getElementById("speedValue"),
+  minSpeed: document.getElementById("minSpeed"),
+  minSpeedValue: document.getElementById("minSpeedValue"),
+  kp: document.getElementById("kp"),
+  kpValue: document.getElementById("kpValue"),
+  kd: document.getElementById("kd"),
+  kdValue: document.getElementById("kdValue"),
+  slowZone: document.getElementById("slowZone"),
+  slowZoneValue: document.getElementById("slowZoneValue"),
   commandDuration: document.getElementById("commandDuration"),
   commandDurationValue: document.getElementById("commandDurationValue"),
   commandInterval: document.getElementById("commandInterval"),
   commandIntervalValue: document.getElementById("commandIntervalValue"),
   tolerance: document.getElementById("tolerance"),
   toleranceValue: document.getElementById("toleranceValue"),
+  stableFrames: document.getElementById("stableFrames"),
+  stableFramesValue: document.getElementById("stableFramesValue"),
+  signFlipHold: document.getElementById("signFlipHold"),
+  signFlipHoldValue: document.getElementById("signFlipHoldValue"),
   maxAge: document.getElementById("maxAge"),
   maxAgeValue: document.getElementById("maxAgeValue"),
   errorX: document.getElementById("errorX"),
@@ -501,6 +543,12 @@ let lastRobotCommandText = "held";
 let lastRotationSummary = "held";
 let lastMotionDebugSignature = "";
 let lastMotionDebugAt = 0;
+let previousControllerErrorX = null;
+let previousControllerDetectionAt = 0;
+let lastControllerDerivative = 0;
+let stableCenteredCount = 0;
+let signFlipHoldUntil = 0;
+let lastControllerDirectionSign = 0;
 
 init();
 
@@ -539,9 +587,15 @@ function bindEvents() {
   });
   [
     ui.speed,
+    ui.minSpeed,
+    ui.kp,
+    ui.kd,
+    ui.slowZone,
     ui.commandDuration,
     ui.commandInterval,
     ui.tolerance,
+    ui.stableFrames,
+    ui.signFlipHold,
     ui.maxAge
   ].forEach((input) => {
     input.addEventListener("input", updateControlLabels);
@@ -637,8 +691,19 @@ function syncRobotUi() {
 }
 
 function getMotionSettings() {
+  const maxSpeed = clamp(ui.speed.value, 0, DEMO_MAX_ANGULAR_SPEED);
+  const minSpeed = Math.min(clamp(ui.minSpeed.value, 0, 0.3), maxSpeed);
+  const tolerance = clamp(ui.tolerance.value, 0.005, 0.25);
   return {
-    speed: clamp(ui.speed.value, 0, DEMO_MAX_ANGULAR_SPEED),
+    maxSpeed,
+    minSpeed,
+    kp: clamp(ui.kp.value, 0, 2),
+    kd: clamp(ui.kd.value, 0, 0.2),
+    slowZone: Math.max(tolerance + 0.005, clamp(ui.slowZone.value, 0.05, 0.5)),
+    tolerance,
+    stableFrames: Math.round(clamp(ui.stableFrames.value, 1, 8)),
+    signFlipHoldMs: Math.round(clamp(ui.signFlipHold.value, 0, 500)),
+    maxAgeMs: Math.round(clamp(ui.maxAge.value, 80, 1500)),
     durationMs: Math.round(clamp(ui.commandDuration.value, 0, 600)),
     intervalMs: Math.round(clamp(ui.commandInterval.value, 0, 300))
   };
@@ -693,6 +758,7 @@ function maybeSendRobotMotion({ angular, target, stale, centered, settings }) {
   const direction = angular < 0 ? "left" : "right";
   lastRobotCommandAt = now;
   lastRobotAngular = angular;
+  lastControllerDirectionSign = Math.sign(angular);
   robotMotionActive = true;
   lastRobotCommandText = `${direction} ${signed(angular, 3)}`;
   syncRobotUi();
@@ -730,6 +796,9 @@ function holdRobotMotion(reason = "held") {
   robotMotionActive = false;
   lastRobotAngular = 0;
   lastRobotCommandAt = 0;
+  if (["no_target", "stale_frame", "centered", "speed_zero", "movement_switch_off", "connection_switch_off", "demo_stop", "camera_restart"].includes(reason)) {
+    lastControllerDirectionSign = 0;
+  }
   lastRobotCommandText = reason.replaceAll("_", " ");
   setRotationSummary(`held: ${lastRobotCommandText}`);
   syncRobotUi();
@@ -760,9 +829,15 @@ function logMotionGate(reason, detail = {}, { force = false, level = "debug" } =
     Boolean(detail.stale),
     Boolean(detail.centered),
     roundForLog(detail.sinceLastMs),
-    roundForLog(settings.speed),
+    roundForLog(settings.minSpeed),
+    roundForLog(settings.maxSpeed),
+    roundForLog(settings.kp),
+    roundForLog(settings.kd),
+    roundForLog(settings.slowZone),
     roundForLog(settings.durationMs),
-    roundForLog(settings.intervalMs)
+    roundForLog(settings.intervalMs),
+    settings.stableFrames,
+    roundForLog(settings.signFlipHoldMs)
   ].join("|");
   const now = performance.now();
   if (!force && signature === lastMotionDebugSignature && now - lastMotionDebugAt < 1000) {
@@ -776,9 +851,15 @@ function logMotionGate(reason, detail = {}, { force = false, level = "debug" } =
     esp32Connected: Boolean(robotClient?.isConnected?.()),
     targetLabel: canonicalObjectLabel(ui.targetLabel.value) || "(any)",
     visibleLabels: [...new Set((latestResult?.detections ?? []).map((detection) => detection.label))],
-    constantAngularSpeed: roundForLog(settings.speed),
+    minSpeed: roundForLog(settings.minSpeed),
+    maxSpeed: roundForLog(settings.maxSpeed),
+    kp: roundForLog(settings.kp),
+    kd: roundForLog(settings.kd),
+    slowZone: roundForLog(settings.slowZone),
     durationMs: roundForLog(settings.durationMs),
     intervalMs: roundForLog(settings.intervalMs),
+    stableFrames: settings.stableFrames,
+    signFlipHoldMs: settings.signFlipHoldMs,
     rampMs: 0,
     localDetectionAgeMs: latestDetectionReceivedAt ? roundForLog(performance.now() - latestDetectionReceivedAt) : null,
     remoteFrameAgeMs: Number.isFinite(Number(latestResult?.frameReceivedAtMs))
@@ -894,6 +975,7 @@ function stop({ disableRobotMotionSwitch = true, reason = "demo_stop" } = {}) {
   ui.video.srcObject = null;
   latestResult = null;
   latestDetectionReceivedAt = 0;
+  resetControllerState();
   ui.detectorState.textContent = "stopped";
   ui.workflowState.textContent = ui.workflow.value || "--";
   render();
@@ -958,14 +1040,18 @@ function render() {
     : null;
   const detectionAgeMs = localReceiveAgeMs;
   const settings = getMotionSettings();
-  const tolerance = Number(ui.tolerance.value);
-  const maxAgeMs = Number(ui.maxAge.value);
+  const tolerance = settings.tolerance;
+  const maxAgeMs = settings.maxAgeMs;
   const stale = detectionAgeMs === null || detectionAgeMs > maxAgeMs;
   const errorX = target ? target.centerX - CENTER_X : null;
-  const centered = errorX !== null && Math.abs(errorX) <= tolerance;
-  const angular = errorX === null || centered || stale
-    ? 0
-    : Math.sign(errorX) * settings.speed;
+  const control = computeFollowControl({
+    errorX,
+    target,
+    stale,
+    settings
+  });
+  const centered = Boolean(control.centered);
+  const angular = control.angular;
 
   drawDetections(ctx, detections, target, latestResult, width, height, dpr, stale);
 
@@ -981,22 +1067,179 @@ function render() {
   if (!target) {
     setDecision("no target", "status-warn");
     setRotationSummary("held: no target");
+  } else if (control.reason === "sign_flip_hold") {
+    setDecision("hold sign flip", "status-warn");
+    setRotationSummary(`held: sign flip ${Math.max(0, Math.round(signFlipHoldUntil - performance.now()))}ms errorX=${signed(errorX, 3)}`);
+  } else if (control.reason === "damping_hold") {
+    setDecision("hold damping", "status-warn");
+    setRotationSummary(`held: damping errorX=${signed(errorX, 3)} d=${signed(control.derivative, 3)}`);
   } else if (stale) {
     setDecision("hold stale", "status-bad");
     setRotationSummary(`held: stale ${Math.round(detectionAgeMs ?? 0)}ms`);
   } else if (centered) {
-    setDecision("centered", "status-good");
-    setRotationSummary(`held: centered errorX=${signed(errorX, 3)}`);
+    const stableLabel = `${control.stableCenteredCount}/${settings.stableFrames}`;
+    setDecision(control.stable ? "centered stable" : `center settling ${stableLabel}`, "status-good");
+    setRotationSummary(`held: centered ${stableLabel} errorX=${signed(errorX, 3)}`);
   } else if (Math.abs(angular) < 0.001) {
     setDecision("speed zero", "status-warn");
     setRotationSummary(`held: speed=0 errorX=${signed(errorX, 3)}`);
   } else {
     const direction = angular < 0 ? "left" : "right";
     setDecision(`turn ${direction}`, "status-warn");
-    setRotationSummary(`${direction} angular=${signed(angular, 3)} duration=${settings.durationMs}ms every=${settings.intervalMs}ms errorX=${signed(errorX, 3)}`);
+    setRotationSummary(`${direction} angular=${signed(angular, 3)} raw=${signed(control.rawAngular, 3)} d=${signed(control.derivative, 3)} duration=${settings.durationMs}ms every=${settings.intervalMs}ms errorX=${signed(errorX, 3)}`);
   }
 
-  maybeSendRobotMotion({ angular, target, stale, centered, settings });
+  maybeSendRobotMotion({ angular, target, stale, centered, settings, control });
+}
+
+function computeFollowControl({ errorX, target, stale, settings }) {
+  if (!target || !Number.isFinite(Number(errorX))) {
+    resetControllerState();
+    return {
+      angular: 0,
+      rawAngular: 0,
+      derivative: 0,
+      centered: false,
+      stable: false,
+      stableCenteredCount,
+      reason: "no_target"
+    };
+  }
+
+  if (stale) {
+    stableCenteredCount = 0;
+    return {
+      angular: 0,
+      rawAngular: 0,
+      derivative: lastControllerDerivative,
+      centered: false,
+      stable: false,
+      stableCenteredCount,
+      reason: "stale"
+    };
+  }
+
+  updateControllerError(errorX);
+
+  const absError = Math.abs(errorX);
+  const centered = absError <= settings.tolerance;
+  if (centered) {
+    return {
+      angular: 0,
+      rawAngular: 0,
+      derivative: lastControllerDerivative,
+      centered: true,
+      stable: stableCenteredCount >= settings.stableFrames,
+      stableCenteredCount,
+      reason: "centered"
+    };
+  }
+
+  const now = performance.now();
+  if (now < signFlipHoldUntil) {
+    return {
+      angular: 0,
+      rawAngular: 0,
+      derivative: lastControllerDerivative,
+      centered: false,
+      stable: false,
+      stableCenteredCount,
+      reason: "sign_flip_hold"
+    };
+  }
+
+  const rawAngular = (settings.kp * errorX) + (settings.kd * lastControllerDerivative);
+  const errorSign = Math.sign(errorX);
+  if (Math.sign(rawAngular) !== errorSign) {
+    return {
+      angular: 0,
+      rawAngular,
+      derivative: lastControllerDerivative,
+      centered: false,
+      stable: false,
+      stableCenteredCount,
+      reason: "damping_hold"
+    };
+  }
+
+  const speedLimit = speedLimitForError(absError, settings);
+  let angular = clamp(rawAngular, -speedLimit, speedLimit);
+  if (Math.abs(angular) > 0 && Math.abs(angular) < settings.minSpeed) {
+    angular = errorSign * settings.minSpeed;
+  }
+
+  const directionSign = Math.sign(angular);
+  if (
+    directionSign &&
+    lastControllerDirectionSign &&
+    directionSign !== lastControllerDirectionSign &&
+    settings.signFlipHoldMs > 0
+  ) {
+    signFlipHoldUntil = now + settings.signFlipHoldMs;
+    lastControllerDirectionSign = 0;
+    return {
+      angular: 0,
+      rawAngular,
+      derivative: lastControllerDerivative,
+      centered: false,
+      stable: false,
+      stableCenteredCount,
+      reason: "sign_flip_hold"
+    };
+  }
+
+  return {
+    angular,
+    rawAngular,
+    derivative: lastControllerDerivative,
+    centered: false,
+    stable: false,
+    stableCenteredCount,
+    speedLimit,
+    reason: "tracking"
+  };
+}
+
+function updateControllerError(errorX) {
+  if (latestDetectionReceivedAt === previousControllerDetectionAt) {
+    return;
+  }
+
+  if (Number.isFinite(Number(previousControllerErrorX)) && previousControllerDetectionAt > 0) {
+    const dtSeconds = Math.max(0.02, (latestDetectionReceivedAt - previousControllerDetectionAt) / 1000);
+    lastControllerDerivative = (errorX - previousControllerErrorX) / dtSeconds;
+  } else {
+    lastControllerDerivative = 0;
+  }
+
+  previousControllerErrorX = errorX;
+  previousControllerDetectionAt = latestDetectionReceivedAt;
+
+  const settings = getMotionSettings();
+  if (Math.abs(errorX) <= settings.tolerance) {
+    stableCenteredCount += 1;
+  } else {
+    stableCenteredCount = 0;
+  }
+}
+
+function speedLimitForError(absError, settings) {
+  if (settings.maxSpeed <= settings.minSpeed) {
+    return settings.maxSpeed;
+  }
+
+  const range = Math.max(0.001, settings.slowZone - settings.tolerance);
+  const t = clamp((absError - settings.tolerance) / range, 0, 1);
+  return settings.minSpeed + (settings.maxSpeed - settings.minSpeed) * t;
+}
+
+function resetControllerState() {
+  previousControllerErrorX = null;
+  previousControllerDetectionAt = 0;
+  lastControllerDerivative = 0;
+  stableCenteredCount = 0;
+  signFlipHoldUntil = 0;
+  lastControllerDirectionSign = 0;
 }
 
 function drawDetections(ctx, detections, target, result, canvasWidth, canvasHeight, dpr, stale) {
@@ -1037,9 +1280,15 @@ function pickTarget(detections, label) {
 
 function updateControlLabels() {
   ui.speedValue.textContent = Number(ui.speed.value).toFixed(3);
+  ui.minSpeedValue.textContent = Number(ui.minSpeed.value).toFixed(3);
+  ui.kpValue.textContent = Number(ui.kp.value).toFixed(3);
+  ui.kdValue.textContent = Number(ui.kd.value).toFixed(3);
+  ui.slowZoneValue.textContent = Number(ui.slowZone.value).toFixed(3);
   ui.commandDurationValue.textContent = `${Math.round(Number(ui.commandDuration.value))} ms`;
   ui.commandIntervalValue.textContent = `${Math.round(Number(ui.commandInterval.value))} ms`;
   ui.toleranceValue.textContent = Number(ui.tolerance.value).toFixed(3);
+  ui.stableFramesValue.textContent = String(Math.round(Number(ui.stableFrames.value)));
+  ui.signFlipHoldValue.textContent = `${Math.round(Number(ui.signFlipHold.value))} ms`;
   ui.maxAgeValue.textContent = `${Math.round(Number(ui.maxAge.value))} ms`;
 }
 
