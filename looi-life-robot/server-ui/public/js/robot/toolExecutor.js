@@ -1026,7 +1026,7 @@ function normalizeFollowMode(mode) {
 
 function normalizeCameraChoice(value) {
   const normalized = String(value ?? "").trim().toLowerCase();
-  return ["auto", "front", "back"].includes(normalized) ? normalized : "auto";
+  return ["auto", "front"].includes(normalized) ? normalized : "auto";
 }
 
 function normalizeRunScenarioArgs(args = {}, { allowInternalScenario = false } = {}) {

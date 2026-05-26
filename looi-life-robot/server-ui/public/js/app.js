@@ -13,7 +13,6 @@ import { RuleBrainFallback } from "./localBrain/ruleBrainFallback.js";
 import { AttentionSystem } from "./localBrain/attentionSystem.js";
 import { BrainLatencyBudget } from "./localBrain/brainLatencyBudget.js";
 import { clampBrainPolicy, createDefaultBrainPolicy } from "./localBrain/brainPolicy.js";
-import { BackCameraProbe } from "./perception/backCameraProbe.js";
 import { CameraInput } from "./perception/camera.js";
 import { LifeEventEmitter } from "./personality/lifeEvents.js";
 import { describePersonalityForRuntime } from "./personality/personalityProfile.js";
@@ -86,6 +85,7 @@ const LOOI_ACTIVITY_SLOT_X = Object.freeze([-18, -9, 0, 9, 18]);
 const LOOI_ACTIVITY_TRIPLET_SEQUENCE = Object.freeze([0, 1, 2, 1]);
 const LOOI_ACTIVITY_STEP_MS = 1050;
 const LOOI_ACTIVITY_ORBIT_RADIUS = 9;
+const GEMINI_VISION_RESUME_AFTER_SPEECH_MS = 300;
 
 const ui = {
   canvas: document.getElementById("faceCanvas"),
@@ -278,7 +278,6 @@ let performanceMonitor = null;
 let reliabilityManager = null;
 let geminiLiveRuntime = null;
 let cameraInput = null;
-let backCameraProbe = null;
 let objectDetectorEngine = null;
 let objectTracker = null;
 let visionState = null;
@@ -311,6 +310,10 @@ let lastLogSignature = "";
 let lastOverlayDebugAt = 0;
 let roboflowDetectorStartPromise = null;
 let roboflowDetectorWanted = false;
+let pendingFollowVisionContextReason = "";
+let geminiAudioWasPlaying = false;
+let geminiVisionResumeTimer = null;
+let geminiAudioEndedAt = 0;
 let looiActivityRaf = 0;
 let looiActivitySlotForDot = [0, 1, 2, 3, 4];
 let looiActivityActiveStep = 0;
@@ -470,9 +473,6 @@ ui.localMotionArmedToggle.addEventListener("change", () => {
 
 ui.geminiVisionAssistToggle?.addEventListener("change", () => {
   geminiVisionAssistEnabled = Boolean(ui.geminiVisionAssistToggle.checked);
-  if (!geminiVisionAssistEnabled) {
-    stopBackCameraProbe("gemini_vision_disabled");
-  }
   syncGeminiVisionAssist("toggle");
   log(
     geminiVisionAssistEnabled
@@ -506,7 +506,7 @@ ui.startLocalBrainButton.addEventListener("click", () => {
 
 ui.stopLocalBrainButton.addEventListener("click", () => {
   stopGeminiVisionAssist("ui_stop_local_brain");
-  stopBackCameraProbe("ui_stop_local_brain");
+  clearPendingGeminiVisionAfterSpeech();
   stopLooiRoboflowRuntime("ui_stop_local_brain");
   geminiLiveRuntime?.stop?.("ui_stop_local_brain");
   localBrainEngine?.stop?.();
@@ -971,20 +971,9 @@ async function init() {
   priorityScheduler = new PriorityScheduler({
     logger: (message, level = "info") => log(message, level)
   });
-  backCameraProbe = new BackCameraProbe({
-    timeoutMs: activeConfig.backCameraProbeTimeoutMs ?? PUBLIC_CONFIG.backCameraProbeTimeoutMs ?? 30000,
-    frameIntervalMs: geminiVisionAssistIntervalMs,
-    getDeviceId: getBackCameraDeviceId,
-    frameSender: sendBackCameraProbeFrame,
-    onStop: ({ reason }) => {
-      syncGeminiVisionAssist(`back_camera_probe_stopped:${reason}`);
-    },
-    logger: (message, level = "info") => log(message, level)
-  });
   scenarioFrameSequencer = new ScenarioFrameSequencer({
     face,
     commandQueue,
-    backCameraProbe,
     lifeEngine,
     calibration: bodyCalibration,
     eventBus: localEventBus,
@@ -1292,7 +1281,6 @@ async function immediateStop(reason, message, level = "warn") {
   }
 
   geminiLiveRuntime?.interrupt?.(reason);
-  stopBackCameraProbe(reason);
   scenarioFrameSequencer?.interrupt?.(reason, 100);
   priorityScheduler?.interruptBelow?.(100, reason);
   priorityScheduler?.clear?.();
@@ -2252,6 +2240,7 @@ function updateGeminiLiveUi(status = geminiLiveRuntime?.getStatus?.() ?? {}) {
     ui.geminiLiveFrameState.textContent = status.lastVideoFrameDebug || status.lastServerMessageDebug || "--";
   }
 
+  updateGeminiVisionAudioGate(status);
   syncGeminiVisionAssist("gemini_status");
 
   if (ui.geminiLiveInputTranscript) {
@@ -2270,10 +2259,6 @@ function updateGeminiLiveUi(status = geminiLiveRuntime?.getStatus?.() ?? {}) {
     ui.geminiLiveLatency.textContent = Number.isFinite(Number(status.latencyMs))
       ? `${Math.round(Number(status.latencyMs))} ms`
       : "--";
-  }
-
-  if (!status.connected && backCameraProbe?.getStatus?.().running) {
-    stopBackCameraProbe("gemini_disconnected");
   }
 
   updateLooiActivityIndicator(status);
@@ -2437,6 +2422,61 @@ function performanceNow() {
   return globalThis.performance?.now?.() ?? Date.now();
 }
 
+function updateGeminiVisionAudioGate(status = geminiLiveRuntime?.getStatus?.() ?? {}) {
+  const audioPlaying = isGeminiAudioPlaying(status);
+
+  if (audioPlaying) {
+    geminiAudioWasPlaying = true;
+    clearGeminiVisionResumeTimer();
+    stopGeminiVisionAssist("gemini_audio_playing");
+    return;
+  }
+
+  if (!geminiAudioWasPlaying) {
+    return;
+  }
+
+  geminiAudioWasPlaying = false;
+  geminiAudioEndedAt = Date.now();
+  scheduleGeminiVisionResumeAfterSpeech("gemini_audio_finished");
+}
+
+function scheduleGeminiVisionResumeAfterSpeech(reason = "gemini_audio_finished") {
+  clearGeminiVisionResumeTimer();
+  geminiVisionResumeTimer = globalThis.setTimeout?.(() => {
+    geminiVisionResumeTimer = null;
+    flushPendingFollowVisionContext(reason);
+    syncGeminiVisionAssist(reason);
+  }, GEMINI_VISION_RESUME_AFTER_SPEECH_MS) ?? null;
+}
+
+function clearGeminiVisionResumeTimer() {
+  if (!geminiVisionResumeTimer) {
+    return;
+  }
+
+  globalThis.clearTimeout?.(geminiVisionResumeTimer);
+  geminiVisionResumeTimer = null;
+}
+
+function clearPendingGeminiVisionAfterSpeech() {
+  clearGeminiVisionResumeTimer();
+  pendingFollowVisionContextReason = "";
+  geminiAudioWasPlaying = false;
+  geminiAudioEndedAt = 0;
+}
+
+function isGeminiAudioPlaying(status = geminiLiveRuntime?.getStatus?.() ?? {}) {
+  return Boolean(status.audioPlaying || geminiLiveRuntime?.hasOutputAudioInFlight?.());
+}
+
+function isGeminiVisionSpeechCooldownActive() {
+  return Boolean(
+    geminiAudioEndedAt &&
+    Date.now() - geminiAudioEndedAt < GEMINI_VISION_RESUME_AFTER_SPEECH_MS
+  );
+}
+
 function syncGeminiVisionAssist(reason = "sync") {
   const state = getGeminiVisionAssistState(reason);
   updateGeminiVisionAssistUi(state);
@@ -2494,6 +2534,11 @@ async function sendGeminiVisionAssistFrame(reason = "frame") {
       return false;
     }
 
+    if (shouldHoldGeminiVisionInput()) {
+      updateGeminiVisionAssistUi(getGeminiVisionAssistState("gemini_audio_playing"));
+      return false;
+    }
+
     const sent = await geminiLiveRuntime?.sendVideoFrame?.({
       data: result.snapshot.dataUrl,
       mimeType: "image/jpeg",
@@ -2512,72 +2557,27 @@ async function sendGeminiVisionAssistFrame(reason = "frame") {
   }
 }
 
-async function sendBackCameraProbeFrame({
-  cameraInput: probeCameraInput,
-  targetLabel = "",
-  reason = "front_target_lost",
-  trigger = "interval"
-} = {}) {
-  const geminiStatus = geminiLiveRuntime?.getStatus?.() ?? {};
-  if (!geminiVisionAssistEnabled || !geminiStatus.connected || !probeCameraInput?.captureSnapshot) {
-    return false;
-  }
-
-  const cleanTarget = String(targetLabel || "object").trim();
-  const cleanReason = String(reason || "front_target_lost").trim();
-  const marker = `<camera_frame_hint>next_video_frame_source=back_camera target=${cleanTarget} reason=${cleanReason}</camera_frame_hint>`;
-  const markerSent = await geminiLiveRuntime.sendText?.(marker);
-  if (!markerSent) {
-    return false;
-  }
-
-  const result = await probeCameraInput.captureSnapshot({
-    includeDataUrl: true,
-    maxWidth: 320,
-    quality: 0.55,
-    emit: false,
-    record: false
-  });
-
-  if (!result?.ok || !result.snapshot?.dataUrl) {
-    throw new Error(result?.error ?? "back_snapshot_unavailable");
-  }
-
-  const sent = await geminiLiveRuntime.sendVideoFrame?.({
-    data: result.snapshot.dataUrl,
-    mimeType: "image/jpeg",
-    width: result.snapshot.width,
-    height: result.snapshot.height,
-    reason: `back_camera:${cleanTarget}:${trigger}`
-  });
-
-  if (sent) {
-    geminiVisionAssistLastFrameAt = Date.now();
-    updateGeminiVisionAssistUi(getGeminiVisionAssistState("back_camera_probe_frame"));
-    log(`[back-camera] frame sent target=${cleanTarget} reason=${cleanReason} trigger=${trigger}`, "debug");
-  }
-
-  return Boolean(sent);
-}
-
 function getGeminiVisionAssistState(reason = "") {
   const geminiStatus = geminiLiveRuntime?.getStatus?.() ?? {};
   const cameraStatus = cameraInput?.getCameraStatus?.() ?? {};
-  const backProbeStatus = backCameraProbe?.getStatus?.() ?? {};
-  const backProbeActive = Boolean(backProbeStatus.running || backProbeStatus.starting);
+  const audioPlaying = isGeminiAudioPlaying(geminiStatus);
+  const speechCooldownActive = isGeminiVisionSpeechCooldownActive();
   const blockedReason = !geminiVisionAssistEnabled
     ? "disabled"
     : !geminiStatus.connected
       ? "gemini_not_connected"
-      : backProbeActive
-        ? "back_camera_probe_active"
-        : !cameraStatus.running
-          ? "camera_off"
-          : "running";
+      : audioPlaying
+        ? "gemini_audio_playing"
+        : speechCooldownActive
+          ? "gemini_audio_cooldown"
+          : !cameraStatus.running
+            ? "camera_off"
+            : "running";
   const shouldRun = Boolean(
     geminiVisionAssistEnabled &&
     geminiStatus.connected &&
-    !backProbeActive &&
+    !audioPlaying &&
+    !speechCooldownActive &&
     cameraStatus.running
   );
 
@@ -2586,7 +2586,8 @@ function getGeminiVisionAssistState(reason = "") {
     enabled: geminiVisionAssistEnabled,
     connected: Boolean(geminiStatus.connected),
     cameraRunning: Boolean(cameraStatus.running),
-    backCameraProbeActive: backProbeActive,
+    audioPlaying,
+    speechCooldownActive,
     followActive: isFollowVisionModeActive(),
     reason: shouldRun ? reason || "running" : blockedReason
   };
@@ -2982,67 +2983,7 @@ function handleVisionFollowEvent(event = {}) {
   updateVisionUi();
   sendFollowStateContext(type);
 
-  if (type === "vision_target_lost") {
-    startBackCameraProbeForLostTarget(event);
-  } else if ([
-    "vision_target_reacquired",
-    "vision_follow_stopped",
-    "vision_follow_not_found"
-  ].includes(type)) {
-    stopBackCameraProbe(type);
-  }
-
   syncGeminiVisionAssist(type);
-}
-
-function startBackCameraProbeForLostTarget(event = {}) {
-  if (!backCameraProbe?.start) {
-    return false;
-  }
-
-  const geminiStatus = geminiLiveRuntime?.getStatus?.() ?? {};
-  if (!geminiVisionAssistEnabled || !geminiStatus.connected) {
-    log(
-      `[back-camera] probe skipped target=${getFollowEventTargetLabel(event) || "object"} reason=gemini_not_ready`,
-      "debug"
-    );
-    return false;
-  }
-
-  stopGeminiVisionAssist("back_camera_probe_starting");
-  backCameraProbe.start({
-    targetLabel: getFollowEventTargetLabel(event),
-    reason: "front_target_lost"
-  }).then((result) => {
-    if (!result?.ok) {
-      log(`[back-camera] probe unavailable: ${result?.error ?? "unknown"}`, "warn");
-      syncGeminiVisionAssist("back_camera_probe_failed");
-    }
-  }).catch((error) => {
-    log(`[back-camera] probe failed: ${error.message}`, "warn");
-    syncGeminiVisionAssist("back_camera_probe_failed");
-  });
-  return true;
-}
-
-function stopBackCameraProbe(reason = "back_camera_probe_stop") {
-  if (!backCameraProbe?.stop) {
-    return null;
-  }
-
-  return backCameraProbe.stop(reason).catch((error) => {
-    log(`[back-camera] probe stop failed: ${error.message}`, "warn");
-    return null;
-  });
-}
-
-function getFollowEventTargetLabel(event = {}) {
-  return String(
-    event.payload?.targetLabel ??
-    event.payload?.label ??
-    visionState?.getActiveTarget?.()?.label ??
-    ""
-  ).trim();
 }
 
 function sendFollowStateContext(reason = "follow_context") {
@@ -3054,6 +2995,36 @@ function sendFollowStateContext(reason = "follow_context") {
     return false;
   }
 
+  if (shouldHoldGeminiVisionInput()) {
+    pendingFollowVisionContextReason = reason;
+    log(`Gemini follow context queued until speech ends reason=${reason}`, "debug");
+    return false;
+  }
+
+  return sendFollowStateContextNow(reason);
+}
+
+function shouldHoldGeminiVisionInput() {
+  return isGeminiAudioPlaying() || isGeminiVisionSpeechCooldownActive();
+}
+
+function flushPendingFollowVisionContext(trigger = "gemini_audio_finished") {
+  if (!pendingFollowVisionContextReason) {
+    return false;
+  }
+
+  if (shouldHoldGeminiVisionInput()) {
+    scheduleGeminiVisionResumeAfterSpeech(trigger);
+    return false;
+  }
+
+  const reason = pendingFollowVisionContextReason;
+  pendingFollowVisionContextReason = "";
+  log(`Gemini follow context flushed reason=${reason} trigger=${trigger}`, "debug");
+  return sendFollowStateContextNow(reason);
+}
+
+function sendFollowStateContextNow(reason = "follow_context") {
   const sendPromise = geminiLiveRuntime.sendVisionContext({
     force: true,
     reason
@@ -3404,7 +3375,6 @@ function getExecutionPolicy() {
 function getRuntimeContext() {
   const lifeState = lifeEngine?.getState?.() ?? null;
   const cameraStatus = compactCameraStatus(cameraInput?.getCameraStatus?.());
-  const backCameraProbeStatus = compactBackCameraProbeStatus(backCameraProbe?.getStatus?.());
 
   return {
     lifeState,
@@ -3434,7 +3404,6 @@ function getRuntimeContext() {
     recentLifeEvents: lifeState?.recentEvents ?? [],
     recentEvents: localEventBus?.getRecentEvents?.({ limit: 30 }) ?? [],
     cameraStatus,
-    backCameraProbeStatus,
     latestObservation: cameraStatus.observation,
     vision: getVisionContext(),
     recentObjectReference,
@@ -3475,20 +3444,6 @@ function compactCameraStatus(status = {}) {
     },
     latestObservation: observation ? compactObservationForEvent(observation) : null,
     observation: observation ? compactObservationForEvent(observation) : null
-  };
-}
-
-function compactBackCameraProbeStatus(status = {}) {
-  return {
-    running: Boolean(status?.running),
-    starting: Boolean(status?.starting),
-    targetLabel: status?.targetLabel ?? "",
-    reason: status?.reason ?? "",
-    startedAt: status?.startedAt ?? null,
-    stoppedAt: status?.stoppedAt ?? null,
-    lastFrameSentAt: status?.lastFrameSentAt ?? null,
-    lastError: status?.lastError ?? null,
-    cameraStatus: compactCameraStatus(status?.cameraStatus ?? {})
   };
 }
 

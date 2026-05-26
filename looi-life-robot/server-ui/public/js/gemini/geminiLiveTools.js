@@ -8,7 +8,7 @@ export const GEMINI_LIVE_INPUT_RATE = 16000;
 export const GEMINI_LIVE_OUTPUT_RATE = 24000;
 
 const FOLLOW_MODES = Object.freeze(["gentle", "curious", "cautious"]);
-const CAMERA_CHOICES = Object.freeze(["auto", "front", "back"]);
+const CAMERA_CHOICES = Object.freeze(["auto", "front"]);
 
 const GEMINI_LIVE_SYSTEM_INSTRUCTION = [
   "<system>",
@@ -18,7 +18,6 @@ const GEMINI_LIVE_SYSTEM_INSTRUCTION = [
   "Use live camera frames from Gemini Vision Assist for visual questions like 'what am I doing now?' or 'can you see the cup?', including while follow mode is active.",
   "Say 'you' for label person in user-facing speech. Example: say 'I can see you and a bottle', not 'I can see a person and a bottle'.",
   "If the requested object or action is not visible in live camera frames, say you cannot see it and ask the user to show it. Do not invent objects.",
-  "When you receive text `next_video_frame_source=back_camera ...`, the immediately following video frame is from LOOI's back camera. Use it only to answer whether the lost followed target is behind LOOI or to choose back-camera photo capture.",
   "Roboflow WebRTC follow context is control state only: whether local tracking started, stopped, lost, or failed to lock the requested target. Do not use it as the primary source for open visual answers.",
   "</vision_rules>",
   "<scenario_rules>",
@@ -41,8 +40,6 @@ const GEMINI_LIVE_SYSTEM_INSTRUCTION = [
   "Use run_scenario name stop_following only when the latest user intent explicitly says stop following, stop tracking, cancel, never mind, or stop.",
   "While follow is active, answer visual questions from live camera frames. Use follow context only to know whether local tracking is active or lost.",
   "When follow context event is vision_target_lost, briefly say you lost the target. When the event is vision_target_reacquired, briefly say you see it again.",
-  "If the followed target is lost from the front camera but visible in a back-camera frame, briefly say you see it behind you.",
-  "If the user asks to take a picture and the target is visible in a back-camera frame, call take_picture with camera='back'. Otherwise use the default/front camera.",
   "Normal conversation while following must not stop, restart, change follow mode, take pictures, or run body movement scenarios.",
   "Do not call tools every frame. The Roboflow WebRTC controller handles continuous look_left/look_right corrections after follow_target succeeds.",
   "</follow_rules>",
@@ -88,7 +85,7 @@ function buildGeminiLiveTools() {
               camera: {
                 type: "STRING",
                 description:
-                  "Optional only for take_picture. Use back only when the requested subject is visible in a labeled back-camera frame.",
+                  "Optional only for take_picture. Use auto or front.",
                 enum: [...CAMERA_CHOICES],
                 nullable: true
               }

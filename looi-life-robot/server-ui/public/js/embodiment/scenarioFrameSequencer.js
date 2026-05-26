@@ -11,7 +11,6 @@ export class ScenarioFrameSequencer {
     face,
     commandQueue,
     cameraInput,
-    backCameraProbe,
     lifeEngine,
     safetyGate,
     calibration,
@@ -21,7 +20,6 @@ export class ScenarioFrameSequencer {
     this.face = face;
     this.commandQueue = commandQueue;
     this.cameraInput = cameraInput;
-    this.backCameraProbe = backCameraProbe;
     this.lifeEngine = lifeEngine;
     this.safetyGate = safetyGate;
     this.calibration = calibration;
@@ -418,10 +416,6 @@ export class ScenarioFrameSequencer {
     this.cameraInput = cameraInput;
   }
 
-  setBackCameraProbe(backCameraProbe) {
-    this.backCameraProbe = backCameraProbe;
-  }
-
   setLifeEngine(lifeEngine) {
     this.lifeEngine = lifeEngine;
   }
@@ -443,7 +437,6 @@ export class ScenarioFrameSequencer {
       face: this.face,
       commandQueue: this.commandQueue,
       cameraInput: this.cameraInput,
-      backCameraProbe: this.backCameraProbe,
       lifeEngine: this.lifeEngine,
       safetyGate: this.safetyGate,
       calibration: this.calibration,

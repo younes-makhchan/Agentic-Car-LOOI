@@ -9,16 +9,14 @@ export async function photoPoseAndCapture(ctx, args = {}) {
     };
   }
 
-  const cameraChoice = normalizeCameraChoice(args.camera);
-  const useBackCamera = cameraChoice === "back";
-  const cameraInput = useBackCamera ? ctx.backCameraProbe : ctx.cameraInput;
-  const cameraSource = useBackCamera ? "back" : "front";
+  const cameraInput = ctx.cameraInput;
+  const cameraSource = "front";
 
   if (!cameraInput?.captureSnapshot) {
     return {
       ok: false,
       type: "action",
-      reason: useBackCamera ? "back_camera_unavailable" : "camera_input_unavailable"
+      reason: "camera_input_unavailable"
     };
   }
 
@@ -26,165 +24,95 @@ export async function photoPoseAndCapture(ctx, args = {}) {
   const quality = clampNumber(args.quality, 0.3, 0.8, 0.72);
   const captureDelayMs = clampNumber(args.captureDelayMs, 200, 3000, 1550);
   const previewDismissMs = clampNumber(args.previewDismissMs, 1000, 15000, 5000);
-  const facingMode = useBackCamera ? "environment" : normalizeFacingMode(args.facingMode);
-  const targetLabel = String(args.targetLabel ?? ctx.runtimeContext?.vision?.activeTarget?.label ?? "").trim();
+  const facingMode = normalizeFacingMode(args.facingMode);
 
-  try {
-    ctx.log?.(`take_picture camera=${cameraSource}`);
+  ctx.log?.(`take_picture camera=${cameraSource}`);
 
-    const status = getCaptureStatus(cameraInput, useBackCamera);
-    if (!status.running) {
-      const startResult = await startCaptureSource(cameraInput, {
-        useBackCamera,
-        facingMode,
-        targetLabel
-      });
-      if (!startResult?.ok) {
-        return {
-          ok: false,
-          type: "action",
-          reason: startResult?.error ?? (useBackCamera ? "back_camera_start_failed" : "camera_start_failed"),
-          detail: {
-            cameraSource,
-            cameraStatus: sanitizeCameraStatus(getCaptureStatusFromStartResult(startResult, useBackCamera))
-          }
-        };
-      }
-    }
-
-    const poseResult = await ctx.playFrames?.([
-      { type: "face", expression: "happy", eyeDirection: "center", intensity: 0.9, durationMs: 120 },
-      { type: "motion", linear: -0.05, angular: 0, durationMs: 300, rampMs: 90, label: "photo_pose_back" },
-      { type: "face", expression: "attentive", eyeDirection: "center", intensity: 0.86, durationMs: 120 }
-    ]);
-    if (poseResult?.interrupted || ctx.isInterrupted?.()) {
+  const status = cameraInput.getCameraStatus?.() ?? {};
+  if (!status.running) {
+    const startResult = await cameraInput.startCamera?.({ facingMode });
+    if (!startResult?.ok) {
       return {
         ok: false,
         type: "action",
-        reason: "interrupted"
-      };
-    }
-
-    ctx.face?.takePicture?.();
-    await ctx.wait?.(captureDelayMs);
-    if (ctx.isInterrupted?.()) {
-      ctx.face?.dismissPhoto?.();
-      return {
-        ok: false,
-        type: "action",
-        reason: "interrupted"
-      };
-    }
-
-    const snapshotResult = await captureFromSource(cameraInput, {
-      useBackCamera,
-      includeDataUrl: true,
-      maxWidth,
-      quality,
-      targetLabel
-    });
-
-    if (!snapshotResult?.ok) {
-      ctx.face?.dismissPhoto?.();
-      return {
-        ok: false,
-        type: "action",
-        reason: snapshotResult?.error ?? "snapshot_capture_failed",
+        reason: startResult?.error ?? "camera_start_failed",
         detail: {
           cameraSource,
-          cameraStatus: sanitizeCameraStatus(getCaptureStatusFromStartResult(snapshotResult, useBackCamera))
+          cameraStatus: sanitizeCameraStatus(startResult?.status ?? {})
         }
       };
     }
+  }
 
-    if (ctx.isInterrupted?.()) {
-      ctx.face?.dismissPhoto?.();
-      return {
-        ok: false,
-        type: "action",
-        reason: "interrupted"
-      };
-    }
-
-    ctx.face?.showPhoto?.(snapshotResult.snapshot?.dataUrl, {
-      dismissMs: previewDismissMs
-    });
-
+  const poseResult = await ctx.playFrames?.([
+    { type: "face", expression: "happy", eyeDirection: "center", intensity: 0.9, durationMs: 120 },
+    { type: "motion", linear: -0.05, angular: 0, durationMs: 300, rampMs: 90, label: "photo_pose_prepare" },
+    { type: "face", expression: "attentive", eyeDirection: "center", intensity: 0.86, durationMs: 120 }
+  ]);
+  if (poseResult?.interrupted || ctx.isInterrupted?.()) {
     return {
-      ok: true,
+      ok: false,
       type: "action",
+      reason: "interrupted"
+    };
+  }
+
+  ctx.face?.takePicture?.();
+  await ctx.wait?.(captureDelayMs);
+  if (ctx.isInterrupted?.()) {
+    ctx.face?.dismissPhoto?.();
+    return {
+      ok: false,
+      type: "action",
+      reason: "interrupted"
+    };
+  }
+
+  const snapshotResult = await cameraInput.captureSnapshot({
+    includeDataUrl: true,
+    maxWidth,
+    quality
+  });
+
+  if (!snapshotResult?.ok) {
+    ctx.face?.dismissPhoto?.();
+    return {
+      ok: false,
+      type: "action",
+      reason: snapshotResult?.error ?? "snapshot_capture_failed",
       detail: {
         cameraSource,
-        cameraStatus: sanitizeCameraStatus(getCaptureStatusFromStartResult(snapshotResult, useBackCamera)),
-        snapshot: sanitizeSnapshotMetadata(snapshotResult.snapshot)
+        cameraStatus: sanitizeCameraStatus(snapshotResult?.status ?? {})
       }
     };
-  } finally {
-    if (useBackCamera) {
-      await cameraInput.stop?.("capture_complete")?.catch?.((error) => {
-        ctx.log?.(`back camera probe stop failed after capture: ${error.message}`, "warn");
-      });
-    }
   }
+
+  if (ctx.isInterrupted?.()) {
+    ctx.face?.dismissPhoto?.();
+    return {
+      ok: false,
+      type: "action",
+      reason: "interrupted"
+    };
+  }
+
+  ctx.face?.showPhoto?.(snapshotResult.snapshot?.dataUrl, {
+    dismissMs: previewDismissMs
+  });
+
+  return {
+    ok: true,
+    type: "action",
+    detail: {
+      cameraSource,
+      cameraStatus: sanitizeCameraStatus(snapshotResult?.status ?? {}),
+      snapshot: sanitizeSnapshotMetadata(snapshotResult.snapshot)
+    }
+  };
 }
 
 function normalizeFacingMode(value) {
   return value === "environment" ? "environment" : "user";
-}
-
-function normalizeCameraChoice(value) {
-  return value === "back" ? "back" : "front";
-}
-
-function getCaptureStatus(cameraInput, useBackCamera) {
-  if (useBackCamera) {
-    return cameraInput.getStatus?.().cameraStatus ?? cameraInput.getCameraStatus?.() ?? {};
-  }
-
-  return cameraInput.getCameraStatus?.() ?? {};
-}
-
-function getCaptureStatusFromStartResult(result = {}, useBackCamera) {
-  if (useBackCamera) {
-    return result.status?.cameraStatus ?? result.status ?? {};
-  }
-
-  return result.status ?? {};
-}
-
-function startCaptureSource(cameraInput, { useBackCamera, facingMode, targetLabel } = {}) {
-  if (useBackCamera) {
-    return cameraInput.start?.({
-      targetLabel,
-      reason: "take_picture"
-    });
-  }
-
-  return cameraInput.startCamera?.({ facingMode });
-}
-
-function captureFromSource(cameraInput, {
-  useBackCamera,
-  includeDataUrl,
-  maxWidth,
-  quality,
-  targetLabel
-} = {}) {
-  if (useBackCamera) {
-    return cameraInput.captureSnapshot({
-      includeDataUrl,
-      maxWidth,
-      quality,
-      targetLabel,
-      reason: "take_picture"
-    });
-  }
-
-  return cameraInput.captureSnapshot({
-    includeDataUrl,
-    maxWidth,
-    quality
-  });
 }
 
 function sanitizeCameraStatus(status = {}) {

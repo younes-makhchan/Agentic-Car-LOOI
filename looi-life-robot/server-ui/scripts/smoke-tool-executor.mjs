@@ -143,48 +143,6 @@ const cameraInput = {
     };
   }
 };
-const backCameraCalls = [];
-let backCameraRunning = false;
-const backCameraProbe = {
-  getStatus() {
-    return {
-      running: backCameraRunning,
-      cameraStatus: {
-        ...cameraStatus,
-        running: backCameraRunning,
-        facingMode: "environment"
-      }
-    };
-  },
-  async start({ targetLabel, reason }) {
-    backCameraCalls.push({ type: "start", targetLabel, reason });
-    backCameraRunning = true;
-    return { ok: true, status: this.getStatus() };
-  },
-  async stop(reason) {
-    backCameraCalls.push({ type: "stop", reason });
-    backCameraRunning = false;
-    return { ok: true, status: this.getStatus() };
-  },
-  async captureSnapshot({ includeDataUrl, maxWidth, targetLabel }) {
-    backCameraCalls.push({ type: "snapshot", includeDataUrl, maxWidth, targetLabel });
-    return {
-      ok: true,
-      status: this.getStatus(),
-      snapshot: {
-        timestamp: new Date().toISOString(),
-        facingMode: "environment",
-        source: "back_camera_probe",
-        width: maxWidth,
-        height: 180,
-        dataUrl: includeDataUrl ? "data:image/jpeg;base64,BB==" : null,
-        bytesApprox: 2,
-        note: "back camera probe thumbnail"
-      }
-    };
-  }
-};
-
 const lifeEngine = {
   getState() {
     return {
@@ -235,7 +193,6 @@ async function runMockFrames(frames = [], context = {}) {
       const actionResult = await frame.action({
         face,
         cameraInput,
-        backCameraProbe,
         commandQueue,
         lifeEngine,
         allowMotion: context.allowMotion !== false,
@@ -403,22 +360,22 @@ assert.equal(
   frontSnapshotsBeforeExplicitFrontPhoto + 1
 );
 
-const frontSnapshotsBeforeBackPhoto = cameraCalls.filter((call) => call.type === "snapshot").length;
-const backPhotoScenario = await executor.executeAction({
-  id: "scenario_photo_back",
+const frontSnapshotsBeforeInvalidCameraPhoto = cameraCalls.filter((call) => call.type === "snapshot").length;
+const invalidCameraPhotoScenario = await executor.executeAction({
+  id: "scenario_photo_invalid_camera",
   source: "gemini_live",
   type: "run_scenario",
-  args: { name: "take_picture", camera: "back" }
+  args: { name: "take_picture", camera: "side" }
 });
-assert.equal(backPhotoScenario.status, "queued");
-assert.equal(backPhotoScenario.detail.execution, "parallel");
+assert.equal(invalidCameraPhotoScenario.status, "queued");
+assert.equal(invalidCameraPhotoScenario.detail.execution, "parallel");
 await settleAsyncScenario();
 assert.equal(routedSequences.at(-1).action.args.scenario, "take_picture");
-assert.equal(routedSequences.at(-1).action.args.frames.at(-1).args.camera, "back");
-assert.equal(cameraCalls.filter((call) => call.type === "snapshot").length, frontSnapshotsBeforeBackPhoto);
-assert.equal(backCameraCalls.some((call) => call.type === "start"), true);
-assert.equal(backCameraCalls.some((call) => call.type === "snapshot"), true);
-assert.equal(backCameraCalls.some((call) => call.type === "stop" && call.reason === "capture_complete"), true);
+assert.equal(routedSequences.at(-1).action.args.frames.at(-1).args.camera, "auto");
+assert.equal(
+  cameraCalls.filter((call) => call.type === "snapshot").length,
+  frontSnapshotsBeforeInvalidCameraPhoto + 1
+);
 
 const eatingScenario = await executor.executeAction({
   id: "scenario_eating",
