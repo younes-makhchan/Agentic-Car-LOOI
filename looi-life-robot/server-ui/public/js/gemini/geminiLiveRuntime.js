@@ -488,9 +488,11 @@ export class GeminiLiveRuntime {
     if (message.setupComplete) {
       this.patchStatus({ setupComplete: true });
       this.log("GEMINI STEP 5 setup complete");
-      this.sendVisionContext({ force: true, reason: "setup_complete" }).catch((error) => {
-        this.log(`Gemini vision context send failed: ${error.message}`, "warn");
-      });
+      if (this.hasActiveFollowVisionContext()) {
+        this.sendVisionContext({ force: true, reason: "setup_complete" }).catch((error) => {
+          this.log(`Gemini vision context send failed: ${error.message}`, "warn");
+        });
+      }
     }
 
     const transcriptions = this.handleTranscriptions(message);
@@ -524,6 +526,21 @@ export class GeminiLiveRuntime {
         this.log(`Gemini Live tool cancellation failed: ${error.message}`, "warn");
       });
     }
+  }
+
+  hasActiveFollowVisionContext() {
+    if (typeof this.getRuntimeContext !== "function") {
+      return false;
+    }
+
+    const context = this.getRuntimeContext() ?? {};
+    const scenario = context.vision?.scenario ?? {};
+    return Boolean(
+      scenario.active &&
+      scenario.type === "follow_object" &&
+      scenario.state !== "idle" &&
+      scenario.state !== "not_found"
+    );
   }
 
   handleTranscriptions(message) {

@@ -81,9 +81,10 @@ function createVisionRuntime({ policy = {} } = {}) {
     getPolicy: () => ({
       localMotionArmed: false,
       robotConnected: true,
-      maxObjectFollowSpeed: 0.036,
-      followCommandDurationMs: 30,
-      followCommandRefreshMs: 70,
+      maxObjectFollowSpeed: 0.2,
+      followCommandDurationMs: 300,
+      followCommandRefreshMs: 100,
+      followMaxDetectionAgeMs: 300,
       ...policy
     })
   });
@@ -162,10 +163,24 @@ function updateVision({ tracker, visionState }, result) {
   assert.equal(runtime.motions.length, 1);
   assert.equal(runtime.motions[0].label, "roboflow_follow_turn_left");
   assert.equal(runtime.motions[0].linear, 0);
-  assert.equal(runtime.motions[0].angular, -0.036);
-  assert.equal(runtime.motions[0].durationMs, 30);
+  assert.equal(runtime.motions[0].angular, -0.2);
+  assert.equal(runtime.motions[0].durationMs, 300);
   assert.equal(runtime.motions[0].rampMs, 0);
   assert.equal(runtime.motions[0].realtime, true);
+  runtime.controller.stop("test_stop");
+}
+
+{
+  const runtime = createVisionRuntime({
+    policy: {
+      localMotionArmed: true
+    }
+  });
+  updateVision(runtime, detectionResult(-1000, [detection("apple", 0.2)]));
+  runtime.controller.start({ label: "apple" });
+  runtime.controller.tick();
+  assert.equal(runtime.motions.length, 0, "stale follow track must not send steering motion");
+  assert.equal(runtime.visionState.getStatus().scenario.state, "searching");
   runtime.controller.stop("test_stop");
 }
 

@@ -4,12 +4,13 @@ import { canonicalObjectLabel } from "./objectLabelUtils.js";
 const FOLLOW_MODES = new Set(["cautious", "gentle", "curious"]);
 const FOLLOW_POSITION_LOG_INTERVAL_MS = 600;
 const DEFAULT_FOLLOW_CENTER_X = 0.5;
-const DEFAULT_FOLLOW_CENTER_DEADBAND = 0.115;
+const DEFAULT_FOLLOW_CENTER_DEADBAND = 0.14;
 const DEFAULT_FOLLOW_STEER_GAIN = 0.9;
-const DEFAULT_MAX_FOLLOW_ANGULAR = 0.036;
+const DEFAULT_MAX_FOLLOW_ANGULAR = 0.2;
 const DEFAULT_FOLLOW_LOST_TIMEOUT_MS = 3000;
-const DEFAULT_FOLLOW_COMMAND_DURATION_MS = 30;
-const DEFAULT_FOLLOW_COMMAND_REFRESH_MS = 70;
+const DEFAULT_FOLLOW_COMMAND_DURATION_MS = 300;
+const DEFAULT_FOLLOW_COMMAND_REFRESH_MS = 100;
+const DEFAULT_FOLLOW_MAX_DETECTION_AGE_MS = 300;
 
 export class FollowTargetController {
   constructor({
@@ -144,7 +145,14 @@ export class FollowTargetController {
       return this.getStatus();
     }
 
-    this.lastSeenAt = Date.now();
+    const tuning = this.getTuning();
+    const detectionAgeMs = this.computeTrackAgeMs(track);
+    if (detectionAgeMs > tuning.maxDetectionAgeMs) {
+      this.handleTargetStale(track, detectionAgeMs, tuning);
+      return this.getStatus();
+    }
+
+    this.lastSeenAt = Number(track?.lastSeenAt) || Date.now();
     this.targetLabel = track.label ?? this.targetLabel;
     this.targetTrackId = track.id ?? track.trackId ?? this.targetTrackId;
     this.targetVisible = true;
@@ -188,7 +196,6 @@ export class FollowTargetController {
     this.lastMovementHeldReason = null;
 
     const now = Date.now();
-    const tuning = this.getTuning();
     if (now - this.lastSteeringAt < tuning.commandRefreshMs) {
       return this.getStatus();
     }
@@ -294,9 +301,10 @@ export class FollowTargetController {
       targetCenterX: clampNumber(policy.followTargetCenterX, 0.25, 0.75, DEFAULT_FOLLOW_CENTER_X),
       centerDeadband: clampNumber(policy.followCenterDeadband, 0.005, 0.2, DEFAULT_FOLLOW_CENTER_DEADBAND),
       steerGain: clampNumber(policy.followSteerGain, 0.05, 2.5, DEFAULT_FOLLOW_STEER_GAIN),
-      maxAngular: clampNumber(policy.maxObjectFollowSpeed, 0, 0.12, DEFAULT_MAX_FOLLOW_ANGULAR),
+      maxAngular: clampNumber(policy.maxObjectFollowSpeed, 0, 0.25, DEFAULT_MAX_FOLLOW_ANGULAR),
       commandDurationMs: clampNumber(policy.followCommandDurationMs, 0, 600, DEFAULT_FOLLOW_COMMAND_DURATION_MS),
-      commandRefreshMs: clampNumber(policy.followCommandRefreshMs, 0, 300, DEFAULT_FOLLOW_COMMAND_REFRESH_MS)
+      commandRefreshMs: clampNumber(policy.followCommandRefreshMs, 0, 300, DEFAULT_FOLLOW_COMMAND_REFRESH_MS),
+      maxDetectionAgeMs: clampNumber(policy.followMaxDetectionAgeMs, 40, 3000, DEFAULT_FOLLOW_MAX_DETECTION_AGE_MS)
     };
   }
 
@@ -412,6 +420,26 @@ export class FollowTargetController {
     );
   }
 
+  handleTargetStale(track = {}, ageMs = 0, tuning = this.getTuning()) {
+    this.stopMotion("follow_detection_stale");
+    this.state = "searching";
+    this.targetVisible = false;
+    this.lostForMs = ageMs;
+    this.lostSince = this.lostSince ?? (track?.lastSeenAt ? new Date(track.lastSeenAt).toISOString() : new Date().toISOString());
+    this.updateVisionMirror("target_stale");
+
+    const now = Date.now();
+    if (now - this.lastStaleLogAt < FOLLOW_POSITION_LOG_INTERVAL_MS) {
+      return;
+    }
+
+    this.lastStaleLogAt = now;
+    this.log(
+      `[roboflow] follow hold stale target=${track?.label ?? this.targetLabel ?? "object"} track=${track?.id ?? this.targetTrackId ?? "none"} detectionAge=${Math.round(ageMs)}ms maxAge=${Math.round(tuning.maxDetectionAgeMs)}ms`,
+      "debug"
+    );
+  }
+
   resolveTrack() {
     let trackById = null;
 
@@ -447,6 +475,16 @@ export class FollowTargetController {
 
     const lastSeenAt = Number(track?.lastSeenAt ?? this.lastSeenAt ?? 0);
     return lastSeenAt ? Math.max(0, Date.now() - lastSeenAt) : this.lostTimeoutMs;
+  }
+
+  computeTrackAgeMs(track = {}) {
+    const trackLostForMs = Number(track?.lostForMs);
+    if (Number.isFinite(trackLostForMs)) {
+      return Math.max(0, trackLostForMs);
+    }
+
+    const lastSeenAt = Number(track?.lastSeenAt ?? 0);
+    return lastSeenAt ? Math.max(0, Date.now() - lastSeenAt) : Number.POSITIVE_INFINITY;
   }
 
   updateVisionMirror(reason = "follow_state") {
@@ -546,6 +584,7 @@ export class FollowTargetController {
       maxObjectFollowSpeed: DEFAULT_MAX_FOLLOW_ANGULAR,
       followCommandDurationMs: DEFAULT_FOLLOW_COMMAND_DURATION_MS,
       followCommandRefreshMs: DEFAULT_FOLLOW_COMMAND_REFRESH_MS,
+      followMaxDetectionAgeMs: DEFAULT_FOLLOW_MAX_DETECTION_AGE_MS,
       ...(typeof this.getPolicy === "function" ? this.getPolicy() : {})
     };
   }
@@ -568,7 +607,7 @@ function formatPixel(value) {
 }
 
 function formatTuningForLog(tuning = {}) {
-  return `speed=${formatNumber(tuning.maxAngular)} duration=${Math.round(Number(tuning.commandDurationMs ?? 0))}ms interval=${Math.round(Number(tuning.commandRefreshMs ?? 0))}ms tolerance=${formatNumber(tuning.centerDeadband)}`;
+  return `speed=${formatNumber(tuning.maxAngular)} duration=${Math.round(Number(tuning.commandDurationMs ?? 0))}ms interval=${Math.round(Number(tuning.commandRefreshMs ?? 0))}ms tolerance=${formatNumber(tuning.centerDeadband)} maxAge=${Math.round(Number(tuning.maxDetectionAgeMs ?? 0))}ms`;
 }
 
 function isFreshTrack(track) {

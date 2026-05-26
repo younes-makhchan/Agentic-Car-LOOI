@@ -23,7 +23,6 @@ export class VisionScenarioManager {
     this.eventBus = eventBus;
     this.armMovement = armMovement;
     this.logger = logger;
-    this.detectorStartedByFollow = false;
   }
 
   async startFollowTarget({ label, aliases = [], mode = "gentle", trackId = null } = {}) {
@@ -76,7 +75,6 @@ export class VisionScenarioManager {
         message
       }, { source: "vision", priority: 3 });
       this.log(`follow target not found target=${targetLabel}; detector left running=${this.isDetectorActive()}`, "warn");
-      this.detectorStartedByFollow = false;
       return result("completed", false, message, {
         scenario: "follow_object",
         targetLabel,
@@ -110,10 +108,6 @@ export class VisionScenarioManager {
 
   stopFollowing(reason = "follow_stop") {
     const stopped = this.followTargetController?.stop?.(reason) ?? { ok: true, reason };
-    if (this.detectorStartedByFollow) {
-      this.objectDetectorEngine?.stop?.();
-      this.detectorStartedByFollow = false;
-    }
     if (!this.followTargetController?.stop) {
       this.visionState?.clearActiveTarget?.(reason);
     }
@@ -155,11 +149,7 @@ export class VisionScenarioManager {
       return target;
     }
 
-    const wasDetectorActive = this.isDetectorActive();
-    const detectorStarted = await this.ensureDetectorRunning();
-    if (!wasDetectorActive && detectorStarted) {
-      this.detectorStartedByFollow = true;
-    }
+    await this.ensureDetectorRunning();
 
     target = this.findTarget(label, aliases, trackId);
     if (isFreshFollowTarget(target)) {
@@ -217,6 +207,7 @@ export class VisionScenarioManager {
       return true;
     }
 
+    this.log("follow requested before Roboflow was warm; starting detector fallback now", "warn");
     const status = await this.objectDetectorEngine?.start?.();
     return Boolean(status?.running || status?.starting || this.isDetectorActive());
   }

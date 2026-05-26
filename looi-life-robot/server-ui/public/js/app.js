@@ -47,31 +47,35 @@ const FOLLOW_TUNING_STORAGE_KEY = "looi.followTuning.v3";
 const FOLLOW_TUNING_PRESETS = Object.freeze({
   case1: Object.freeze({
     label: "Case 1",
-    maxObjectFollowSpeed: 0.036,
-    followCommandDurationMs: 30,
-    followCommandRefreshMs: 70,
-    followCenterDeadband: 0.115
+    maxObjectFollowSpeed: 0.2,
+    followCommandDurationMs: 300,
+    followCommandRefreshMs: 100,
+    followCenterDeadband: 0.14,
+    followMaxDetectionAgeMs: 300
   }),
   case2: Object.freeze({
     label: "Case 2",
     maxObjectFollowSpeed: 0.036,
     followCommandDurationMs: 20,
     followCommandRefreshMs: 90,
-    followCenterDeadband: 0.115
+    followCenterDeadband: 0.115,
+    followMaxDetectionAgeMs: 300
   }),
   case3: Object.freeze({
     label: "Case 3",
     maxObjectFollowSpeed: 0.032,
     followCommandDurationMs: 10,
     followCommandRefreshMs: 60,
-    followCenterDeadband: 0.135
+    followCenterDeadband: 0.135,
+    followMaxDetectionAgeMs: 300
   }),
   case4: Object.freeze({
     label: "Case 4",
     maxObjectFollowSpeed: 0.03,
     followCommandDurationMs: 10,
     followCommandRefreshMs: 80,
-    followCenterDeadband: 0.105
+    followCenterDeadband: 0.105,
+    followMaxDetectionAgeMs: 300
   })
 });
 const DEFAULT_FOLLOW_TUNING_PRESET = "case1";
@@ -96,7 +100,6 @@ const ui = {
   settingsBackdrop: document.getElementById("settingsBackdrop"),
   settingsPanel: document.getElementById("settingsPanel"),
   localVisionPreview: document.getElementById("localVisionPreview"),
-  localVisionOverlay: document.getElementById("localVisionOverlay"),
   localVisionState: document.getElementById("localVisionState"),
   localVisionDetail: document.getElementById("localVisionDetail"),
   localVisionSizeSlider: document.getElementById("localVisionSizeSlider"),
@@ -306,6 +309,8 @@ let poseScenarioLastRun = new Map();
 let localVisionWidgetSizePx = loadLocalVisionWidgetSize();
 let lastLogSignature = "";
 let lastOverlayDebugAt = 0;
+let roboflowDetectorStartPromise = null;
+let roboflowDetectorWanted = false;
 let looiActivityRaf = 0;
 let looiActivitySlotForDot = [0, 1, 2, 3, 4];
 let looiActivityActiveStep = 0;
@@ -502,6 +507,7 @@ ui.startLocalBrainButton.addEventListener("click", () => {
 ui.stopLocalBrainButton.addEventListener("click", () => {
   stopGeminiVisionAssist("ui_stop_local_brain");
   stopBackCameraProbe("ui_stop_local_brain");
+  stopLooiRoboflowRuntime("ui_stop_local_brain");
   geminiLiveRuntime?.stop?.("ui_stop_local_brain");
   localBrainEngine?.stop?.();
   updateLocalBrainUi();
@@ -752,8 +758,7 @@ ui.startObjectDetectionButton?.addEventListener("click", () => {
   startObjectDetectionFromUi().catch((error) => log(`Object detector start failed: ${error.message}`, "warn"));
 });
 ui.stopObjectDetectionButton?.addEventListener("click", () => {
-  objectDetectorEngine?.stop?.();
-  followTargetController?.stop?.("object_detector_stopped");
+  stopLooiRoboflowRuntime("manual_object_detector_stop");
   updateVisionUi();
 });
 ui.objectRoboflowWorkflowSelect?.addEventListener("change", () => {
@@ -835,6 +840,10 @@ async function init() {
       activeConfig.followCommandRefreshMs ??
       PUBLIC_CONFIG.followCommandRefreshMs ??
       FOLLOW_TUNING_PRESETS[DEFAULT_FOLLOW_TUNING_PRESET].followCommandRefreshMs,
+    followMaxDetectionAgeMs:
+      activeConfig.followMaxDetectionAgeMs ??
+      PUBLIC_CONFIG.followMaxDetectionAgeMs ??
+      FOLLOW_TUNING_PRESETS[DEFAULT_FOLLOW_TUNING_PRESET].followMaxDetectionAgeMs,
     ...savedFollowTuning,
     eventThoughtCooldownMs:
       activeConfig.localBrainEventCooldownMs ??
@@ -1934,15 +1943,15 @@ async function startLocalBrainProductionMode() {
   }
   updateLifeEventsUi();
 
+  await ensureRoboflowDetectorRunning("looi_start").catch((error) => {
+    log(`Roboflow prewarm skipped: ${error.message}`, "warn");
+  });
+
   const geminiStartResult = useGeminiLive ? await geminiStartPromise : null;
   if (geminiStartResult?.error) {
     throw geminiStartResult.error;
   }
   attentionSystem?.wake?.("live_start", activeConfig.conversationWindowMs ?? 30000);
-
-  await openCameraFromUi("user").catch((error) => {
-    log(`Camera startup skipped: ${error.message}`, "warn");
-  });
 
   requestPoseScenario("pose_happy");
   log(
@@ -2799,10 +2808,62 @@ function updateCameraUi(status = cameraInput?.getCameraStatus?.()) {
 }
 
 async function startObjectDetectionFromUi() {
+  return ensureRoboflowDetectorRunning("manual_start");
+}
+
+async function ensureRoboflowDetectorRunning(reason = "detector_start") {
   if (!objectDetectorEngine) {
     throw new Error("Object detector is not initialized.");
   }
 
+  roboflowDetectorWanted = true;
+
+  if (isRoboflowDetectorActive()) {
+    log(`[roboflow] detector already running reason=${reason}`, "debug");
+    updateVisionUi();
+    return objectDetectorEngine.getStatus?.() ?? {};
+  }
+
+  if (roboflowDetectorStartPromise) {
+    log(`[roboflow] detector start already in progress reason=${reason}`, "debug");
+    return roboflowDetectorStartPromise;
+  }
+
+  roboflowDetectorStartPromise = startRoboflowDetector(reason).finally(() => {
+    roboflowDetectorStartPromise = null;
+  });
+
+  return roboflowDetectorStartPromise;
+}
+
+async function startRoboflowDetector(reason = "detector_start") {
+  await ensureFrontCameraForRoboflow(reason);
+
+  if (!roboflowDetectorWanted) {
+    log(`[roboflow] detector start skipped after stop reason=${reason}`, "debug");
+    return objectDetectorEngine.getStatus?.() ?? {};
+  }
+
+  const status = await objectDetectorEngine.start();
+  if (!roboflowDetectorWanted) {
+    objectDetectorEngine.stop?.();
+    log(`[roboflow] detector start completed after stop; stopped immediately reason=${reason}`, "warn");
+    updateVisionUi();
+    return objectDetectorEngine.getStatus?.() ?? status;
+  }
+
+  const active = Boolean(status?.running || status?.starting || objectDetectorEngine?.isRunning?.());
+  log(
+    active
+      ? `[roboflow] detector warm reason=${reason}`
+      : `[roboflow] detector unavailable reason=${reason} error=${status?.lastError ?? "unknown"}`,
+    active ? "info" : "warn"
+  );
+  updateVisionUi();
+  return status;
+}
+
+async function ensureFrontCameraForRoboflow(reason = "detector_start") {
   const cameraStatus = cameraInput?.getCameraStatus?.() ?? {};
   const frontDeviceId = getFrontCameraDeviceId();
   const needsFrontCamera = !cameraStatus.running ||
@@ -2810,7 +2871,7 @@ async function startObjectDetectionFromUi() {
     Boolean(frontDeviceId && cameraStatus.deviceId !== frontDeviceId);
 
   if (needsFrontCamera) {
-    log(`Starting Roboflow on front camera using ${formatCameraDeviceForLog(frontDeviceId, "front")}.`);
+    log(`[roboflow] starting front camera reason=${reason} device=${formatCameraDeviceForLog(frontDeviceId, "front")}.`);
     const result = await cameraInput.startCamera({
       facingMode: "user",
       deviceId: frontDeviceId
@@ -2820,10 +2881,33 @@ async function startObjectDetectionFromUi() {
       throw new Error(result?.error || "Camera could not start.");
     }
   }
+}
 
-  const status = await objectDetectorEngine.start();
+function stopLooiRoboflowRuntime(reason = "looi_stop") {
+  roboflowDetectorWanted = false;
+
+  if (followTargetController?.isRunning?.()) {
+    visionScenarioManager?.stopFollowing?.(reason);
+  } else {
+    visionState?.clearActiveTarget?.(reason);
+    face?.stopFollow?.();
+  }
+
+  if (objectDetectorEngine) {
+    const wasActive = isRoboflowDetectorActive();
+    objectDetectorEngine.stop?.();
+    if (wasActive) {
+      log(`[roboflow] detector stopped with LOOI runtime reason=${reason}`);
+    }
+  }
+
+  drawObjectDetectionOverlays([]);
   updateVisionUi();
-  return status;
+}
+
+function isRoboflowDetectorActive() {
+  const status = objectDetectorEngine?.getStatus?.() ?? {};
+  return Boolean(status.running || status.starting || objectDetectorEngine?.isRunning?.());
 }
 
 async function setRoboflowWorkflowFromUi() {
@@ -3147,7 +3231,7 @@ function updateFollowTuningUi(followStatus = followTargetController?.getStatus?.
   if (ui.followSteeringState) {
     const steering = followStatus.lastSteering;
     ui.followSteeringState.textContent = steering
-      ? `${steering.direction} · angular ${formatSignedFollowValue(steering.angular, 3)} · duration ${Math.round(steering.commandDurationMs ?? brainPolicy.followCommandDurationMs)}ms · interval ${Math.round(steering.commandRefreshMs ?? brainPolicy.followCommandRefreshMs)}ms · tolerance ${formatFollowValue(steering.deadband, 3)}`
+      ? `${steering.direction} · angular ${formatSignedFollowValue(steering.angular, 3)} · duration ${Math.round(steering.commandDurationMs ?? brainPolicy.followCommandDurationMs)}ms · interval ${Math.round(steering.commandRefreshMs ?? brainPolicy.followCommandRefreshMs)}ms · tolerance ${formatFollowValue(steering.deadband, 3)} · max age ${Math.round(brainPolicy.followMaxDetectionAgeMs ?? 0)}ms`
       : "--";
   }
 }
@@ -3189,7 +3273,6 @@ function drawObjectDetectionOverlays(resultOrDetections = []) {
     : resultOrDetections || { detections: [] };
 
   drawObjectDetectionOverlay(ui.objectDetectionOverlay, result, ui.cameraPreview);
-  drawObjectDetectionOverlay(ui.localVisionOverlay, result, ui.localVisionPreview);
 }
 
 function drawObjectDetectionOverlay(canvas, result = {}, videoElement = null) {
@@ -3313,6 +3396,7 @@ function getExecutionPolicy() {
     maxObjectFollowSpeed: brainPolicy.maxObjectFollowSpeed,
     followCommandDurationMs: brainPolicy.followCommandDurationMs,
     followCommandRefreshMs: brainPolicy.followCommandRefreshMs,
+    followMaxDetectionAgeMs: brainPolicy.followMaxDetectionAgeMs,
     robotConnected: Boolean(robotClient?.isConnected?.())
   };
 }
@@ -3553,7 +3637,8 @@ function findMatchingFollowPresetId(settings = brainPolicy) {
     nearlyEqual(normalized.maxObjectFollowSpeed, preset.maxObjectFollowSpeed, 0.0005) &&
     Number(normalized.followCommandDurationMs) === Number(preset.followCommandDurationMs) &&
     Number(normalized.followCommandRefreshMs) === Number(preset.followCommandRefreshMs) &&
-    nearlyEqual(normalized.followCenterDeadband, preset.followCenterDeadband, 0.0005)
+    nearlyEqual(normalized.followCenterDeadband, preset.followCenterDeadband, 0.0005) &&
+    Number(normalized.followMaxDetectionAgeMs) === Number(preset.followMaxDetectionAgeMs)
   ))?.[0] ?? null;
 }
 
@@ -3562,7 +3647,7 @@ function normalizeStoredFollowTuning(settings = {}) {
   const normalized = {};
 
   if (Number.isFinite(Number(source.maxObjectFollowSpeed))) {
-    normalized.maxObjectFollowSpeed = clampNumber(source.maxObjectFollowSpeed, 0, 0.12, FOLLOW_TUNING_PRESETS[DEFAULT_FOLLOW_TUNING_PRESET].maxObjectFollowSpeed);
+    normalized.maxObjectFollowSpeed = clampNumber(source.maxObjectFollowSpeed, 0, 0.25, FOLLOW_TUNING_PRESETS[DEFAULT_FOLLOW_TUNING_PRESET].maxObjectFollowSpeed);
   }
   if (Number.isFinite(Number(source.followTargetCenterX))) {
     normalized.followTargetCenterX = clampNumber(source.followTargetCenterX, 0.25, 0.75, 0.5);
@@ -3576,6 +3661,12 @@ function normalizeStoredFollowTuning(settings = {}) {
   if (Number.isFinite(Number(source.followCommandRefreshMs))) {
     normalized.followCommandRefreshMs = Math.round(clampNumber(source.followCommandRefreshMs, 0, 300, FOLLOW_TUNING_PRESETS[DEFAULT_FOLLOW_TUNING_PRESET].followCommandRefreshMs));
   }
+  normalized.followMaxDetectionAgeMs = Math.round(clampNumber(
+    source.followMaxDetectionAgeMs,
+    40,
+    3000,
+    FOLLOW_TUNING_PRESETS[DEFAULT_FOLLOW_TUNING_PRESET].followMaxDetectionAgeMs
+  ));
 
   return normalized;
 }
