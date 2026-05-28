@@ -487,9 +487,10 @@
                 <input id="durationScale" type="range" min="0.25" max="2" step="0.01" value="1" />
               </label>
               <label>
-                <span>Ramp ms</span>
-                <strong id="rampValue">0 ms</strong>
-                <input id="rampMs" type="range" min="0" max="400" step="10" value="0" />
+                <span>Ramp / decay ms</span>
+                <strong id="rampValue">60 ms requested</strong>
+                <small class="note">Used for ramp-up and smooth decay after the command duration. Firmware clamps this to half the command duration.</small>
+                <input id="rampMs" type="number" min="0" max="500" step="5" value="60" />
               </label>
               <label>
                 <span>Angular sign</span>
@@ -501,6 +502,7 @@
               <div class="button-row">
                 <button id="playSelected" class="primary" type="button">Play Selected</button>
                 <button id="playOrder" type="button">Play Order</button>
+                <button id="addScenarioButton" type="button">Add Animation</button>
                 <button id="saveButton" type="button">Save</button>
                 <button id="resetButton" type="button">Reset</button>
               </div>
@@ -536,7 +538,10 @@
 
           <section class="panel">
             <h2>Export</h2>
-            <p class="note">This is the JSON shape we can later move into the main idle scenario runtime.</p>
+            <p class="note">
+              Save writes to this browser's localStorage under <code>looi.idleScenariosDemo.v1</code>.
+              This export is the JSON shape we can later move into the main idle scenario runtime.
+            </p>
             <textarea id="exportText" spellcheck="false"></textarea>
           </section>
 
@@ -558,6 +563,7 @@
       const STORAGE_KEY = "looi.idleScenariosDemo.v1";
       const MAX_SPEED = 0.5;
       const MAX_DURATION_MS = 1200;
+      const MAX_RAMP_MS = 500;
 
       const DEFAULT_SCENARIOS = [
         {
@@ -566,7 +572,7 @@
           description: "Right wheel back, left wheel front. A small twist that should later be balanced by the opposite.",
           pairWith: "idle_shift_right_front_left_back",
           steps: [
-            { kind: "move", left: 0.13, right: -0.13, durationMs: 180, pauseMs: 70 },
+            { kind: "move", left: 0.5, right: -0.5, durationMs: 130, pauseMs: 80 },
             { kind: "stop", left: 0, right: 0, durationMs: 0, pauseMs: 120 }
           ]
         },
@@ -576,7 +582,7 @@
           description: "Right wheel front, left wheel back. Counter-motion for Animation 1.",
           pairWith: "idle_shift_right_back_left_front",
           steps: [
-            { kind: "move", left: -0.13, right: 0.13, durationMs: 180, pauseMs: 70 },
+            { kind: "move", left: -0.5, right: 0.5, durationMs: 130, pauseMs: 80 },
             { kind: "stop", left: 0, right: 0, durationMs: 0, pauseMs: 120 }
           ]
         },
@@ -586,7 +592,7 @@
           description: "Left a bit front and right front. A small forward nudge with left side softer.",
           pairWith: "",
           steps: [
-            { kind: "move", left: 0.07, right: 0.13, durationMs: 180, pauseMs: 90 },
+            { kind: "move", left: 0.35, right: 0.5, durationMs: 120, pauseMs: 90 },
             { kind: "stop", left: 0, right: 0, durationMs: 0, pauseMs: 120 }
           ]
         },
@@ -596,7 +602,7 @@
           description: "Left tiny front and right tiny front. Very subtle forward life.",
           pairWith: "",
           steps: [
-            { kind: "move", left: 0.045, right: 0.06, durationMs: 140, pauseMs: 110 },
+            { kind: "move", left: 0.32, right: 0.35, durationMs: 90, pauseMs: 120 },
             { kind: "stop", left: 0, right: 0, durationMs: 0, pauseMs: 120 }
           ]
         },
@@ -606,9 +612,9 @@
           description: "Left wheel front, right wheel back, tiny pause, continue moving.",
           pairWith: "idle_shift_right_front_left_back",
           steps: [
-            { kind: "move", left: 0.11, right: -0.11, durationMs: 95, pauseMs: 70 },
+            { kind: "move", left: 0.45, right: -0.45, durationMs: 80, pauseMs: 80 },
             { kind: "stop", left: 0, right: 0, durationMs: 0, pauseMs: 90 },
-            { kind: "move", left: 0.11, right: -0.11, durationMs: 95, pauseMs: 80 },
+            { kind: "move", left: 0.45, right: -0.45, durationMs: 80, pauseMs: 80 },
             { kind: "stop", left: 0, right: 0, durationMs: 0, pauseMs: 120 }
           ]
         },
@@ -618,7 +624,7 @@
           description: "Rotate right.",
           pairWith: "idle_rotate_left",
           steps: [
-            { kind: "move", left: 0.12, right: -0.12, durationMs: 170, pauseMs: 90 },
+            { kind: "move", left: 0.5, right: -0.5, durationMs: 130, pauseMs: 90 },
             { kind: "stop", left: 0, right: 0, durationMs: 0, pauseMs: 120 }
           ]
         },
@@ -628,7 +634,7 @@
           description: "Rotate left.",
           pairWith: "idle_rotate_right",
           steps: [
-            { kind: "move", left: -0.12, right: 0.12, durationMs: 170, pauseMs: 90 },
+            { kind: "move", left: -0.5, right: 0.5, durationMs: 130, pauseMs: 90 },
             { kind: "stop", left: 0, right: 0, durationMs: 0, pauseMs: 120 }
           ]
         },
@@ -638,8 +644,8 @@
           description: "Go forward, then go backward.",
           pairWith: "",
           steps: [
-            { kind: "move", left: 0.1, right: 0.1, durationMs: 180, pauseMs: 120 },
-            { kind: "move", left: -0.09, right: -0.09, durationMs: 180, pauseMs: 100 },
+            { kind: "move", left: 0.35, right: 0.35, durationMs: 130, pauseMs: 120 },
+            { kind: "move", left: -0.35, right: -0.35, durationMs: 130, pauseMs: 110 },
             { kind: "stop", left: 0, right: 0, durationMs: 0, pauseMs: 140 }
           ]
         }
@@ -663,6 +669,7 @@
         angularSign: document.getElementById("angularSign"),
         playSelected: document.getElementById("playSelected"),
         playOrder: document.getElementById("playOrder"),
+        addScenarioButton: document.getElementById("addScenarioButton"),
         saveButton: document.getElementById("saveButton"),
         resetButton: document.getElementById("resetButton"),
         orderList: document.getElementById("orderList"),
@@ -745,6 +752,7 @@
         ui.playSelected.addEventListener("click", () => playScenarioById(selectedId, { dryRun: false }));
         ui.dryRunButton.addEventListener("click", () => playScenarioById(selectedId, { dryRun: true }));
         ui.playOrder.addEventListener("click", () => playScenarioOrder());
+        ui.addScenarioButton.addEventListener("click", () => addScenario());
         ui.saveButton.addEventListener("click", () => saveState());
         ui.resetButton.addEventListener("click", () => {
           scenarios = cloneScenarios(DEFAULT_SCENARIOS);
@@ -875,7 +883,8 @@
             button("Add Step", () => {
               scenario.steps.push({ kind: "move", left: 0.08, right: 0.08, durationMs: 140, pauseMs: 80 });
               renderAll();
-            })
+            }),
+            button("Remove", () => removeScenario(scenario.id), "danger")
           );
           head.append(actions);
           card.append(head);
@@ -885,7 +894,7 @@
           meta.style.gridTemplateColumns = "repeat(auto-fit, minmax(220px, 1fr))";
           meta.style.marginBottom = "12px";
           meta.append(
-            textInput("Title", scenario.title, (value) => {
+            textInput("Animation name", scenario.title, (value) => {
               scenario.title = value || scenario.title;
               renderAll();
             }),
@@ -969,6 +978,54 @@
         return wrap;
       }
 
+      function addScenario() {
+        const number = scenarios.length + 1;
+        const id = makeUniqueScenarioId(`idle_custom_${number}`);
+        const scenario = {
+          id,
+          title: `Custom Animation ${number}`,
+          description: "New idle animation. Tune the wheel values, duration, and pause.",
+          pairWith: "",
+          steps: [
+            { kind: "move", left: 0.5, right: 0.5, durationMs: 130, pauseMs: 90 },
+            { kind: "stop", left: 0, right: 0, durationMs: 0, pauseMs: 120 }
+          ]
+        };
+
+        scenarios.push(scenario);
+        order.push(scenario.id);
+        selectedId = scenario.id;
+        renderAll();
+        log(`Added ${scenario.title}. Click Save to keep it after reload.`);
+      }
+
+      function removeScenario(id) {
+        const scenario = getScenario(id);
+        if (!scenario) {
+          return;
+        }
+        if (scenarios.length <= 1) {
+          log("Keep at least one animation in the demo.", "warn");
+          return;
+        }
+        if (!globalThis.confirm(`Remove ${scenario.title}? This is not permanent until you click Save.`)) {
+          return;
+        }
+
+        scenarios = scenarios.filter((candidate) => candidate.id !== id);
+        order = order.filter((scenarioId) => scenarioId !== id);
+        scenarios.forEach((candidate) => {
+          if (candidate.pairWith === id) {
+            candidate.pairWith = "";
+          }
+        });
+        if (selectedId === id) {
+          selectedId = order[0] || scenarios[0]?.id || "";
+        }
+        renderAll();
+        log(`Removed ${scenario.title}. Click Save to keep this change after reload.`, "warn");
+      }
+
       async function playScenarioOrder() {
         for (const id of order) {
           if (!await playScenarioById(id, { dryRun: false, fromOrder: true })) {
@@ -1036,7 +1093,7 @@
               linear: command.linear,
               angular: command.angular,
               durationMs: command.durationMs,
-              rampMs: Number(ui.rampMs.value),
+              rampMs: command.rampMs,
               label: `${scenario.id}:${index + 1}`,
               source: "idle_scenario_demo",
               log: true,
@@ -1049,7 +1106,7 @@
           await sendStopCommand(`${scenario.id}:step_${index + 1}`);
         }
 
-        await wait(command.durationMs + command.pauseMs);
+        await wait(command.durationMs + command.decayMs + command.pauseMs);
         if (token !== playToken) {
           return;
         }
@@ -1065,8 +1122,11 @@
         const angular = clamp(((right - left) / 2) * angularSign, -MAX_SPEED, MAX_SPEED);
         const durationMs = Math.round(clamp(Number(step.durationMs) * durationScale, 0, MAX_DURATION_MS));
         const pauseMs = Math.round(clamp(Number(step.pauseMs), 0, 2000));
+        const requestedRampMs = Math.round(clamp(Number(ui.rampMs.value), 0, MAX_RAMP_MS));
+        const rampMs = step.kind === "move" ? Math.min(requestedRampMs, Math.floor(durationMs / 2)) : 0;
+        const decayMs = step.kind === "move" ? rampMs : 0;
         const summary = step.kind === "move"
-          ? `L=${signed(left, 3)} R=${signed(right, 3)} -> linear=${signed(linear, 3)} angular=${signed(angular, 3)} ${durationMs}ms + pause ${pauseMs}ms`
+          ? `L=${signed(left, 3)} R=${signed(right, 3)} -> linear=${signed(linear, 3)} angular=${signed(angular, 3)} ${durationMs}ms + decay ${decayMs}ms + pause ${pauseMs}ms`
           : `${step.kind} ${durationMs}ms + pause ${pauseMs}ms`;
 
         return {
@@ -1078,8 +1138,9 @@
           linear,
           angular,
           durationMs,
+          decayMs,
           pauseMs,
-          rampMs: Number(ui.rampMs.value),
+          rampMs,
           summary
         };
       }
@@ -1122,7 +1183,9 @@
       function updateGlobalLabels() {
         ui.speedScaleValue.textContent = `${Number(ui.speedScale.value).toFixed(2)}x`;
         ui.durationScaleValue.textContent = `${Number(ui.durationScale.value).toFixed(2)}x`;
-        ui.rampValue.textContent = `${Math.round(Number(ui.rampMs.value))} ms`;
+        const rampMs = Math.round(clamp(Number(ui.rampMs.value), 0, MAX_RAMP_MS));
+        ui.rampMs.value = String(rampMs);
+        ui.rampValue.textContent = `${rampMs} ms requested`;
       }
 
       function updateExport() {
@@ -1207,6 +1270,21 @@
         return scenarios.find((scenario) => scenario.id === id) ?? null;
       }
 
+      function makeUniqueScenarioId(baseId) {
+        const safeBase = String(baseId || "idle_custom")
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9_]+/g, "_")
+          .replace(/^_+|_+$/g, "") || "idle_custom";
+        let candidate = safeBase;
+        let suffix = 2;
+        while (getScenario(candidate)) {
+          candidate = `${safeBase}_${suffix}`;
+          suffix += 1;
+        }
+        return candidate;
+      }
+
       function cloneScenarios(value) {
         if (typeof structuredClone === "function") {
           return structuredClone(value);
@@ -1228,20 +1306,6 @@
         }, 0);
         const pair = scenario.pairWith ? ` · pair ${scenario.pairWith}` : "";
         return `${scenario.steps.length} steps · ${Math.round(totalMs)}ms${pair}`;
-      }
-
-      function rangeInput(labelText, value, min, max, step, onInput, displayValue) {
-        const label = document.createElement("label");
-        label.innerHTML = `<span>${escapeHtml(labelText)} <strong>${escapeHtml(displayValue)}</strong></span>`;
-        const input = document.createElement("input");
-        input.type = "range";
-        input.min = String(min);
-        input.max = String(max);
-        input.step = String(step);
-        input.value = String(value);
-        input.addEventListener("input", () => onInput(Number(input.value)));
-        label.append(input);
-        return label;
       }
 
       function numberInput(labelText, value, min, max, step, onInput) {
