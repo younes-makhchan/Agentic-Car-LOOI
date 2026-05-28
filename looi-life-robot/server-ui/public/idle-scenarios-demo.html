@@ -803,13 +803,15 @@
         ui.commandState.textContent = lastCommandText;
       }
 
-      function renderAll() {
+      function renderAll({ preserveScroll = true } = {}) {
+        const scroll = preserveScroll ? { x: globalThis.scrollX, y: globalThis.scrollY } : null;
         renderScenarioSelect();
         renderOrder();
         renderScenarios();
         updateGlobalLabels();
         updateExport();
         syncRobotUi();
+        restoreScroll(scroll);
       }
 
       function renderScenarioSelect() {
@@ -929,14 +931,14 @@
             }
             renderAll();
           }),
-          rangeInput("Left wheel", step.left, -MAX_SPEED, MAX_SPEED, 0.005, (value) => {
+          decimalInput("Left wheel", step.left, -MAX_SPEED, MAX_SPEED, 0.005, (value) => {
             step.left = value;
-            renderAll();
-          }, signed(step.left, 3)),
-          rangeInput("Right wheel", step.right, -MAX_SPEED, MAX_SPEED, 0.005, (value) => {
+            updateExport();
+          }),
+          decimalInput("Right wheel", step.right, -MAX_SPEED, MAX_SPEED, 0.005, (value) => {
             step.right = value;
-            renderAll();
-          }, signed(step.right, 3)),
+            updateExport();
+          }),
           numberInput("Duration ms", step.durationMs, 0, MAX_DURATION_MS, 10, (value) => {
             step.durationMs = value;
             updateExport();
@@ -1212,6 +1214,14 @@
         return JSON.parse(JSON.stringify(value));
       }
 
+      function restoreScroll(scroll) {
+        if (!scroll) {
+          return;
+        }
+        globalThis.scrollTo(scroll.x, scroll.y);
+        requestAnimationFrame(() => globalThis.scrollTo(scroll.x, scroll.y));
+      }
+
       function summarizeScenario(scenario) {
         const totalMs = scenario.steps.reduce((total, step) => {
           return total + Number(step.durationMs || 0) + Number(step.pauseMs || 0);
@@ -1244,6 +1254,31 @@
         input.step = String(step);
         input.value = String(value);
         input.addEventListener("input", () => onInput(Math.round(clamp(Number(input.value), min, max))));
+        label.append(input);
+        return label;
+      }
+
+      function decimalInput(labelText, value, min, max, step, onInput) {
+        const label = document.createElement("label");
+        label.innerHTML = `<span>${escapeHtml(labelText)}</span>`;
+        const input = document.createElement("input");
+        input.type = "number";
+        input.min = String(min);
+        input.max = String(max);
+        input.step = String(step);
+        input.value = Number(value).toFixed(3);
+        input.addEventListener("input", () => {
+          const numeric = Number(input.value);
+          if (Number.isFinite(numeric)) {
+            onInput(clamp(numeric, min, max));
+          }
+        });
+        input.addEventListener("change", () => {
+          const numeric = clamp(Number(input.value), min, max);
+          input.value = numeric.toFixed(3);
+          onInput(numeric);
+          renderAll();
+        });
         label.append(input);
         return label;
       }
