@@ -161,27 +161,38 @@ assert.equal(
   "camera" in setup.setup.tools[0].functionDeclarations.find((tool) => tool.name === "run_scenario").parameters.properties,
   false
 );
-assert.equal(setup.setup.systemInstruction.parts[0].text.includes("move_forward_tiny"), false);
-assert.ok(setup.setup.systemInstruction.parts[0].text.includes("run_scenario"));
-assert.ok(setup.setup.systemInstruction.parts[0].text.includes("follow_target"));
-assert.ok(setup.setup.systemInstruction.parts[0].text.includes("take_picture"));
-assert.ok(setup.setup.systemInstruction.parts[0].text.includes("eating"));
-assert.ok(setup.setup.systemInstruction.parts[0].text.includes("drinking"));
-assert.ok(setup.setup.systemInstruction.parts[0].text.includes("question"));
-assert.ok(setup.setup.systemInstruction.parts[0].text.includes("angry"));
-assert.ok(setup.setup.systemInstruction.parts[0].text.includes("loving"));
-assert.ok(setup.setup.systemInstruction.parts[0].text.includes("shocked"));
-assert.ok(setup.setup.systemInstruction.parts[0].text.includes("tell_me_about_yourself"));
-assert.ok(setup.setup.systemInstruction.parts[0].text.includes("finish_telling"));
-assert.ok(setup.setup.systemInstruction.parts[0].text.includes("kiss"));
-assert.ok(setup.setup.systemInstruction.parts[0].text.includes("autonomous vision"));
-assert.ok(setup.setup.systemInstruction.parts[0].text.includes("When nobody is speaking"));
-assert.ok(setup.setup.systemInstruction.parts[0].text.includes("do not ask for confirmation"));
-assert.ok(setup.setup.systemInstruction.parts[0].text.includes("Gemini output audio begins"));
-assert.ok(setup.setup.systemInstruction.parts[0].text.includes("do not duplicate"));
-assert.ok(setup.setup.systemInstruction.parts[0].text.includes("<vision_rules>"));
-assert.ok(setup.setup.systemInstruction.parts[0].text.includes("person"));
-assert.ok(setup.setup.systemInstruction.parts[0].text.includes("follow context only to know whether local tracking is active or lost"));
+const systemPrompt = setup.setup.systemInstruction.parts[0].text;
+assert.equal(systemPrompt.includes("move_forward_tiny"), false);
+assert.ok(systemPrompt.includes("<identity>"));
+assert.ok(systemPrompt.includes("You are LOOI"));
+assert.ok(systemPrompt.includes("not acting as LOOI"));
+assert.ok(systemPrompt.includes("happy, curious, initiative"));
+assert.ok(systemPrompt.includes("Do not call yourself a chatbot"));
+assert.ok(systemPrompt.includes("<speaking_style>"));
+assert.ok(systemPrompt.includes("Silence is acceptable"));
+assert.ok(systemPrompt.includes("<perception_truth>"));
+assert.ok(systemPrompt.includes("Only claim visual facts"));
+assert.ok(systemPrompt.includes("Roboflow follow context only reports local tracking state"));
+assert.ok(systemPrompt.includes("<tool_rules>"));
+assert.ok(systemPrompt.includes("run_scenario"));
+assert.ok(systemPrompt.includes("Use tools for explicit user intent"));
+assert.ok(systemPrompt.includes("Safe expressive scenarios may be autonomous"));
+assert.ok(systemPrompt.includes("Speech-start expressive animation is handled by the runtime"));
+assert.ok(systemPrompt.includes("follow_target"));
+assert.ok(systemPrompt.includes("take_picture"));
+assert.ok(systemPrompt.includes("eating"));
+assert.ok(systemPrompt.includes("drinking"));
+assert.ok(systemPrompt.includes("question"));
+assert.ok(systemPrompt.includes("angry"));
+assert.ok(systemPrompt.includes("loving"));
+assert.ok(systemPrompt.includes("shocked"));
+assert.ok(systemPrompt.includes("tell_me_about_yourself"));
+assert.ok(systemPrompt.includes("finish_telling"));
+assert.ok(systemPrompt.includes("kiss"));
+assert.ok(systemPrompt.includes("<follow_rules>"));
+assert.ok(systemPrompt.includes("follow context only to know whether local tracking is active or lost"));
+assert.ok(systemPrompt.includes("Roboflow controls continuous tracking locally"));
+assert.ok(systemPrompt.includes("<body_context_rules>"));
 
 const runtime = new GeminiLiveRuntime({
   toolExecutor,

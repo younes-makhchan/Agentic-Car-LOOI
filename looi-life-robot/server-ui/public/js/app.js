@@ -1,6 +1,6 @@
 import { PUBLIC_CONFIG } from "./config.js";
 import { LocalEventBus } from "./core/localEventBus.js";
-import { clampNumber } from "./core/runtimeUtils.js";
+import { clampNumber, safeStringify } from "./core/runtimeUtils.js";
 import { EmbodiedActionRouter } from "./embodiment/embodiedActionRouter.js";
 import { ScenarioFrameSequencer } from "./embodiment/scenarioFrameSequencer.js";
 import { PriorityScheduler } from "./embodiment/priorityScheduler.js";
@@ -48,6 +48,7 @@ const IDLE_SCENARIO_SETTINGS_STORAGE_KEY = "looi.idleScenarioSettings.v2";
 const DEFAULT_FRONT_CAMERA_INDEX = 1;
 const IDLE_GAP_MIN_SEC = msToSec(DEFAULT_IDLE_SCHEDULER_SETTINGS.firstIdleGapMs[0]);
 const IDLE_GAP_MAX_SEC = msToSec(DEFAULT_IDLE_SCHEDULER_SETTINGS.firstIdleGapMs[1]);
+const DEFAULT_IDLE_GEMINI_BODY_CONTEXT_GAP_SEC = 5;
 const DEFAULT_IDLE_SCENARIO_SETTINGS = createDefaultIdleScenarioSettings();
 const FOLLOW_TUNING_STORAGE_KEY = "looi.followTuning.v3";
 const FOLLOW_TUNING_PRESETS = Object.freeze({
@@ -206,6 +207,7 @@ const ui = {
   idleSpeakingGapMaxInput: document.getElementById("idleSpeakingGapMaxInput"),
   idleBalanceStartInput: document.getElementById("idleBalanceStartInput"),
   idleBalanceIncrementInput: document.getElementById("idleBalanceIncrementInput"),
+  idleGeminiBodyContextGapInput: document.getElementById("idleGeminiBodyContextGapInput"),
   idleScenarioTestList: document.getElementById("idleScenarioTestList"),
   startLocalBrainButton: document.getElementById("startLocalBrainButton"),
   stopLocalBrainButton: document.getElementById("stopLocalBrainButton"),
@@ -329,6 +331,7 @@ let pendingFollowVisionContextReason = "";
 let geminiAudioWasPlaying = false;
 let geminiVisionResumeTimer = null;
 let geminiAudioEndedAt = 0;
+let lastIdleBodyContextSentAt = 0;
 let looiActivityRaf = 0;
 let looiActivitySlotForDot = [0, 1, 2, 3, 4];
 let looiActivityActiveStep = 0;
@@ -497,7 +500,8 @@ ui.localMotionArmedToggle.addEventListener("change", () => {
   ui.idleSpeakingGapMinInput,
   ui.idleSpeakingGapMaxInput,
   ui.idleBalanceStartInput,
-  ui.idleBalanceIncrementInput
+  ui.idleBalanceIncrementInput,
+  ui.idleGeminiBodyContextGapInput
 ].forEach((element) => {
   element?.addEventListener("change", () => {
     applyIdleScenarioSettingsFromUi();
@@ -914,6 +918,7 @@ async function init() {
   ["sequence_started", "sequence_result", "sequence_interrupted"].forEach((type) => {
     localEventBus.subscribe(type, traceSequenceEvent);
   });
+  localEventBus.subscribe("idle_scenario_completed", handleIdleScenarioCompleted);
 
   attentionSystem = new AttentionSystem({
     logger: (message, level = "info") => log(message, level)
@@ -3007,6 +3012,62 @@ function handleVisionFollowEvent(event = {}) {
   syncGeminiVisionAssist(type);
 }
 
+function handleIdleScenarioCompleted(event = {}) {
+  sendIdleBodyContextToGemini(event.payload ?? {}, "idle_scenario_completed");
+}
+
+function sendIdleBodyContextToGemini(payload = {}, reason = "idle_body_context") {
+  if (!geminiLiveRuntime?.sendText) {
+    return false;
+  }
+
+  if (!geminiLiveRuntime.getStatus?.().connected) {
+    return false;
+  }
+
+  const gapSec = Number(idleScenarioSettings.geminiBodyContextGapSec);
+  if (!Number.isFinite(gapSec) || gapSec <= 0) {
+    return false;
+  }
+
+  const now = Date.now();
+  if (now - lastIdleBodyContextSentAt < gapSec * 1000) {
+    return false;
+  }
+
+  if (shouldHoldGeminiVisionInput()) {
+    return false;
+  }
+
+  const runtime = getIdleRuntimeStatus();
+  if (!runtime.brainLive || runtime.followRunning || runtime.scenarioRunning) {
+    return false;
+  }
+
+  const scenarioId = String(payload.scenario ?? "").trim();
+  const scenario = IDLE_SCENARIOS.find((entry) => entry.id === scenarioId) ?? null;
+  const context = {
+    event: reason,
+    movement: scenario?.title ?? scenarioId,
+    movementId: scenarioId,
+    source: "local_idle_scheduler",
+    note: "Local idle body micro-movement completed. This is body awareness only, not a user command.",
+    instruction: "Do not call tools from this context. You may stay silent, or say one short natural personality comment.",
+    timestamp: new Date().toISOString()
+  };
+
+  const sent = geminiLiveRuntime.sendText(`<body_context>${safeStringify(context)}</body_context>`);
+  sent?.then?.((ok) => {
+    if (ok) {
+      lastIdleBodyContextSentAt = now;
+      log(`Gemini idle body context sent movement=${scenarioId || "unknown"} gap=${Math.round(gapSec)}s`, "debug");
+    }
+  })?.catch?.((error) => {
+    log(`Gemini idle body context failed: ${error.message}`, "warn");
+  });
+  return sent;
+}
+
 function sendFollowStateContext(reason = "follow_context") {
   if (!geminiLiveRuntime?.sendVisionContext) {
     return false;
@@ -3638,7 +3699,8 @@ function applyIdleScenarioSettingsFromUi() {
     speakingIdleMinSec: ui.idleSpeakingGapMinInput?.value,
     speakingIdleMaxSec: ui.idleSpeakingGapMaxInput?.value,
     balanceStartPercent: ui.idleBalanceStartInput?.value,
-    balanceIncrementPercent: ui.idleBalanceIncrementInput?.value
+    balanceIncrementPercent: ui.idleBalanceIncrementInput?.value,
+    geminiBodyContextGapSec: ui.idleGeminiBodyContextGapInput?.value
   });
   saveIdleScenarioSettings(idleScenarioSettings);
   updateIdleScenarioSettingsUi();
@@ -3655,6 +3717,7 @@ function updateIdleScenarioSettingsUi() {
   setInputValue(ui.idleSpeakingGapMaxInput, idleScenarioSettings.speakingIdleMaxSec);
   setInputValue(ui.idleBalanceStartInput, idleScenarioSettings.balanceStartPercent);
   setInputValue(ui.idleBalanceIncrementInput, idleScenarioSettings.balanceIncrementPercent);
+  setInputValue(ui.idleGeminiBodyContextGapInput, idleScenarioSettings.geminiBodyContextGapSec);
 }
 
 function renderIdleScenarioTestButtons() {
@@ -3697,7 +3760,8 @@ function createDefaultIdleScenarioSettings() {
     speakingIdleMinSec: msToSec(DEFAULT_IDLE_SCHEDULER_SETTINGS.speakingIdleGapMs[0]),
     speakingIdleMaxSec: msToSec(DEFAULT_IDLE_SCHEDULER_SETTINGS.speakingIdleGapMs[1]),
     balanceStartPercent: chanceToPercent(DEFAULT_IDLE_SCHEDULER_SETTINGS.balanceStartChance),
-    balanceIncrementPercent: chanceToPercent(DEFAULT_IDLE_SCHEDULER_SETTINGS.balanceChanceIncrement)
+    balanceIncrementPercent: chanceToPercent(DEFAULT_IDLE_SCHEDULER_SETTINGS.balanceChanceIncrement),
+    geminiBodyContextGapSec: DEFAULT_IDLE_GEMINI_BODY_CONTEXT_GAP_SEC
   });
 }
 
@@ -3740,6 +3804,12 @@ function normalizeIdleScenarioSettings(settings = {}) {
       0,
       100,
       DEFAULT_IDLE_SCENARIO_SETTINGS.balanceIncrementPercent
+    )),
+    geminiBodyContextGapSec: Math.round(clampNumber(
+      source.geminiBodyContextGapSec,
+      0,
+      120,
+      DEFAULT_IDLE_SCENARIO_SETTINGS.geminiBodyContextGapSec
     ))
   };
 }
