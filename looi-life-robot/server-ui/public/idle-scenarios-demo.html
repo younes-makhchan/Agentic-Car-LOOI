@@ -1,0 +1,1335 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>LOOI Idle Scenarios Demo</title>
+    <style>
+      :root {
+        --bg: #070806;
+        --panel: rgba(20, 24, 20, 0.86);
+        --panel-strong: rgba(29, 35, 30, 0.96);
+        --line: rgba(231, 255, 218, 0.14);
+        --text: #f2f7e9;
+        --muted: #aebaa5;
+        --good: #83f0a6;
+        --warn: #ffd36a;
+        --bad: #ff7b7b;
+        --accent: #d8ff77;
+        --accent-soft: rgba(216, 255, 119, 0.16);
+        --shadow: 0 22px 90px rgba(0, 0, 0, 0.42);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        min-height: 100%;
+        margin: 0;
+      }
+
+      body {
+        color: var(--text);
+        background:
+          radial-gradient(circle at 14% 10%, rgba(216, 255, 119, 0.16), transparent 30%),
+          radial-gradient(circle at 86% 12%, rgba(131, 240, 166, 0.12), transparent 34%),
+          linear-gradient(145deg, #050605, var(--bg) 50%, #0b100b);
+        font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      button,
+      input,
+      select,
+      textarea {
+        font: inherit;
+      }
+
+      button {
+        border: 0;
+        border-radius: 999px;
+        padding: 0.72rem 1rem;
+        color: var(--text);
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        cursor: pointer;
+      }
+
+      button:hover {
+        background: rgba(255, 255, 255, 0.13);
+      }
+
+      button:disabled {
+        cursor: not-allowed;
+        opacity: 0.48;
+      }
+
+      .primary {
+        color: #0b1007;
+        background: var(--accent);
+        border-color: rgba(216, 255, 119, 0.7);
+      }
+
+      .danger {
+        color: #250606;
+        background: var(--bad);
+        border-color: rgba(255, 123, 123, 0.7);
+      }
+
+      .ghost {
+        background: transparent;
+      }
+
+      .page {
+        width: min(1480px, 100%);
+        margin: 0 auto;
+        padding: 22px;
+      }
+
+      .hero {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(320px, 430px);
+        gap: 18px;
+        align-items: stretch;
+        margin-bottom: 18px;
+      }
+
+      .hero-card,
+      .panel,
+      .scenario-card {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(18px);
+      }
+
+      .hero-card {
+        min-height: 260px;
+        border-radius: 32px;
+        padding: clamp(22px, 4vw, 42px);
+        overflow: hidden;
+        position: relative;
+      }
+
+      .hero-card::after {
+        content: "";
+        position: absolute;
+        right: -80px;
+        bottom: -100px;
+        width: 280px;
+        height: 280px;
+        border-radius: 999px;
+        border: 1px solid rgba(216, 255, 119, 0.26);
+        background: radial-gradient(circle, rgba(216, 255, 119, 0.1), transparent 68%);
+      }
+
+      .eyebrow {
+        margin: 0 0 0.75rem;
+        color: var(--accent);
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        font-size: 0.76rem;
+        font-weight: 800;
+      }
+
+      h1 {
+        margin: 0;
+        max-width: 780px;
+        font-size: clamp(2.5rem, 8vw, 6.4rem);
+        line-height: 0.86;
+        letter-spacing: -0.075em;
+      }
+
+      .hero-card p {
+        max-width: 720px;
+        color: var(--muted);
+        font-size: 1.02rem;
+        line-height: 1.6;
+      }
+
+      .panel {
+        border-radius: 28px;
+        padding: 18px;
+      }
+
+      .panel h2,
+      .scenario-card h3 {
+        margin: 0;
+      }
+
+      .connection-grid,
+      .readout-grid,
+      .settings-grid {
+        display: grid;
+        gap: 12px;
+      }
+
+      .connection-grid {
+        grid-template-columns: 1fr;
+      }
+
+      label {
+        display: grid;
+        gap: 0.42rem;
+        color: var(--muted);
+        font-size: 0.82rem;
+      }
+
+      input,
+      select,
+      textarea {
+        width: 100%;
+        color: var(--text);
+        background: rgba(0, 0, 0, 0.28);
+        border: 1px solid rgba(255, 255, 255, 0.13);
+        border-radius: 14px;
+        padding: 0.72rem 0.8rem;
+        outline: none;
+      }
+
+      input[type="range"] {
+        accent-color: var(--accent);
+        padding: 0;
+      }
+
+      textarea {
+        min-height: 170px;
+        resize: vertical;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+        font-size: 0.78rem;
+        line-height: 1.45;
+      }
+
+      .switch-row,
+      .button-row,
+      .status-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+      }
+
+      .button-row {
+        flex-wrap: wrap;
+        justify-content: flex-start;
+      }
+
+      .status-row {
+        padding: 0.72rem 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      }
+
+      .status-row:last-child {
+        border-bottom: 0;
+      }
+
+      .status-row span {
+        color: var(--muted);
+      }
+
+      .status-good {
+        color: var(--good);
+      }
+
+      .status-warn {
+        color: var(--warn);
+      }
+
+      .status-bad {
+        color: var(--bad);
+      }
+
+      .layout {
+        display: grid;
+        grid-template-columns: minmax(340px, 430px) minmax(0, 1fr);
+        gap: 18px;
+        align-items: start;
+      }
+
+      .sticky {
+        position: sticky;
+        top: 16px;
+        display: grid;
+        gap: 14px;
+      }
+
+      .scenario-grid {
+        display: grid;
+        gap: 14px;
+      }
+
+      .scenario-card {
+        border-radius: 26px;
+        padding: 16px;
+      }
+
+      .scenario-card.active {
+        border-color: rgba(216, 255, 119, 0.66);
+        background:
+          linear-gradient(135deg, rgba(216, 255, 119, 0.11), transparent 34%),
+          var(--panel-strong);
+      }
+
+      .scenario-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 14px;
+      }
+
+      .scenario-title {
+        display: grid;
+        gap: 0.32rem;
+      }
+
+      .scenario-title strong {
+        color: var(--accent);
+        font-size: 0.78rem;
+        letter-spacing: 0.09em;
+        text-transform: uppercase;
+      }
+
+      .scenario-title p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 0.85rem;
+      }
+
+      .step-list {
+        display: grid;
+        gap: 10px;
+      }
+
+      .step {
+        display: grid;
+        grid-template-columns: 92px minmax(0, 1fr) minmax(0, 1fr) 118px 118px 80px;
+        gap: 10px;
+        align-items: end;
+        padding: 10px;
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.055);
+        border: 1px solid rgba(255, 255, 255, 0.09);
+      }
+
+      .step label {
+        font-size: 0.72rem;
+      }
+
+      .step input,
+      .step select {
+        padding: 0.55rem;
+        border-radius: 12px;
+      }
+
+      .summary-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        width: fit-content;
+        padding: 0.34rem 0.58rem;
+        border-radius: 999px;
+        color: var(--muted);
+        background: rgba(255, 255, 255, 0.07);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        font-size: 0.76rem;
+      }
+
+      .order-list {
+        display: grid;
+        gap: 8px;
+      }
+
+      .order-item {
+        display: grid;
+        grid-template-columns: 34px minmax(0, 1fr) auto auto;
+        gap: 8px;
+        align-items: center;
+        padding: 9px;
+        border-radius: 16px;
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(255, 255, 255, 0.09);
+      }
+
+      .order-item button {
+        padding: 0.45rem 0.62rem;
+      }
+
+      .log {
+        max-height: 220px;
+        overflow: auto;
+        display: grid;
+        gap: 6px;
+        color: var(--muted);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+        font-size: 0.75rem;
+      }
+
+      .log div {
+        padding: 7px 8px;
+        border-radius: 10px;
+        background: rgba(0, 0, 0, 0.22);
+      }
+
+      .note {
+        color: var(--muted);
+        font-size: 0.84rem;
+        line-height: 1.55;
+      }
+
+      .mobile-warning {
+        display: none;
+      }
+
+      @media (max-width: 980px) {
+        .hero,
+        .layout {
+          grid-template-columns: 1fr;
+        }
+
+        .sticky {
+          position: static;
+        }
+
+        .step {
+          grid-template-columns: 1fr 1fr;
+        }
+      }
+
+      @media (max-width: 560px) {
+        .page {
+          padding: 12px;
+        }
+
+        .hero-card,
+        .panel,
+        .scenario-card {
+          border-radius: 22px;
+        }
+
+        .step {
+          grid-template-columns: 1fr;
+        }
+
+        .order-item {
+          grid-template-columns: 30px 1fr;
+        }
+
+        .mobile-warning {
+          display: block;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <section class="hero">
+        <div class="hero-card">
+          <p class="eyebrow">LOOI idle movement lab</p>
+          <h1>Idle scenarios before we wire them in.</h1>
+          <p>
+            Tune small autonomous body motions for the moments when LOOI is silent or only talking.
+            This demo edits wheel-level steps, converts them to linear/angular commands, and can send
+            them to ESP32 when connected and armed.
+          </p>
+          <p class="note mobile-warning">
+            Mobile note: keep the phone/robot lifted or wheels off the table for the first tests.
+          </p>
+        </div>
+
+        <aside class="panel">
+          <h2>Robot Link</h2>
+          <div class="connection-grid" style="margin-top: 14px">
+            <label>
+              <span>ESP32 WebSocket URL</span>
+              <input id="esp32Url" value="ws://192.168.4.1:81" />
+            </label>
+            <div class="switch-row">
+              <span>Connect ESP32</span>
+              <label style="display:flex;align-items:center;gap:8px;width:auto">
+                <input id="connectToggle" type="checkbox" style="width:auto" />
+                <strong id="connectLabel">Disconnected</strong>
+              </label>
+            </div>
+            <div class="switch-row">
+              <span>Allow movement</span>
+              <label style="display:flex;align-items:center;gap:8px;width:auto">
+                <input id="motionToggle" type="checkbox" style="width:auto" />
+                <strong id="motionLabel">Held</strong>
+              </label>
+            </div>
+            <div class="button-row">
+              <button id="stopButton" class="danger" type="button">Stop Motion</button>
+              <button id="dryRunButton" class="ghost" type="button">Dry Run Selected</button>
+            </div>
+          </div>
+        </aside>
+      </section>
+
+      <section class="layout">
+        <aside class="sticky">
+          <section class="panel">
+            <h2>Playback</h2>
+            <div class="settings-grid" style="margin-top: 14px">
+              <label>
+                <span>Selected scenario</span>
+                <select id="scenarioSelect"></select>
+              </label>
+              <label>
+                <span>Global speed scale</span>
+                <strong id="speedScaleValue">1.00x</strong>
+                <input id="speedScale" type="range" min="0.15" max="1.5" step="0.01" value="1" />
+              </label>
+              <label>
+                <span>Global duration scale</span>
+                <strong id="durationScaleValue">1.00x</strong>
+                <input id="durationScale" type="range" min="0.25" max="2" step="0.01" value="1" />
+              </label>
+              <label>
+                <span>Ramp ms</span>
+                <strong id="rampValue">0 ms</strong>
+                <input id="rampMs" type="range" min="0" max="400" step="10" value="0" />
+              </label>
+              <label>
+                <span>Angular sign</span>
+                <select id="angularSign">
+                  <option value="1">Normal</option>
+                  <option value="-1">Invert if robot turns opposite</option>
+                </select>
+              </label>
+              <div class="button-row">
+                <button id="playSelected" class="primary" type="button">Play Selected</button>
+                <button id="playOrder" type="button">Play Order</button>
+                <button id="saveButton" type="button">Save</button>
+                <button id="resetButton" type="button">Reset</button>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel">
+            <h2>Order</h2>
+            <p class="note">
+              Use this for the first sequencing rule. Example: put the opposite correction after a
+              one-sided motion before allowing that motion again.
+            </p>
+            <div id="orderList" class="order-list"></div>
+          </section>
+
+          <section class="panel">
+            <h2>Status</h2>
+            <div class="readout-grid">
+              <div class="status-row">
+                <span>ESP32</span>
+                <strong id="robotState" class="status-bad">disconnected</strong>
+              </div>
+              <div class="status-row">
+                <span>Command</span>
+                <strong id="commandState">held</strong>
+              </div>
+              <div class="status-row">
+                <span>Current step</span>
+                <strong id="stepState">none</strong>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel">
+            <h2>Export</h2>
+            <p class="note">This is the JSON shape we can later move into the main idle scenario runtime.</p>
+            <textarea id="exportText" spellcheck="false"></textarea>
+          </section>
+
+          <section class="panel">
+            <h2>Log</h2>
+            <div id="log" class="log"></div>
+          </section>
+        </aside>
+
+        <section id="scenarioGrid" class="scenario-grid"></section>
+      </section>
+    </main>
+
+    <script type="module">
+      import { PUBLIC_CONFIG } from "./js/config.js";
+      import { ESP32Client } from "./js/robot/esp32Client.js";
+      import { CommandQueue } from "./js/robot/commandQueue.js";
+
+      const STORAGE_KEY = "looi.idleScenariosDemo.v1";
+      const MAX_SPEED = 0.5;
+      const MAX_DURATION_MS = 1200;
+
+      const DEFAULT_SCENARIOS = [
+        {
+          id: "idle_shift_right_back_left_front",
+          title: "Animation 1",
+          description: "Right wheel back, left wheel front. A small twist that should later be balanced by the opposite.",
+          pairWith: "idle_shift_right_front_left_back",
+          steps: [
+            { kind: "move", left: 0.13, right: -0.13, durationMs: 180, pauseMs: 70 },
+            { kind: "stop", left: 0, right: 0, durationMs: 0, pauseMs: 120 }
+          ]
+        },
+        {
+          id: "idle_shift_right_front_left_back",
+          title: "Animation 1B",
+          description: "Right wheel front, left wheel back. Counter-motion for Animation 1.",
+          pairWith: "idle_shift_right_back_left_front",
+          steps: [
+            { kind: "move", left: -0.13, right: 0.13, durationMs: 180, pauseMs: 70 },
+            { kind: "stop", left: 0, right: 0, durationMs: 0, pauseMs: 120 }
+          ]
+        },
+        {
+          id: "idle_both_front_left_soft",
+          title: "Animation 2",
+          description: "Left a bit front and right front. A small forward nudge with left side softer.",
+          pairWith: "",
+          steps: [
+            { kind: "move", left: 0.07, right: 0.13, durationMs: 180, pauseMs: 90 },
+            { kind: "stop", left: 0, right: 0, durationMs: 0, pauseMs: 120 }
+          ]
+        },
+        {
+          id: "idle_both_front_tiny",
+          title: "Animation 3",
+          description: "Left tiny front and right tiny front. Very subtle forward life.",
+          pairWith: "",
+          steps: [
+            { kind: "move", left: 0.045, right: 0.06, durationMs: 140, pauseMs: 110 },
+            { kind: "stop", left: 0, right: 0, durationMs: 0, pauseMs: 120 }
+          ]
+        },
+        {
+          id: "idle_pulsed_wheel_opposition",
+          title: "Animation 4",
+          description: "Left wheel front, right wheel back, tiny pause, continue moving.",
+          pairWith: "idle_shift_right_front_left_back",
+          steps: [
+            { kind: "move", left: 0.11, right: -0.11, durationMs: 95, pauseMs: 70 },
+            { kind: "stop", left: 0, right: 0, durationMs: 0, pauseMs: 90 },
+            { kind: "move", left: 0.11, right: -0.11, durationMs: 95, pauseMs: 80 },
+            { kind: "stop", left: 0, right: 0, durationMs: 0, pauseMs: 120 }
+          ]
+        },
+        {
+          id: "idle_rotate_right",
+          title: "Animation 5",
+          description: "Rotate right.",
+          pairWith: "idle_rotate_left",
+          steps: [
+            { kind: "move", left: 0.12, right: -0.12, durationMs: 170, pauseMs: 90 },
+            { kind: "stop", left: 0, right: 0, durationMs: 0, pauseMs: 120 }
+          ]
+        },
+        {
+          id: "idle_rotate_left",
+          title: "Animation 6",
+          description: "Rotate left.",
+          pairWith: "idle_rotate_right",
+          steps: [
+            { kind: "move", left: -0.12, right: 0.12, durationMs: 170, pauseMs: 90 },
+            { kind: "stop", left: 0, right: 0, durationMs: 0, pauseMs: 120 }
+          ]
+        },
+        {
+          id: "idle_forward_then_backward",
+          title: "Animation 7",
+          description: "Go forward, then go backward.",
+          pairWith: "",
+          steps: [
+            { kind: "move", left: 0.1, right: 0.1, durationMs: 180, pauseMs: 120 },
+            { kind: "move", left: -0.09, right: -0.09, durationMs: 180, pauseMs: 100 },
+            { kind: "stop", left: 0, right: 0, durationMs: 0, pauseMs: 140 }
+          ]
+        }
+      ];
+
+      const ui = {
+        esp32Url: document.getElementById("esp32Url"),
+        connectToggle: document.getElementById("connectToggle"),
+        connectLabel: document.getElementById("connectLabel"),
+        motionToggle: document.getElementById("motionToggle"),
+        motionLabel: document.getElementById("motionLabel"),
+        stopButton: document.getElementById("stopButton"),
+        dryRunButton: document.getElementById("dryRunButton"),
+        scenarioSelect: document.getElementById("scenarioSelect"),
+        speedScale: document.getElementById("speedScale"),
+        speedScaleValue: document.getElementById("speedScaleValue"),
+        durationScale: document.getElementById("durationScale"),
+        durationScaleValue: document.getElementById("durationScaleValue"),
+        rampMs: document.getElementById("rampMs"),
+        rampValue: document.getElementById("rampValue"),
+        angularSign: document.getElementById("angularSign"),
+        playSelected: document.getElementById("playSelected"),
+        playOrder: document.getElementById("playOrder"),
+        saveButton: document.getElementById("saveButton"),
+        resetButton: document.getElementById("resetButton"),
+        orderList: document.getElementById("orderList"),
+        scenarioGrid: document.getElementById("scenarioGrid"),
+        robotState: document.getElementById("robotState"),
+        commandState: document.getElementById("commandState"),
+        stepState: document.getElementById("stepState"),
+        exportText: document.getElementById("exportText"),
+        log: document.getElementById("log")
+      };
+
+      let robotClient = null;
+      let commandQueue = null;
+      let scenarios = cloneScenarios(DEFAULT_SCENARIOS);
+      let order = scenarios.map((scenario) => scenario.id);
+      let selectedId = scenarios[0]?.id ?? "";
+      let running = false;
+      let playToken = 0;
+      let lastCommandText = "held";
+
+      init();
+
+      async function init() {
+        const config = await loadConfig();
+        ui.esp32Url.value = config.defaultEsp32WsUrl || PUBLIC_CONFIG.defaultEsp32WsUrl || "ws://192.168.4.1:81";
+        loadSaved();
+        initRobotClient();
+        bindEvents();
+        renderAll();
+        log("Idle scenarios demo ready.");
+      }
+
+      async function loadConfig() {
+        try {
+          const response = await fetch("/api/config", { cache: "no-store" });
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+          }
+          return { ...PUBLIC_CONFIG, ...(await response.json()) };
+        } catch (error) {
+          log(`Using fallback config: ${error.message}`, "warn");
+          return { ...PUBLIC_CONFIG };
+        }
+      }
+
+      function initRobotClient() {
+        robotClient = new ESP32Client({
+          url: ui.esp32Url.value,
+          maxSpeed: MAX_SPEED,
+          minDurationMs: 0,
+          logger: (message, level = "info") => log(message, level)
+        });
+        commandQueue = new CommandQueue({
+          robotClient,
+          maxSpeed: MAX_SPEED,
+          minDurationMs: 0,
+          maxDurationMs: MAX_DURATION_MS,
+          logger: (message, level = "info") => log(message, level)
+        });
+        robotClient.onStatus(syncRobotUi);
+        robotClient.onError((error) => log(`ESP32 error: ${error.message ?? "unknown"}`, "warn"));
+        robotClient.onAck((message) => log(`ESP32 ack cmd=${message.cmd ?? "unknown"} label=${message.label ?? message.motion_label ?? "--"}`));
+        syncRobotUi();
+      }
+
+      function bindEvents() {
+        ui.connectToggle.addEventListener("change", () => {
+          setRobotConnection(ui.connectToggle.checked).catch((error) => {
+            log(`ESP32 connection failed: ${error.message}`, "warn");
+            syncRobotUi();
+          });
+        });
+        ui.motionToggle.addEventListener("change", () => {
+          if (!ui.motionToggle.checked) {
+            stopMotion("movement_switch_off");
+          }
+          syncRobotUi();
+        });
+        ui.stopButton.addEventListener("click", () => stopMotion("demo_stop"));
+        ui.playSelected.addEventListener("click", () => playScenarioById(selectedId, { dryRun: false }));
+        ui.dryRunButton.addEventListener("click", () => playScenarioById(selectedId, { dryRun: true }));
+        ui.playOrder.addEventListener("click", () => playScenarioOrder());
+        ui.saveButton.addEventListener("click", () => saveState());
+        ui.resetButton.addEventListener("click", () => {
+          scenarios = cloneScenarios(DEFAULT_SCENARIOS);
+          order = scenarios.map((scenario) => scenario.id);
+          selectedId = scenarios[0]?.id ?? "";
+          saveState();
+          renderAll();
+          log("Reset idle scenarios to defaults.");
+        });
+        ui.scenarioSelect.addEventListener("change", () => {
+          selectedId = ui.scenarioSelect.value;
+          renderAll();
+        });
+        [ui.speedScale, ui.durationScale, ui.rampMs, ui.angularSign].forEach((input) => {
+          input.addEventListener("input", () => {
+            updateGlobalLabels();
+            updateExport();
+          });
+        });
+        globalThis.addEventListener("beforeunload", () => {
+          if (running) {
+            robotClient?.stop?.("idle_demo_unload");
+          }
+        });
+      }
+
+      async function setRobotConnection(connected) {
+        ui.connectToggle.disabled = true;
+        try {
+          if (connected) {
+            await robotClient.connect(ui.esp32Url.value.trim() || PUBLIC_CONFIG.defaultEsp32WsUrl);
+            log("ESP32 connected.", "info");
+            return;
+          }
+
+          ui.motionToggle.checked = false;
+          await stopMotion("disconnect");
+          await robotClient.disconnect();
+          log("ESP32 disconnected.", "info");
+        } finally {
+          ui.connectToggle.disabled = false;
+          syncRobotUi();
+        }
+      }
+
+      function syncRobotUi() {
+        const status = robotClient?.getStatus?.() ?? {};
+        const connected = Boolean(status.connected);
+        const state = status.state ?? "disconnected";
+        ui.connectToggle.checked = connected || state === "connecting";
+        ui.connectLabel.textContent = connected ? "Connected" : state === "connecting" ? "Connecting" : "Disconnected";
+        ui.robotState.textContent = state;
+        ui.robotState.className = connected ? "status-good" : state === "connecting" ? "status-warn" : "status-bad";
+        ui.motionLabel.textContent = ui.motionToggle.checked ? connected ? "Armed" : "Waiting" : "Held";
+        ui.motionLabel.className = ui.motionToggle.checked && connected ? "status-warn" : "";
+        ui.commandState.textContent = lastCommandText;
+      }
+
+      function renderAll() {
+        renderScenarioSelect();
+        renderOrder();
+        renderScenarios();
+        updateGlobalLabels();
+        updateExport();
+        syncRobotUi();
+      }
+
+      function renderScenarioSelect() {
+        const current = selectedId;
+        ui.scenarioSelect.replaceChildren();
+        scenarios.forEach((scenario) => {
+          const option = document.createElement("option");
+          option.value = scenario.id;
+          option.textContent = `${scenario.title}: ${scenario.description}`;
+          ui.scenarioSelect.append(option);
+        });
+        selectedId = scenarios.some((scenario) => scenario.id === current) ? current : scenarios[0]?.id ?? "";
+        ui.scenarioSelect.value = selectedId;
+      }
+
+      function renderOrder() {
+        ui.orderList.replaceChildren();
+        order.forEach((id, index) => {
+          const scenario = getScenario(id);
+          if (!scenario) {
+            return;
+          }
+          const item = document.createElement("div");
+          item.className = "order-item";
+          item.innerHTML = `
+            <strong>${index + 1}</strong>
+            <span>${escapeHtml(scenario.title)} <small style="color:var(--muted)">${escapeHtml(scenario.id)}</small></span>
+          `;
+          const up = button("Up", () => moveOrder(index, -1));
+          const down = button("Down", () => moveOrder(index, 1));
+          item.append(up, down);
+          ui.orderList.append(item);
+        });
+      }
+
+      function renderScenarios() {
+        ui.scenarioGrid.replaceChildren();
+        scenarios.forEach((scenario) => {
+          const card = document.createElement("article");
+          card.className = `scenario-card${scenario.id === selectedId ? " active" : ""}`;
+          card.dataset.id = scenario.id;
+
+          const head = document.createElement("div");
+          head.className = "scenario-head";
+          head.innerHTML = `
+            <div class="scenario-title">
+              <strong>${escapeHtml(scenario.title)}</strong>
+              <h3>${escapeHtml(scenario.id)}</h3>
+              <p>${escapeHtml(scenario.description)}</p>
+              <span class="summary-pill">${summarizeScenario(scenario)}</span>
+            </div>
+          `;
+          const actions = document.createElement("div");
+          actions.className = "button-row";
+          actions.append(
+            button("Select", () => {
+              selectedId = scenario.id;
+              renderAll();
+            }),
+            button("Play", () => playScenarioById(scenario.id, { dryRun: false }), "primary"),
+            button("Add Step", () => {
+              scenario.steps.push({ kind: "move", left: 0.08, right: 0.08, durationMs: 140, pauseMs: 80 });
+              renderAll();
+            })
+          );
+          head.append(actions);
+          card.append(head);
+
+          const meta = document.createElement("div");
+          meta.className = "settings-grid";
+          meta.style.gridTemplateColumns = "repeat(auto-fit, minmax(220px, 1fr))";
+          meta.style.marginBottom = "12px";
+          meta.append(
+            textInput("Title", scenario.title, (value) => {
+              scenario.title = value || scenario.title;
+              renderAll();
+            }),
+            textInput("Description", scenario.description, (value) => {
+              scenario.description = value;
+              renderAll();
+            }),
+            selectInput("Must balance with", scenario.pairWith || "", [
+              { value: "", label: "None" },
+              ...scenarios
+                .filter((candidate) => candidate.id !== scenario.id)
+                .map((candidate) => ({ value: candidate.id, label: candidate.title }))
+            ], (value) => {
+              scenario.pairWith = value;
+              updateExport();
+            })
+          );
+          card.append(meta);
+
+          const steps = document.createElement("div");
+          steps.className = "step-list";
+          scenario.steps.forEach((step, stepIndex) => {
+            steps.append(renderStep(scenario, step, stepIndex));
+          });
+          card.append(steps);
+          ui.scenarioGrid.append(card);
+        });
+      }
+
+      function renderStep(scenario, step, stepIndex) {
+        const row = document.createElement("div");
+        row.className = "step";
+        row.append(
+          selectInput("Kind", step.kind, [
+            { value: "move", label: "Move" },
+            { value: "stop", label: "Stop" },
+            { value: "pause", label: "Pause" }
+          ], (value) => {
+            step.kind = value;
+            if (value !== "move") {
+              step.left = 0;
+              step.right = 0;
+            }
+            renderAll();
+          }),
+          rangeInput("Left wheel", step.left, -MAX_SPEED, MAX_SPEED, 0.005, (value) => {
+            step.left = value;
+            renderAll();
+          }, signed(step.left, 3)),
+          rangeInput("Right wheel", step.right, -MAX_SPEED, MAX_SPEED, 0.005, (value) => {
+            step.right = value;
+            renderAll();
+          }, signed(step.right, 3)),
+          numberInput("Duration ms", step.durationMs, 0, MAX_DURATION_MS, 10, (value) => {
+            step.durationMs = value;
+            updateExport();
+          }),
+          numberInput("Pause ms", step.pauseMs, 0, 2000, 10, (value) => {
+            step.pauseMs = value;
+            updateExport();
+          }),
+          stepButtons(scenario, stepIndex)
+        );
+        return row;
+      }
+
+      function stepButtons(scenario, stepIndex) {
+        const wrap = document.createElement("div");
+        wrap.className = "button-row";
+        wrap.append(
+          button("Up", () => moveStep(scenario, stepIndex, -1)),
+          button("Down", () => moveStep(scenario, stepIndex, 1)),
+          button("Del", () => {
+            scenario.steps.splice(stepIndex, 1);
+            if (!scenario.steps.length) {
+              scenario.steps.push({ kind: "stop", left: 0, right: 0, durationMs: 0, pauseMs: 100 });
+            }
+            renderAll();
+          }, "danger")
+        );
+        return wrap;
+      }
+
+      async function playScenarioOrder() {
+        for (const id of order) {
+          if (!await playScenarioById(id, { dryRun: false, fromOrder: true })) {
+            break;
+          }
+        }
+      }
+
+      async function playScenarioById(id, { dryRun = false, fromOrder = false } = {}) {
+        const scenario = getScenario(id);
+        if (!scenario) {
+          log(`Scenario not found: ${id}`, "warn");
+          return false;
+        }
+
+        if (running && !fromOrder) {
+          log("Playback is already running. Stop first.", "warn");
+          return false;
+        }
+
+        const token = ++playToken;
+        running = true;
+        selectedId = scenario.id;
+        renderAll();
+        log(`${dryRun ? "Dry run" : "Playing"} ${scenario.title} (${scenario.id})`, dryRun ? "info" : "warn");
+
+        try {
+          for (let index = 0; index < scenario.steps.length; index += 1) {
+            if (token !== playToken) {
+              return false;
+            }
+
+            const step = scenario.steps[index];
+            await playStep(scenario, step, index, { dryRun, token });
+          }
+
+          if (!dryRun) {
+            await stopMotion(`idle_demo_complete:${scenario.id}`);
+          }
+          log(`Completed ${scenario.title}.`);
+          return true;
+        } finally {
+          if (token === playToken) {
+            running = false;
+            ui.stepState.textContent = "none";
+            syncRobotUi();
+          }
+        }
+      }
+
+      async function playStep(scenario, step, index, { dryRun, token }) {
+        const command = buildCommand(step, scenario, index);
+        ui.stepState.textContent = `${scenario.title} step ${index + 1}: ${command.summary}`;
+        log(`step ${index + 1} ${scenario.id}: ${command.summary}`, "debug");
+
+        if (!dryRun && step.kind === "move") {
+          if (!ui.motionToggle.checked) {
+            log("Movement is held. Enable Allow movement to send to ESP32.", "warn");
+          } else if (!robotClient?.isConnected?.()) {
+            log("ESP32 is not connected. Step not sent.", "warn");
+          } else {
+            lastCommandText = command.summary;
+            syncRobotUi();
+            await commandQueue.sendRealtimeMotion({
+              linear: command.linear,
+              angular: command.angular,
+              durationMs: command.durationMs,
+              rampMs: Number(ui.rampMs.value),
+              label: `${scenario.id}:${index + 1}`,
+              source: "idle_scenario_demo",
+              log: true,
+              record: true
+            }).catch((error) => {
+              log(`Motion send failed: ${error.message}`, "warn");
+            });
+          }
+        } else if (!dryRun && step.kind === "stop") {
+          await sendStopCommand(`${scenario.id}:step_${index + 1}`);
+        }
+
+        await wait(command.durationMs + command.pauseMs);
+        if (token !== playToken) {
+          return;
+        }
+      }
+
+      function buildCommand(step, scenario, index) {
+        const speedScale = Number(ui.speedScale.value);
+        const durationScale = Number(ui.durationScale.value);
+        const angularSign = Number(ui.angularSign.value);
+        const left = step.kind === "move" ? clamp(Number(step.left) * speedScale, -MAX_SPEED, MAX_SPEED) : 0;
+        const right = step.kind === "move" ? clamp(Number(step.right) * speedScale, -MAX_SPEED, MAX_SPEED) : 0;
+        const linear = clamp((left + right) / 2, -MAX_SPEED, MAX_SPEED);
+        const angular = clamp(((right - left) / 2) * angularSign, -MAX_SPEED, MAX_SPEED);
+        const durationMs = Math.round(clamp(Number(step.durationMs) * durationScale, 0, MAX_DURATION_MS));
+        const pauseMs = Math.round(clamp(Number(step.pauseMs), 0, 2000));
+        const summary = step.kind === "move"
+          ? `L=${signed(left, 3)} R=${signed(right, 3)} -> linear=${signed(linear, 3)} angular=${signed(angular, 3)} ${durationMs}ms + pause ${pauseMs}ms`
+          : `${step.kind} ${durationMs}ms + pause ${pauseMs}ms`;
+
+        return {
+          scenario: scenario.id,
+          step: index + 1,
+          kind: step.kind,
+          left,
+          right,
+          linear,
+          angular,
+          durationMs,
+          pauseMs,
+          rampMs: Number(ui.rampMs.value),
+          summary
+        };
+      }
+
+      async function stopMotion(reason = "idle_demo_stop") {
+        playToken += 1;
+        running = false;
+        lastCommandText = reason.replaceAll("_", " ");
+        ui.stepState.textContent = "none";
+        syncRobotUi();
+        await sendStopCommand(reason);
+      }
+
+      async function sendStopCommand(reason = "idle_demo_stop") {
+        if (robotClient?.isConnected?.()) {
+          await commandQueue?.sendRealtimeStop?.(reason, { log: true, record: true })?.catch?.((error) => {
+            log(`Stop failed: ${error.message}`, "warn");
+          });
+        }
+      }
+
+      function moveOrder(index, direction) {
+        const nextIndex = index + direction;
+        if (nextIndex < 0 || nextIndex >= order.length) {
+          return;
+        }
+        [order[index], order[nextIndex]] = [order[nextIndex], order[index]];
+        renderAll();
+      }
+
+      function moveStep(scenario, index, direction) {
+        const nextIndex = index + direction;
+        if (nextIndex < 0 || nextIndex >= scenario.steps.length) {
+          return;
+        }
+        [scenario.steps[index], scenario.steps[nextIndex]] = [scenario.steps[nextIndex], scenario.steps[index]];
+        renderAll();
+      }
+
+      function updateGlobalLabels() {
+        ui.speedScaleValue.textContent = `${Number(ui.speedScale.value).toFixed(2)}x`;
+        ui.durationScaleValue.textContent = `${Number(ui.durationScale.value).toFixed(2)}x`;
+        ui.rampValue.textContent = `${Math.round(Number(ui.rampMs.value))} ms`;
+      }
+
+      function updateExport() {
+        const payload = {
+          version: 1,
+          order,
+          global: {
+            speedScale: Number(ui.speedScale.value),
+            durationScale: Number(ui.durationScale.value),
+            rampMs: Number(ui.rampMs.value),
+            angularSign: Number(ui.angularSign.value)
+          },
+          scenarios: scenarios.map((scenario) => ({
+            id: scenario.id,
+            title: scenario.title,
+            description: scenario.description,
+            pairWith: scenario.pairWith || null,
+            steps: scenario.steps.map((step, index) => ({
+              ...buildCommand(step, scenario, index),
+              leftInput: Number(step.left),
+              rightInput: Number(step.right),
+              originalDurationMs: Number(step.durationMs),
+              originalPauseMs: Number(step.pauseMs)
+            }))
+          }))
+        };
+        ui.exportText.value = JSON.stringify(payload, null, 2);
+      }
+
+      function saveState() {
+        const payload = {
+          scenarios,
+          order,
+          selectedId,
+          globals: {
+            speedScale: ui.speedScale.value,
+            durationScale: ui.durationScale.value,
+            rampMs: ui.rampMs.value,
+            angularSign: ui.angularSign.value
+          }
+        };
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+          updateExport();
+          log("Saved idle scenario demo settings.");
+        } catch (error) {
+          log(`Save failed: ${error.message}`, "warn");
+        }
+      }
+
+      function loadSaved() {
+        try {
+          const raw = localStorage.getItem(STORAGE_KEY);
+          if (!raw) {
+            return;
+          }
+          const saved = JSON.parse(raw);
+          if (Array.isArray(saved.scenarios) && saved.scenarios.length) {
+            scenarios = saved.scenarios;
+          }
+          if (Array.isArray(saved.order) && saved.order.length) {
+            order = saved.order.filter((id) => scenarios.some((scenario) => scenario.id === id));
+            scenarios.forEach((scenario) => {
+              if (!order.includes(scenario.id)) {
+                order.push(scenario.id);
+              }
+            });
+          }
+          selectedId = saved.selectedId || scenarios[0]?.id || "";
+          if (saved.globals) {
+            ui.speedScale.value = saved.globals.speedScale ?? ui.speedScale.value;
+            ui.durationScale.value = saved.globals.durationScale ?? ui.durationScale.value;
+            ui.rampMs.value = saved.globals.rampMs ?? ui.rampMs.value;
+            ui.angularSign.value = saved.globals.angularSign ?? ui.angularSign.value;
+          }
+        } catch (error) {
+          log(`Saved settings ignored: ${error.message}`, "warn");
+        }
+      }
+
+      function getScenario(id) {
+        return scenarios.find((scenario) => scenario.id === id) ?? null;
+      }
+
+      function cloneScenarios(value) {
+        if (typeof structuredClone === "function") {
+          return structuredClone(value);
+        }
+        return JSON.parse(JSON.stringify(value));
+      }
+
+      function summarizeScenario(scenario) {
+        const totalMs = scenario.steps.reduce((total, step) => {
+          return total + Number(step.durationMs || 0) + Number(step.pauseMs || 0);
+        }, 0);
+        const pair = scenario.pairWith ? ` · pair ${scenario.pairWith}` : "";
+        return `${scenario.steps.length} steps · ${Math.round(totalMs)}ms${pair}`;
+      }
+
+      function rangeInput(labelText, value, min, max, step, onInput, displayValue) {
+        const label = document.createElement("label");
+        label.innerHTML = `<span>${escapeHtml(labelText)} <strong>${escapeHtml(displayValue)}</strong></span>`;
+        const input = document.createElement("input");
+        input.type = "range";
+        input.min = String(min);
+        input.max = String(max);
+        input.step = String(step);
+        input.value = String(value);
+        input.addEventListener("input", () => onInput(Number(input.value)));
+        label.append(input);
+        return label;
+      }
+
+      function numberInput(labelText, value, min, max, step, onInput) {
+        const label = document.createElement("label");
+        label.innerHTML = `<span>${escapeHtml(labelText)}</span>`;
+        const input = document.createElement("input");
+        input.type = "number";
+        input.min = String(min);
+        input.max = String(max);
+        input.step = String(step);
+        input.value = String(value);
+        input.addEventListener("input", () => onInput(Math.round(clamp(Number(input.value), min, max))));
+        label.append(input);
+        return label;
+      }
+
+      function textInput(labelText, value, onInput) {
+        const label = document.createElement("label");
+        label.innerHTML = `<span>${escapeHtml(labelText)}</span>`;
+        const input = document.createElement("input");
+        input.value = value;
+        input.addEventListener("change", () => onInput(input.value.trim()));
+        label.append(input);
+        return label;
+      }
+
+      function selectInput(labelText, value, options, onInput) {
+        const label = document.createElement("label");
+        label.innerHTML = `<span>${escapeHtml(labelText)}</span>`;
+        const select = document.createElement("select");
+        options.forEach((option) => {
+          const item = document.createElement("option");
+          item.value = option.value;
+          item.textContent = option.label;
+          select.append(item);
+        });
+        select.value = value;
+        select.addEventListener("change", () => onInput(select.value));
+        label.append(select);
+        return label;
+      }
+
+      function button(text, onClick, className = "") {
+        const element = document.createElement("button");
+        element.type = "button";
+        element.textContent = text;
+        if (className) {
+          element.className = className;
+        }
+        element.addEventListener("click", onClick);
+        return element;
+      }
+
+      function log(message, level = "info") {
+        const row = document.createElement("div");
+        row.textContent = `${new Date().toLocaleTimeString()} ${level.toUpperCase()} ${message}`;
+        if (level === "warn") {
+          row.style.color = "var(--warn)";
+        }
+        if (level === "error") {
+          row.style.color = "var(--bad)";
+        }
+        ui.log.prepend(row);
+        while (ui.log.children.length > 80) {
+          ui.log.lastChild.remove();
+        }
+        const method = level === "warn" || level === "error" ? "warn" : "log";
+        console[method]("[idle-scenarios-demo]", message);
+      }
+
+      function wait(ms) {
+        return new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(ms) || 0)));
+      }
+
+      function clamp(value, min, max) {
+        const numeric = Number(value);
+        if (!Number.isFinite(numeric)) {
+          return min;
+        }
+        return Math.min(max, Math.max(min, numeric));
+      }
+
+      function signed(value, digits = 2) {
+        const numeric = Number(value);
+        if (!Number.isFinite(numeric)) {
+          return "--";
+        }
+        return `${numeric >= 0 ? "+" : ""}${numeric.toFixed(digits)}`;
+      }
+
+      function escapeHtml(value) {
+        return String(value ?? "")
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#039;");
+      }
+    </script>
+  </body>
+</html>
