@@ -4,15 +4,13 @@ import {
   getIdleScenarioById
 } from "./idleScenarioCatalog.js";
 
-const FIRST_IDLE_GAP_MS = Object.freeze([1000, 7000]);
-const SILENT_IDLE_GAP_MS = Object.freeze([1000, 7000]);
-const SPEAKING_IDLE_GAP_MS = Object.freeze([1000, 7000]);
+const DEFAULT_IDLE_GAP_MS = Object.freeze([1000, 4000]);
 const BALANCE_START_CHANCE = 0.2;
 const BALANCE_CHANCE_INCREMENT = 0.2;
-const DEFAULT_IDLE_SCHEDULER_SETTINGS = Object.freeze({
-  firstIdleGapMs: FIRST_IDLE_GAP_MS,
-  silentIdleGapMs: SILENT_IDLE_GAP_MS,
-  speakingIdleGapMs: SPEAKING_IDLE_GAP_MS,
+export const DEFAULT_IDLE_SCHEDULER_SETTINGS = Object.freeze({
+  firstIdleGapMs: DEFAULT_IDLE_GAP_MS,
+  silentIdleGapMs: DEFAULT_IDLE_GAP_MS,
+  speakingIdleGapMs: DEFAULT_IDLE_GAP_MS,
   balanceStartChance: BALANCE_START_CHANCE,
   balanceChanceIncrement: BALANCE_CHANCE_INCREMENT
 });
@@ -20,6 +18,14 @@ const RECENT_HISTORY_LIMIT = 2;
 const IDLE_SOURCE = "idle_scenario_scheduler";
 const MAX_RAMP_MS = 500;
 const MAX_SPEED = 0.5;
+const TRANSIENT_READINESS_RECHECK_MS = 1000;
+const STALE_SCENARIO_BLOCK_MS = 1500;
+const TRANSIENT_READINESS_REASONS = new Set([
+  "scenario_running",
+  "follow_running",
+  "robot_not_connected",
+  "command_queue_unavailable"
+]);
 
 export class IdleScenarioScheduler {
   constructor({
@@ -45,6 +51,8 @@ export class IdleScenarioScheduler {
     this.recentScenarioIds = [];
     this.balanceDebt = null;
     this.blockedByScenario = false;
+    this.blockedByScenarioAt = 0;
+    this.lastReadinessReason = "";
 
     this.subscribeToRuntimeEvents();
   }
@@ -90,6 +98,8 @@ export class IdleScenarioScheduler {
       enabled: this.enabled,
       running: this.running,
       blockedByScenario: this.blockedByScenario,
+      blockedByScenarioAt: this.blockedByScenarioAt,
+      lastReadinessReason: this.lastReadinessReason,
       settings: {
         ...this.settings,
         firstIdleGapMs: [...this.settings.firstIdleGapMs],
@@ -190,8 +200,11 @@ export class IdleScenarioScheduler {
     }
 
     this.blockedByScenario = true;
+    this.blockedByScenarioAt = Date.now();
     this.clearTimer();
     this.cancelCurrent(`${reason}:${payload.scenario ?? payload.sequence ?? "scenario"}`);
+    this.noteReadinessReason("scenario_running");
+    this.scheduleReadinessRecheck("scenario_running");
   }
 
   handleScenarioFinished(reason = "scenario_finished") {
@@ -200,6 +213,7 @@ export class IdleScenarioScheduler {
     }
 
     this.blockedByScenario = false;
+    this.blockedByScenarioAt = 0;
     if (this.enabled) {
       this.scheduleNext(reason, { first: true });
     }
@@ -214,16 +228,30 @@ export class IdleScenarioScheduler {
 
     const readiness = this.getReadiness();
     if (!readiness.ready) {
+      this.noteReadinessReason(readiness.reason);
       this.log(`Idle scenarios waiting: ${readiness.reason}`, "debug");
+      this.scheduleReadinessRecheck(readiness.reason);
       return;
     }
 
+    this.noteReadinessReason("ready");
     const delayMs = this.pickDelayMs(first);
     this.log(`Idle scenario scheduled in ${Math.round(delayMs)}ms (${reason}).`, "debug");
     this.timer = globalThis.setTimeout(() => {
       this.timer = null;
       this.runNextIdleScenario(reason);
     }, delayMs);
+  }
+
+  scheduleReadinessRecheck(reason = "not_ready") {
+    if (!TRANSIENT_READINESS_REASONS.has(reason)) {
+      return;
+    }
+
+    this.timer = globalThis.setTimeout(() => {
+      this.timer = null;
+      this.scheduleNext(`idle_recheck:${reason}`, { first: true });
+    }, TRANSIENT_READINESS_RECHECK_MS);
   }
 
   async runNextIdleScenario(reason = "idle_timer") {
@@ -398,7 +426,16 @@ export class IdleScenarioScheduler {
     const status = this.getRuntimeStatus?.() ?? {};
     const policy = this.getPolicy?.() ?? {};
 
-    if (this.blockedByScenario || status.scenarioRunning) {
+    if (this.blockedByScenario) {
+      if (status.scenarioRunning || Date.now() - this.blockedByScenarioAt <= STALE_SCENARIO_BLOCK_MS) {
+        return { ready: false, reason: "scenario_running" };
+      }
+
+      this.blockedByScenario = false;
+      this.blockedByScenarioAt = 0;
+      this.log("Idle scenario block cleared after stale scenario state.", "warn");
+    }
+    if (status.scenarioRunning) {
       return { ready: false, reason: "scenario_running" };
     }
     if (status.followRunning) {
@@ -421,6 +458,19 @@ export class IdleScenarioScheduler {
     }
 
     return { ready: true, reason: "ready" };
+  }
+
+  noteReadinessReason(reason = "") {
+    if (!reason || reason === this.lastReadinessReason) {
+      return;
+    }
+
+    this.lastReadinessReason = reason;
+    if (reason !== "ready") {
+      console.info?.(`[LOOI] IDLE WAIT ${reason}`);
+    } else {
+      console.info?.("[LOOI] IDLE READY");
+    }
   }
 
   cancelCurrent(reason = "idle_cancelled") {
@@ -479,8 +529,8 @@ function normalizeSettings(settings = {}) {
 
 function normalizeMsRange(value, fallback) {
   const values = Array.isArray(value) ? value : fallback;
-  const min = normalizeNumber(values?.[0], 1000, 120000, fallback[0]);
-  const max = normalizeNumber(values?.[1], 1000, 120000, fallback[1]);
+  const min = normalizeNumber(values?.[0], DEFAULT_IDLE_GAP_MS[0], DEFAULT_IDLE_GAP_MS[1], fallback[0]);
+  const max = normalizeNumber(values?.[1], DEFAULT_IDLE_GAP_MS[0], DEFAULT_IDLE_GAP_MS[1], fallback[1]);
   return max >= min ? [min, max] : [max, min];
 }
 

@@ -625,6 +625,12 @@ export class GeminiLiveRuntime {
       return this.deferSpeechStartToolCall({ id, name, action });
     }
 
+    logGeminiToolConsole("execute", {
+      id,
+      name,
+      actionType: action.type,
+      args: action.args
+    });
     this.publishGeminiScenarioEvent("gemini_scenario_started", action, {
       toolCallId: id,
       toolName: name
@@ -644,6 +650,14 @@ export class GeminiLiveRuntime {
       this.pendingToolCalls.delete(id);
       this.patchStatus({
         lastToolResult: `${name}: ${status}`
+      });
+      logGeminiToolConsole(accepted ? "accepted" : "rejected", {
+        id,
+        name,
+        actionType: action.type,
+        status,
+        executed,
+        message: result?.message ?? status
       });
 
       if (!accepted) {
@@ -688,6 +702,12 @@ export class GeminiLiveRuntime {
       this.patchStatus({
         lastToolResult: `${name}: failed`,
         lastError: error.message
+      });
+      logGeminiToolConsole("failed", {
+        id,
+        name,
+        actionType: action.type,
+        error: error.message
       });
       this.log(`Gemini Live tool execution failed: ${error.message}`, "warn");
       return {
@@ -1484,6 +1504,24 @@ function createWebSocketTransport({ url, onOpen, onMessage, onError, onClose }) 
 
 function createBrowserAudioContext() {
   return globalThis.AudioContext || globalThis.webkitAudioContext;
+}
+
+function logGeminiToolConsole(event, detail = {}) {
+  const payload = {
+    id: detail.id,
+    name: detail.name,
+    actionType: detail.actionType,
+    args: detail.args,
+    status: detail.status,
+    executed: detail.executed,
+    message: detail.message,
+    error: detail.error
+  };
+  const compact = Object.fromEntries(
+    Object.entries(payload).filter(([, value]) => value !== undefined && value !== null && value !== "")
+  );
+  const method = event === "failed" || event === "rejected" ? "warn" : "info";
+  console[method]?.(`[LOOI] GEMINI TOOL_${event.toUpperCase()}`, compact);
 }
 
 function parseJsonText(text) {

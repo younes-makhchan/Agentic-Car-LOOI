@@ -6,7 +6,10 @@ import { ScenarioFrameSequencer } from "./embodiment/scenarioFrameSequencer.js";
 import { PriorityScheduler } from "./embodiment/priorityScheduler.js";
 import { GeminiLiveRuntime } from "./gemini/geminiLiveRuntime.js";
 import { IDLE_SCENARIOS } from "./idle/idleScenarioCatalog.js";
-import { IdleScenarioScheduler } from "./idle/idleScenarioScheduler.js";
+import {
+  DEFAULT_IDLE_SCHEDULER_SETTINGS,
+  IdleScenarioScheduler
+} from "./idle/idleScenarioScheduler.js";
 import { LifeEngine } from "./life/lifeEngine.js";
 import { LocalBrainEngine } from "./localBrain/localBrainEngine.js";
 import { LocalServerBrainAdapter } from "./localBrain/localServerBrainAdapter.js";
@@ -41,18 +44,11 @@ const DEFAULT_SPEED = 0.2;
 const DEFAULT_DURATION_MS = 400;
 const LOCAL_VISION_SIZE_STORAGE_KEY = "looi.localVisionWidgetSizePx.v2";
 const FRONT_CAMERA_DEVICE_STORAGE_KEY = "looi.frontCameraDeviceId.v1";
-const IDLE_SCENARIO_SETTINGS_STORAGE_KEY = "looi.idleScenarioSettings.v1";
+const IDLE_SCENARIO_SETTINGS_STORAGE_KEY = "looi.idleScenarioSettings.v2";
 const DEFAULT_FRONT_CAMERA_INDEX = 1;
-const DEFAULT_IDLE_SCENARIO_SETTINGS = Object.freeze({
-  firstIdleMinSec: 1,
-  firstIdleMaxSec: 7,
-  silentIdleMinSec: 1,
-  silentIdleMaxSec: 7,
-  speakingIdleMinSec: 1,
-  speakingIdleMaxSec: 7,
-  balanceStartPercent: 20,
-  balanceIncrementPercent: 20
-});
+const IDLE_GAP_MIN_SEC = msToSec(DEFAULT_IDLE_SCHEDULER_SETTINGS.firstIdleGapMs[0]);
+const IDLE_GAP_MAX_SEC = msToSec(DEFAULT_IDLE_SCHEDULER_SETTINGS.firstIdleGapMs[1]);
+const DEFAULT_IDLE_SCENARIO_SETTINGS = createDefaultIdleScenarioSettings();
 const FOLLOW_TUNING_STORAGE_KEY = "looi.followTuning.v3";
 const FOLLOW_TUNING_PRESETS = Object.freeze({
   case1: Object.freeze({
@@ -3395,6 +3391,7 @@ function getIdleRuntimeStatus() {
     brainLive: isBrainLive(),
     geminiSpeaking: isGeminiAudioPlaying(geminiStatus),
     scenarioRunning: Boolean(
+      toolExecutor?.activeScenario ||
       scenarioFrameSequencer?.isRunning?.() ||
       scenarioFrameSequencer?.getCurrentSequence?.()
     ),
@@ -3691,6 +3688,19 @@ async function testIdleScenarioFromUi(id) {
   log(result.message, result.executed ? "info" : "warn");
 }
 
+function createDefaultIdleScenarioSettings() {
+  return Object.freeze({
+    firstIdleMinSec: msToSec(DEFAULT_IDLE_SCHEDULER_SETTINGS.firstIdleGapMs[0]),
+    firstIdleMaxSec: msToSec(DEFAULT_IDLE_SCHEDULER_SETTINGS.firstIdleGapMs[1]),
+    silentIdleMinSec: msToSec(DEFAULT_IDLE_SCHEDULER_SETTINGS.silentIdleGapMs[0]),
+    silentIdleMaxSec: msToSec(DEFAULT_IDLE_SCHEDULER_SETTINGS.silentIdleGapMs[1]),
+    speakingIdleMinSec: msToSec(DEFAULT_IDLE_SCHEDULER_SETTINGS.speakingIdleGapMs[0]),
+    speakingIdleMaxSec: msToSec(DEFAULT_IDLE_SCHEDULER_SETTINGS.speakingIdleGapMs[1]),
+    balanceStartPercent: chanceToPercent(DEFAULT_IDLE_SCHEDULER_SETTINGS.balanceStartChance),
+    balanceIncrementPercent: chanceToPercent(DEFAULT_IDLE_SCHEDULER_SETTINGS.balanceChanceIncrement)
+  });
+}
+
 function normalizeIdleScenarioSettings(settings = {}) {
   const source = settings && typeof settings === "object" ? settings : {};
   const [firstIdleMinSec, firstIdleMaxSec] = normalizeIdleGapSeconds(
@@ -3735,8 +3745,8 @@ function normalizeIdleScenarioSettings(settings = {}) {
 }
 
 function normalizeIdleGapSeconds(minValue, maxValue, fallbackMin, fallbackMax) {
-  const min = Math.round(clampNumber(minValue, 1, 120, fallbackMin));
-  const max = Math.round(clampNumber(maxValue, 1, 120, fallbackMax));
+  const min = Math.round(clampNumber(minValue, IDLE_GAP_MIN_SEC, IDLE_GAP_MAX_SEC, fallbackMin));
+  const max = Math.round(clampNumber(maxValue, IDLE_GAP_MIN_SEC, IDLE_GAP_MAX_SEC, fallbackMax));
   return max >= min ? [min, max] : [max, min];
 }
 
@@ -3749,6 +3759,14 @@ function toIdleSchedulerSettings(settings = idleScenarioSettings) {
     balanceStartChance: normalized.balanceStartPercent / 100,
     balanceChanceIncrement: normalized.balanceIncrementPercent / 100
   };
+}
+
+function msToSec(value) {
+  return Math.round((Number(value) || 0) / 1000);
+}
+
+function chanceToPercent(value) {
+  return Math.round((Number(value) || 0) * 100);
 }
 
 function loadFollowTuningSettings() {
