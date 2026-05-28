@@ -50,10 +50,6 @@ export class RuleBrainFallback {
       return "scenario_look_right";
     }
 
-    if (/\blook around\b|\bcheck the room\b|\bscan\b/.test(normalized)) {
-      return "scenario_body_talking";
-    }
-
     if (/\b(hello|hi|hey|looi|louie|lui|robot)\b/.test(normalized)) {
       return "greeting";
     }
@@ -120,12 +116,6 @@ export class RuleBrainFallback {
           action: scenarioAction("look_right"),
           reason: classification,
           confidence: 0.82
-        });
-      case "scenario_body_talking":
-        return brainResponse({
-          action: scenarioAction("body_talking"),
-          reason: classification,
-          confidence: 0.72
         });
       case "safety_stop":
         return brainResponse({

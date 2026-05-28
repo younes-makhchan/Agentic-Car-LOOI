@@ -46,7 +46,7 @@ assert.equal(comeHere.action.args.name, "come_closer");
 const giveSpace = await mock.think(contextForText("please give me space"));
 assert.equal(giveSpace.action.args.name, "back_up");
 const lookAround = await mock.think(contextForText("look around"));
-assert.equal(lookAround.action.args.name, "body_talking");
+assert.equal(lookAround.action, null);
 const stop = await mock.think(contextForText("freeze"));
 assert.equal(stop.action, null);
 
@@ -54,7 +54,7 @@ const fallback = new RuleBrainFallback();
 assert.equal(fallback.classifyText("freeze"), "safety_stop");
 assert.equal(fallback.classifyText("come closer"), "scenario_come_closer");
 assert.equal(fallback.classifyText("give me room"), "scenario_back_up");
-assert.equal(fallback.classifyText("look around"), "scenario_body_talking");
+assert.equal(fallback.classifyText("look around"), "unknown");
 assert.equal(fallback.classifyText("hello looi"), "greeting");
 assert.equal(fallback.classifyText("why are you alive?"), "direct_question");
 

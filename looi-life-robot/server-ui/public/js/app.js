@@ -44,12 +44,12 @@ const FRONT_CAMERA_DEVICE_STORAGE_KEY = "looi.frontCameraDeviceId.v1";
 const IDLE_SCENARIO_SETTINGS_STORAGE_KEY = "looi.idleScenarioSettings.v1";
 const DEFAULT_FRONT_CAMERA_INDEX = 1;
 const DEFAULT_IDLE_SCENARIO_SETTINGS = Object.freeze({
-  firstIdleMinSec: 7,
-  firstIdleMaxSec: 12,
-  silentIdleMinSec: 12,
-  silentIdleMaxSec: 28,
-  speakingIdleMinSec: 18,
-  speakingIdleMaxSec: 38,
+  firstIdleMinSec: 1,
+  firstIdleMaxSec: 7,
+  silentIdleMinSec: 1,
+  silentIdleMaxSec: 7,
+  speakingIdleMinSec: 1,
+  speakingIdleMaxSec: 7,
   balanceStartPercent: 20,
   balanceIncrementPercent: 20
 });
@@ -97,6 +97,7 @@ const LOOI_ACTIVITY_TRIPLET_SEQUENCE = Object.freeze([0, 1, 2, 1]);
 const LOOI_ACTIVITY_STEP_MS = 1050;
 const LOOI_ACTIVITY_ORBIT_RADIUS = 9;
 const GEMINI_VISION_RESUME_AFTER_SPEECH_MS = 300;
+const MAX_LOG_PANEL_ENTRIES = 180;
 
 const ui = {
   canvas: document.getElementById("faceCanvas"),
@@ -130,7 +131,6 @@ const ui = {
   sendButton: document.getElementById("sendButton"),
   happyButton: document.getElementById("happyButton"),
   curiousButton: document.getElementById("curiousButton"),
-  wiggleButton: document.getElementById("wiggleButton"),
   logPanel: document.getElementById("logPanel"),
   cameraSupportState: document.getElementById("cameraSupportState"),
   cameraSecureWarning: document.getElementById("cameraSecureWarning"),
@@ -690,10 +690,6 @@ ui.happyButton.addEventListener("click", () => {
 
 ui.curiousButton.addEventListener("click", () => {
   runScenarioFromUi("look_left").catch((error) => log(`Scenario look_left failed: ${error.message}`, "warn"));
-});
-
-ui.wiggleButton.addEventListener("click", () => {
-  runScenarioFromUi("body_talking").catch((error) => log(`Scenario body_talking failed: ${error.message}`, "warn"));
 });
 
 ui.lifeEngineToggle.addEventListener("click", () => {
@@ -1641,7 +1637,6 @@ function handleCameraSnapshot(snapshot) {
 
 function handleCameraObservation(observation) {
   lifeEngine?.receiveObservation?.(observation);
-  updateCameraUi();
   postCameraObservationEvent(observation).catch((error) => {
     log(`Observation event failed: ${error.message}`, "warn");
   });
@@ -2073,10 +2068,18 @@ function updateProductionChrome() {
     ? `Objects: ${visionContext.visibleLabels}`
     : "No object metadata yet.";
 
-  if (ui.localVisionPreview && cameraInput?.stream) {
-    ui.localVisionPreview.srcObject = cameraInput.stream;
-  } else if (ui.localVisionPreview) {
-    ui.localVisionPreview.srcObject = null;
+  if (ui.localVisionPreview) {
+    const nextStream = cameraStatus.running ? cameraInput?.stream ?? null : null;
+    if (ui.localVisionPreview.srcObject !== nextStream) {
+      ui.localVisionPreview.srcObject = nextStream;
+      if (nextStream) {
+        ui.localVisionPreview.muted = true;
+        ui.localVisionPreview.playsInline = true;
+        ui.localVisionPreview.play?.().catch?.(() => {
+          // Autoplay is best-effort; the main camera stream remains active.
+        });
+      }
+    }
   }
 
   document.body.classList.toggle("local-motion-armed", brainPolicy.localMotionArmed);
@@ -2985,7 +2988,6 @@ async function setRoboflowGpuPlanFromUi() {
 function handleObjectDetections(result = {}) {
   const tracks = objectTracker?.update?.(result) ?? [];
   visionState?.updateFromDetections?.(result, tracks);
-  updateVisionUi();
   drawObjectDetectionOverlays(result);
 }
 
@@ -3283,8 +3285,12 @@ function drawObjectDetectionOverlay(canvas, result = {}, videoElement = null) {
     return;
   }
 
-  canvas.width = width;
-  canvas.height = height;
+  if (canvas.width !== width) {
+    canvas.width = width;
+  }
+  if (canvas.height !== height) {
+    canvas.height = height;
+  }
   const ctx = canvas.getContext("2d");
   ctx.clearRect(0, 0, width, height);
   const frameWidth = Number(result?.frameWidth || videoElement?.videoWidth || width);
@@ -3344,6 +3350,10 @@ function drawDetectionCenter(ctx, detection = {}, geometry = {}) {
 }
 
 function logOverlayDiagnostics(canvas, result = {}, size = {}) {
+  if (!isFrontendDebugLoggingEnabled()) {
+    return;
+  }
+
   const detections = Array.isArray(result?.detections) ? result.detections : [];
   if (!detections.length) {
     return;
@@ -3935,12 +3945,27 @@ function appendLogEntry(message, level = "info") {
   entry.querySelector(".log-text").textContent = message;
 
   ui.logPanel.append(entry);
+  trimLogPanel();
   ui.logPanel.scrollTop = ui.logPanel.scrollHeight;
+  if (!shouldMirrorLogToConsole(message, level)) {
+    return;
+  }
+
   const method = level === "error" ? "error" : level === "warn" ? "warn" : "log";
   console[method]?.(`[LOOI] ${message}`);
 }
 
+function trimLogPanel() {
+  while (ui.logPanel.childElementCount > MAX_LOG_PANEL_ENTRIES) {
+    ui.logPanel.firstElementChild?.remove();
+  }
+}
+
 function traceLive(label, payload = {}, level = "info") {
+  if (!isFrontendDebugLoggingEnabled()) {
+    return false;
+  }
+
   const compact = compactTracePayload(payload);
   const message = `[TRACE] ${label}: ${formatTracePayload(compact)}`;
   if (log(message, level)) {
@@ -3989,11 +4014,90 @@ function traceSequenceEvent(event = {}) {
 }
 
 function shouldSuppressLogMessage(message, level = "info") {
+  if (!isFrontendDebugLoggingEnabled()) {
+    if (level === "debug") {
+      return true;
+    }
+    if (isHighFrequencyRuntimeLog(message)) {
+      return true;
+    }
+  }
+
   if (level === "error" || level === "warn") {
     return false;
   }
 
   return false;
+}
+
+function shouldMirrorLogToConsole(message, level = "info") {
+  if (level === "error") {
+    return true;
+  }
+  if (level === "warn") {
+    return !isHighFrequencyConsoleWarning(message);
+  }
+  if (isFrontendDebugLoggingEnabled()) {
+    return true;
+  }
+  return isStartupOrConnectionLog(message);
+}
+
+function isFrontendDebugLoggingEnabled() {
+  return Boolean(activeConfig.frontendDebugLogging ?? PUBLIC_CONFIG.frontendDebugLogging);
+}
+
+function isHighFrequencyRuntimeLog(message = "") {
+  return (
+    /^\[TRACE\]/.test(message) ||
+    /^STEP [3456] /.test(message) ||
+    /^GEMINI STEP [457] /.test(message) ||
+    /^GEMINI TX audio frame=/.test(message) ||
+    /^GEMINI STEP 8 audio output queued/.test(message) ||
+    /^GEMINI AUDIO chunk ended/.test(message) ||
+    /^Gemini tool requests:/.test(message) ||
+    /^Gemini (deferred|speech-start|Live audio interrupted)/.test(message) ||
+    /^GEMINI vision context (sent|skipped)/.test(message) ||
+    /^Gemini follow context (queued|flushed)/.test(message) ||
+    /^Local Brain (thought|skipped server LLM)/.test(message) ||
+    /^Life state patched/.test(message) ||
+    /^Camera command completed\./.test(message) ||
+    /^Sequence .*:/.test(message) ||
+    /^Reliability mode:/.test(message) ||
+    /^(QUEUED|COMPLETED) /.test(message) ||
+    /^Queued .* \[pending:/.test(message) ||
+    /^Started .*:/.test(message) ||
+    /^Completed /.test(message) ||
+    /^\[roboflow\] detected count=/.test(message) ||
+    /^\[roboflow\] detector (already running|start already|start skipped)/.test(message) ||
+    /^\[roboflow\] follow (target position|steering sent|steering held)/.test(message) ||
+    /^Idle scenario scheduled in /.test(message) ||
+    /^Idle scenarios waiting:/.test(message) ||
+    /^Idle scenario started:/.test(message)
+  );
+}
+
+function isHighFrequencyConsoleWarning(message = "") {
+  return (
+    /^Reliability mode:/.test(message) ||
+    /^QUEUED run_scenario:/.test(message)
+  );
+}
+
+function isStartupOrConnectionLog(message = "") {
+  return (
+    /^(Life Engine started\.|Life events enabled\.|UI ready\.|Local-first runtime active\.)$/.test(message) ||
+    /^Local Motion disarmed by default\./.test(message) ||
+    /^Default ESP32 URL:/.test(message) ||
+    /^Safety:/.test(message) ||
+    /^ESP32 gateway (connecting|connected|disconnected)/.test(message) ||
+    /^Asking server gateway to connect to ESP32/.test(message) ||
+    /^ESP32 server gateway is attached/.test(message) ||
+    /^GEMINI STEP [123] /.test(message) ||
+    /^Gemini Live started:/.test(message) ||
+    /^Local Brain started\./.test(message) ||
+    /^Local runtime ready\./.test(message)
+  );
 }
 
 function summarizeActions(actions = []) {

@@ -23,7 +23,7 @@ const cases = [
   ["come here", "come_closer"],
   ["move forward", "come_closer"],
   ["give me space", "back_up"],
-  ["look around", "body_talking"]
+  ["look left", "look_left"]
 ];
 
 for (const [text, expectedScenario] of cases) {
@@ -221,7 +221,7 @@ try {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      message: "look around",
+      message: "look left",
       context: {
         policy: { localMotionArmed: true }
       }
@@ -230,7 +230,7 @@ try {
   const chatPayload = await chatResponse.json();
   assert.equal(chatResponse.ok, true);
   assert.equal(chatPayload.action.type, "run_scenario");
-  assert.equal(chatPayload.action.args.name, "body_talking");
+  assert.equal(chatPayload.action.args.name, "look_left");
 } finally {
   await new Promise((resolve) => server.close(resolve));
 }

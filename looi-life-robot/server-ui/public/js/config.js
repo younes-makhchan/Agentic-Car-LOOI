@@ -44,6 +44,7 @@ export const PUBLIC_CONFIG = {
   followMaxDetectionAgeMs: 300,
   attentionWindowMs: 20000,
   conversationWindowMs: 30000,
+  frontendDebugLogging: false,
   localBrainEventCooldownMs: 800,
   performanceMonitorEnabledDefault: true,
   cameraObservationPostMs: 3000,

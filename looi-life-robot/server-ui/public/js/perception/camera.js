@@ -304,6 +304,7 @@ export class CameraInput {
       };
       this.lastObservation = observation;
       this.emitObservation(observation);
+      this.emitStatus();
       return observation;
     }
 
@@ -318,6 +319,7 @@ export class CameraInput {
       };
       this.lastObservation = observation;
       this.emitObservation(observation);
+      this.emitStatus();
       return observation;
     }
 

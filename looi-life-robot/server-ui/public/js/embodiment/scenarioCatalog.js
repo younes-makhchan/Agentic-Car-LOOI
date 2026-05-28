@@ -141,22 +141,6 @@ const SCENARIO_DEFINITIONS = Object.freeze({
       { type: "face", expression: "attentive", eyeDirection: "center", intensity: 0.68, durationMs: 90 }
     ]
   }),
-  body_talking: scenario({
-    name: "body_talking",
-    description: "Add gentle body language during casual conversation.",
-    permissions: PERMISSIONS.motion,
-    sequence: [
-      ...MOVEMENTS.look_left,
-      ...MOVEMENTS.look_right,
-      ...MOVEMENTS.move_forward_tiny,
-      ...MOVEMENTS.move_backward_tiny,
-      ...MOVEMENTS.look_left,
-      ...MOVEMENTS.look_right,
-      ...MOVEMENTS.move_forward_tiny,
-      ...MOVEMENTS.move_backward_tiny,
-      { type: "face", expression: "attentive", eyeDirection: "center", intensity: 0.68, durationMs: 90 }
-    ]
-  }),
   eating: scenario({
     name: "eating",
     description: "Show LOOI eating a burger when the user is eating or asks LOOI to eat.",

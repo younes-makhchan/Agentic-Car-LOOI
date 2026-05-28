@@ -75,12 +75,6 @@ export class RuleProvider {
           reason: classification,
           confidence: 0.82
         });
-      case "scenario_body_talking":
-        return brainResponse({
-          action: scenarioAction("body_talking"),
-          reason: classification,
-          confidence: 0.72
-        });
       case "greeting":
         return brainResponse({
           text: "Hi.",
@@ -115,7 +109,6 @@ function classifyText(text) {
   if (/\bgive me (space|room)\b|\bgo back\b|\bback up\b|\bnot too close\b|\b(move|drive|roll)\s+(back|backward|backwards|reverse)\b|\breverse a little\b/.test(normalized)) return "scenario_back_up";
   if (/\b(turn|rotate|look)\s+left\b/.test(normalized)) return "scenario_look_left";
   if (/\b(turn|rotate|look)\s+right\b/.test(normalized)) return "scenario_look_right";
-  if (/\blook around\b|\bcheck the room\b|\bscan\b/.test(normalized)) return "scenario_body_talking";
   if (/\b(hello|hi|hey|looi|louie|lui|robot)\b/.test(normalized)) return "greeting";
   if (normalized.endsWith("?") || /^(why|what|who|how|can you|are you)\b/.test(normalized)) return "direct_question";
   return "unknown";

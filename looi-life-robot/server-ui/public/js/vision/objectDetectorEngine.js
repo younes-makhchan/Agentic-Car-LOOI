@@ -16,6 +16,8 @@ const DEFAULT_PROXY_URL = "/api/init-webrtc";
 const DEFAULT_TURN_CONFIG_URL = "/api/roboflow-webrtc/turn-config";
 const DEFAULT_TERMINATE_URL = "/api/roboflow-webrtc/terminate";
 const DEFAULT_WAIT_FOR_RESULT_MS = 3200;
+const DETECTION_STATUS_EMIT_INTERVAL_MS = 500;
+const DETECTION_DEBUG_LOG_INTERVAL_MS = 2500;
 
 export class ObjectDetectorEngine {
   constructor({
@@ -57,6 +59,8 @@ export class ObjectDetectorEngine {
     this.lastDetectionAt = null;
     this.lastResult = null;
     this.lastError = null;
+    this.lastStatusEmitAt = 0;
+    this.lastDetectionLogAt = 0;
     this.resultWaiters = new Set();
     this.callbacks = {
       onDetections: new Set(),
@@ -377,12 +381,16 @@ export class ObjectDetectorEngine {
       return;
     }
 
-    this.lastDetectionAt = Date.now();
+    const now = Date.now();
+    this.lastDetectionAt = now;
     this.lastResult = result;
     this.lastError = Array.isArray(data?.errors) && data.errors.length ? data.errors.join("; ") : null;
-    this.log(`detected count=${result.detections.length} objects=${summarizeDetectionsForLog(result.detections)}`);
+    if (now - this.lastDetectionLogAt >= DETECTION_DEBUG_LOG_INTERVAL_MS) {
+      this.lastDetectionLogAt = now;
+      this.log(`detected count=${result.detections.length} objects=${summarizeDetectionsForLog(result.detections)}`, "debug");
+    }
     this.emitDetections(result);
-    this.emitStatus();
+    this.emitStatus({ throttleMs: DETECTION_STATUS_EMIT_INTERVAL_MS, now });
     this.resolveWaiters(result);
   }
 
@@ -495,7 +503,12 @@ export class ObjectDetectorEngine {
     this.callbacks.onDetections.forEach((callback) => callback(result));
   }
 
-  emitStatus() {
+  emitStatus({ throttleMs = 0, now = Date.now() } = {}) {
+    if (throttleMs > 0 && now - this.lastStatusEmitAt < throttleMs) {
+      return;
+    }
+
+    this.lastStatusEmitAt = now;
     const status = this.getStatus();
     this.callbacks.onStatus.forEach((callback) => callback(status));
   }

@@ -106,15 +106,6 @@ function inferScenario(text, context = {}) {
     };
   }
 
-  if (/\blook around\b|\bcheck the room\b|\bscan\b/.test(text)) {
-    return {
-      args: { name: "body_talking" },
-      text: null,
-      reason: "body_language_request",
-      confidence: 0.72
-    };
-  }
-
   return null;
 }
 

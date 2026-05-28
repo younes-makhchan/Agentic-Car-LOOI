@@ -305,7 +305,7 @@ const disarmedScenario = await executor.executeAction({
   id: "scenario_disarmed",
   source: "gemini_live",
   type: "run_scenario",
-  args: { name: "body_talking" }
+  args: { name: "look_left" }
 });
 assert.equal(disarmedScenario.status, "rejected");
 assert.equal(disarmedScenario.executed, false);
@@ -313,16 +313,16 @@ assert.match(disarmedScenario.message, /local_motion_not_armed/i);
 assert.equal(routedSequences.length, 1);
 
 policy.localMotionArmed = true;
-const bodyScenario = await executor.executeAction({
-  id: "scenario_body",
+const motionScenario = await executor.executeAction({
+  id: "scenario_motion",
   source: "gemini_live",
   type: "run_scenario",
-  args: { name: "body_talking" }
+  args: { name: "look_left" }
 });
-assert.equal(bodyScenario.status, "queued");
-assert.equal(bodyScenario.physical, true);
-assert.equal(bodyScenario.detail.execution, "parallel");
-assert.equal("scenarioMovement" in bodyScenario.detail, false);
+assert.equal(motionScenario.status, "queued");
+assert.equal(motionScenario.physical, true);
+assert.equal(motionScenario.detail.execution, "parallel");
+assert.equal("scenarioMovement" in motionScenario.detail, false);
 await settleAsyncScenario();
 assert.equal(routedSequences.at(-1).action.args.frames.some((frame) => frame.label === "scenario_tiny_turn_left"), true);
 assert.equal(motions.some((motion) => motion.label === "scenario_tiny_turn_left"), true);

@@ -417,6 +417,10 @@ export class CommandQueue {
 }
 
 function consoleLogRobotMotion(event, command = {}, level = "info") {
+  if (level !== "warn") {
+    return;
+  }
+
   const payload = {
     event,
     label: command.label ?? "motion",

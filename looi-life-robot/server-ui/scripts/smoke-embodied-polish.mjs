@@ -13,7 +13,7 @@ import { PriorityScheduler } from "../public/js/embodiment/priorityScheduler.js"
 import { PerformanceMonitor } from "../public/js/runtime/performanceMonitor.js";
 import { WakeLockManager } from "../public/js/runtime/wakeLockManager.js";
 
-["still", "ack_yes", "ack_no", "come_closer", "back_up", "look_left", "look_right", "body_talking", "eating", "finish_burger", "drinking", "finish_drink", "question", "angry", "loving", "shocked", "tell_me_about_yourself", "finish_telling", "kiss", "take_picture"].forEach((name) => {
+["still", "ack_yes", "ack_no", "come_closer", "back_up", "look_left", "look_right", "eating", "finish_burger", "drinking", "finish_drink", "question", "angry", "loving", "shocked", "tell_me_about_yourself", "finish_telling", "kiss", "take_picture"].forEach((name) => {
   assert.equal(MODEL_SCENARIO_NAMES.includes(name), true, `missing scenario ${name}`);
   const scenario = getScenarioDefinition(name);
   assert.equal(Boolean(scenario), true, `missing scenario definition ${name}`);

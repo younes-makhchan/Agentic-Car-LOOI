@@ -4,9 +4,9 @@ import {
   getIdleScenarioById
 } from "./idleScenarioCatalog.js";
 
-const FIRST_IDLE_GAP_MS = Object.freeze([7000, 12000]);
-const SILENT_IDLE_GAP_MS = Object.freeze([12000, 28000]);
-const SPEAKING_IDLE_GAP_MS = Object.freeze([18000, 38000]);
+const FIRST_IDLE_GAP_MS = Object.freeze([1000, 7000]);
+const SILENT_IDLE_GAP_MS = Object.freeze([1000, 7000]);
+const SPEAKING_IDLE_GAP_MS = Object.freeze([1000, 7000]);
 const BALANCE_START_CHANCE = 0.2;
 const BALANCE_CHANCE_INCREMENT = 0.2;
 const DEFAULT_IDLE_SCHEDULER_SETTINGS = Object.freeze({

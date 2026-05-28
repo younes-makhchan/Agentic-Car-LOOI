@@ -839,7 +839,8 @@ export class GeminiLiveRuntime {
     ) {
       this.audioDebug.lastInputLogAt = now;
       this.log(
-        `GEMINI TX audio frame=${this.audioDebug.sentInputFrames} bytes=${bytes} samples=${samples} inputRate=${Math.round(Number(inputRate) || 0)} outputRate=${outputRate} totalBytes=${this.audioDebug.sentInputBytes}`
+        `GEMINI TX audio frame=${this.audioDebug.sentInputFrames} bytes=${bytes} samples=${samples} inputRate=${Math.round(Number(inputRate) || 0)} outputRate=${outputRate} totalBytes=${this.audioDebug.sentInputBytes}`,
+        "debug"
       );
     }
   }
