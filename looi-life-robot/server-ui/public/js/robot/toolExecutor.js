@@ -648,11 +648,12 @@ export class ToolExecutor {
   async executeStopFollowingScenario(args = {}, action = {}) {
     const reason = normalizeShortText(args.reason, 120) || "run_scenario_stop_following";
     const followActive = Boolean(this.followTargetController?.isRunning?.());
+    const explicitStopIntent = isExplicitFollowStopIntent(readLatestUserIntent(this.getRuntimeContext?.()));
 
     if (
       action.source === "gemini_live" &&
       !followActive &&
-      !isExplicitFollowStopIntent(readLatestUserIntent(this.getRuntimeContext?.()))
+      !explicitStopIntent
     ) {
       return this.buildResult("rejected", {
         action,
@@ -660,6 +661,16 @@ export class ToolExecutor {
         physical: false,
         message: "Ignored follow stop because the latest user intent did not explicitly stop following.",
         detail: { reason, followActive }
+      });
+    }
+
+    if (!followActive) {
+      return this.buildResult("completed", {
+        action,
+        executed: false,
+        physical: false,
+        message: "Follow target is already stopped.",
+        detail: { reason, followActive, alreadyStopped: true }
       });
     }
 

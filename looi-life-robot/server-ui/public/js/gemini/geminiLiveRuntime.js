@@ -1208,6 +1208,9 @@ export class GeminiLiveRuntime {
     if (action.type !== "run_scenario" || !this.eventBus?.publish) {
       return;
     }
+    if (action.args?.name === "stop_following") {
+      return;
+    }
 
     this.eventBus.publish(type, {
       scenario: action.args?.name ?? "",
