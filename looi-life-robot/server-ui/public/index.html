@@ -97,8 +97,7 @@
           <p class="eyebrow">Phone-Bodied Life Robot</p>
           <h1>LOOI Life Robot</h1>
           <p class="subtitle">
-            Local-first phone-bodied robot runtime with Life Engine, Gemini Live, camera, memory,
-            local brain scaffolding, and safe ESP32 body control.
+            Local robot runtime for Gemini Live, camera, memory, and ESP32 body control.
           </p>
         </header>
 
@@ -106,6 +105,7 @@
           <a href="#settingsStatus">Status</a>
           <a href="#settingsRobotBody">Body</a>
           <a href="#settingsLocalBrain">Brain</a>
+          <a href="#settingsIdleScenarios">Idle</a>
           <a href="#settingsCamera">Camera</a>
           <a href="#settingsMovement">Move</a>
           <a href="#settingsLog">Log</a>
@@ -360,8 +360,8 @@
               <div>
                 <h3>Camera Devices</h3>
                 <p>
-                  Choose exact phone cameras for the front follow stream and back probe.
-                  Defaults use camera 1 for front and camera 0 for back when available.
+                  Choose the exact phone camera used for the front follow stream.
+                  Default uses camera 1 when available.
                 </p>
               </div>
               <button id="refreshCameraDevicesButton" type="button">
@@ -373,12 +373,6 @@
                 <span>Front / follow camera</span>
                 <select id="frontCameraDeviceSelect">
                   <option value="">Default camera 1 / front</option>
-                </select>
-              </label>
-              <label class="slider-field" for="backCameraDeviceSelect">
-                <span>Back / lost-target camera</span>
-                <select id="backCameraDeviceSelect">
-                  <option value="">Default camera 0 / back</option>
                 </select>
               </label>
             </div>
@@ -425,9 +419,6 @@
           <div class="button-grid">
             <button id="startFrontCameraButton" class="primary-button" type="button">
               Start Front Camera
-            </button>
-            <button id="startBackCameraButton" type="button">
-              Start Back Camera
             </button>
             <button id="switchCameraButton" type="button">
               Switch Camera
@@ -598,13 +589,7 @@
         <section id="settingsLocalBrain" class="panel-card local-brain-card">
           <h2>Gemini Live / Local Brain</h2>
           <p class="panel-note">
-            Gemini Live is the primary speech-to-speech path. It streams mic audio,
-            plays Gemini audio, and can only call high-level LOOI tools.
-          </p>
-          <p class="panel-note">
-            The older Local Brain text endpoint remains available for typed/manual
-            fallback. All movement still executes through ToolExecutor and the safe
-            scenario-frame/command queue path.
+            Gemini Live handles voice. Movement still goes through the local safe tool path.
           </p>
           <div class="status-grid">
             <div class="status-row">
@@ -707,6 +692,49 @@
             </button>
           </div>
           <div id="localEventList" class="local-event-list" aria-live="polite"></div>
+        </section>
+
+        <section id="settingsIdleScenarios" class="panel-card settings-section-idle-scenarios">
+          <h2>Idle Scenarios</h2>
+          <p class="panel-note">
+            Local micro-movements when LOOI is live and no scenario is running.
+          </p>
+          <div class="idle-settings-grid">
+            <label class="idle-number-field" for="idleFirstGapMinInput">
+              <span>First min (s)</span>
+              <input id="idleFirstGapMinInput" type="number" min="1" max="120" step="1" value="7" inputmode="numeric" />
+            </label>
+            <label class="idle-number-field" for="idleFirstGapMaxInput">
+              <span>First max (s)</span>
+              <input id="idleFirstGapMaxInput" type="number" min="1" max="120" step="1" value="12" inputmode="numeric" />
+            </label>
+            <label class="idle-number-field" for="idleSilentGapMinInput">
+              <span>Silent min (s)</span>
+              <input id="idleSilentGapMinInput" type="number" min="1" max="120" step="1" value="12" inputmode="numeric" />
+            </label>
+            <label class="idle-number-field" for="idleSilentGapMaxInput">
+              <span>Silent max (s)</span>
+              <input id="idleSilentGapMaxInput" type="number" min="1" max="120" step="1" value="28" inputmode="numeric" />
+            </label>
+            <label class="idle-number-field" for="idleSpeakingGapMinInput">
+              <span>Gemini min (s)</span>
+              <input id="idleSpeakingGapMinInput" type="number" min="1" max="120" step="1" value="18" inputmode="numeric" />
+            </label>
+            <label class="idle-number-field" for="idleSpeakingGapMaxInput">
+              <span>Gemini max (s)</span>
+              <input id="idleSpeakingGapMaxInput" type="number" min="1" max="120" step="1" value="38" inputmode="numeric" />
+            </label>
+            <label class="idle-number-field" for="idleBalanceStartInput">
+              <span>Balance start %</span>
+              <input id="idleBalanceStartInput" type="number" min="0" max="100" step="1" value="20" inputmode="numeric" />
+            </label>
+            <label class="idle-number-field" for="idleBalanceIncrementInput">
+              <span>Balance + %</span>
+              <input id="idleBalanceIncrementInput" type="number" min="0" max="100" step="1" value="20" inputmode="numeric" />
+            </label>
+          </div>
+          <h3>Test Animations</h3>
+          <div id="idleScenarioTestList" class="idle-scenario-test-grid" aria-label="Idle animation test buttons"></div>
         </section>
 
         <section id="settingsRobotBody" class="panel-card settings-section-robot-body">

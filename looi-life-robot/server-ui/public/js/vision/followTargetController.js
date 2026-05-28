@@ -245,16 +245,6 @@ export class FollowTargetController {
     return Boolean(this.running);
   }
 
-  setRobotInterfaces({ commandQueue, lifeEngine } = {}) {
-    if (commandQueue) {
-      this.commandQueue = commandQueue;
-    }
-
-    if (lifeEngine) {
-      this.lifeEngine = lifeEngine;
-    }
-  }
-
   computeSteeringForTarget(track = {}) {
     const tuning = this.getTuning();
     const centerX = clampNumber(track.centerX, 0, 1, tuning.targetCenterX);

@@ -338,44 +338,9 @@ assert.equal(photoScenario.detail.scenario, "take_picture");
 assert.equal(photoScenario.detail.execution, "parallel");
 await settleAsyncScenario();
 assert.equal(routedSequences.at(-1).action.args.scenario, "take_picture");
-assert.equal(routedSequences.at(-1).action.args.frames.at(-1).args.camera, "auto");
 assert.equal(cameraCalls.some((call) => call.type === "snapshot"), true);
 assert.equal(faceEvents.some((event) => event.type === "take_picture"), true);
 assert.equal(faceEvents.some((event) => event.type === "show_photo"), true);
-
-const frontSnapshotsBeforeExplicitFrontPhoto = cameraCalls.filter((call) => call.type === "snapshot").length;
-const explicitFrontPhotoScenario = await executor.executeAction({
-  id: "scenario_photo_front",
-  source: "gemini_live",
-  type: "run_scenario",
-  args: { name: "take_picture", camera: "front" }
-});
-assert.equal(explicitFrontPhotoScenario.status, "queued");
-assert.equal(explicitFrontPhotoScenario.detail.execution, "parallel");
-await settleAsyncScenario();
-assert.equal(routedSequences.at(-1).action.args.scenario, "take_picture");
-assert.equal(routedSequences.at(-1).action.args.frames.at(-1).args.camera, "front");
-assert.equal(
-  cameraCalls.filter((call) => call.type === "snapshot").length,
-  frontSnapshotsBeforeExplicitFrontPhoto + 1
-);
-
-const frontSnapshotsBeforeInvalidCameraPhoto = cameraCalls.filter((call) => call.type === "snapshot").length;
-const invalidCameraPhotoScenario = await executor.executeAction({
-  id: "scenario_photo_invalid_camera",
-  source: "gemini_live",
-  type: "run_scenario",
-  args: { name: "take_picture", camera: "side" }
-});
-assert.equal(invalidCameraPhotoScenario.status, "queued");
-assert.equal(invalidCameraPhotoScenario.detail.execution, "parallel");
-await settleAsyncScenario();
-assert.equal(routedSequences.at(-1).action.args.scenario, "take_picture");
-assert.equal(routedSequences.at(-1).action.args.frames.at(-1).args.camera, "auto");
-assert.equal(
-  cameraCalls.filter((call) => call.type === "snapshot").length,
-  frontSnapshotsBeforeInvalidCameraPhoto + 1
-);
 
 const eatingScenario = await executor.executeAction({
   id: "scenario_eating",

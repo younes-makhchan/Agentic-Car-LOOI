@@ -488,9 +488,9 @@
               </label>
               <label>
                 <span>Ramp / decay ms</span>
-                <strong id="rampValue">60 ms requested</strong>
+                <strong id="rampValue">50 ms requested</strong>
                 <small class="note">Used for ramp-up and smooth decay after the command duration. Firmware clamps this to half the command duration.</small>
-                <input id="rampMs" type="number" min="0" max="500" step="5" value="60" />
+                <input id="rampMs" type="number" min="0" max="500" step="5" value="50" />
               </label>
               <label>
                 <span>Angular sign</span>
@@ -557,6 +557,10 @@
 
     <script type="module">
       import { PUBLIC_CONFIG } from "./js/config.js";
+      import {
+        IDLE_SCENARIO_GLOBAL_DEFAULTS,
+        cloneIdleScenarios
+      } from "./js/idle/idleScenarioCatalog.js";
       import { ESP32Client } from "./js/robot/esp32Client.js";
       import { CommandQueue } from "./js/robot/commandQueue.js";
 
@@ -565,91 +569,8 @@
       const MAX_DURATION_MS = 1200;
       const MAX_RAMP_MS = 500;
 
-      const DEFAULT_SCENARIOS = [
-        {
-          id: "idle_shift_right_back_left_front",
-          title: "Animation 1",
-          description: "Right wheel back, left wheel front. A small twist that should later be balanced by the opposite.",
-          pairWith: "idle_shift_right_front_left_back",
-          steps: [
-            { kind: "move", left: 0.5, right: -0.5, durationMs: 130, pauseMs: 80 },
-            { kind: "stop", left: 0, right: 0, durationMs: 0, pauseMs: 120 }
-          ]
-        },
-        {
-          id: "idle_shift_right_front_left_back",
-          title: "Animation 1B",
-          description: "Right wheel front, left wheel back. Counter-motion for Animation 1.",
-          pairWith: "idle_shift_right_back_left_front",
-          steps: [
-            { kind: "move", left: -0.5, right: 0.5, durationMs: 130, pauseMs: 80 },
-            { kind: "stop", left: 0, right: 0, durationMs: 0, pauseMs: 120 }
-          ]
-        },
-        {
-          id: "idle_both_front_left_soft",
-          title: "Animation 2",
-          description: "Left a bit front and right front. A small forward nudge with left side softer.",
-          pairWith: "",
-          steps: [
-            { kind: "move", left: 0.35, right: 0.5, durationMs: 120, pauseMs: 90 },
-            { kind: "stop", left: 0, right: 0, durationMs: 0, pauseMs: 120 }
-          ]
-        },
-        {
-          id: "idle_both_front_tiny",
-          title: "Animation 3",
-          description: "Left tiny front and right tiny front. Very subtle forward life.",
-          pairWith: "",
-          steps: [
-            { kind: "move", left: 0.32, right: 0.35, durationMs: 90, pauseMs: 120 },
-            { kind: "stop", left: 0, right: 0, durationMs: 0, pauseMs: 120 }
-          ]
-        },
-        {
-          id: "idle_pulsed_wheel_opposition",
-          title: "Animation 4",
-          description: "Left wheel front, right wheel back, tiny pause, continue moving.",
-          pairWith: "idle_shift_right_front_left_back",
-          steps: [
-            { kind: "move", left: 0.45, right: -0.45, durationMs: 80, pauseMs: 80 },
-            { kind: "stop", left: 0, right: 0, durationMs: 0, pauseMs: 90 },
-            { kind: "move", left: 0.45, right: -0.45, durationMs: 80, pauseMs: 80 },
-            { kind: "stop", left: 0, right: 0, durationMs: 0, pauseMs: 120 }
-          ]
-        },
-        {
-          id: "idle_rotate_right",
-          title: "Animation 5",
-          description: "Rotate right.",
-          pairWith: "idle_rotate_left",
-          steps: [
-            { kind: "move", left: 0.5, right: -0.5, durationMs: 130, pauseMs: 90 },
-            { kind: "stop", left: 0, right: 0, durationMs: 0, pauseMs: 120 }
-          ]
-        },
-        {
-          id: "idle_rotate_left",
-          title: "Animation 6",
-          description: "Rotate left.",
-          pairWith: "idle_rotate_right",
-          steps: [
-            { kind: "move", left: -0.5, right: 0.5, durationMs: 130, pauseMs: 90 },
-            { kind: "stop", left: 0, right: 0, durationMs: 0, pauseMs: 120 }
-          ]
-        },
-        {
-          id: "idle_forward_then_backward",
-          title: "Animation 7",
-          description: "Go forward, then go backward.",
-          pairWith: "",
-          steps: [
-            { kind: "move", left: 0.35, right: 0.35, durationMs: 130, pauseMs: 120 },
-            { kind: "move", left: -0.35, right: -0.35, durationMs: 130, pauseMs: 110 },
-            { kind: "stop", left: 0, right: 0, durationMs: 0, pauseMs: 140 }
-          ]
-        }
-      ];
+      const DEFAULT_SCENARIOS = cloneIdleScenarios();
+      const DEFAULT_GLOBALS = IDLE_SCENARIO_GLOBAL_DEFAULTS;
 
       const ui = {
         esp32Url: document.getElementById("esp32Url"),
@@ -758,6 +679,7 @@
           scenarios = cloneScenarios(DEFAULT_SCENARIOS);
           order = scenarios.map((scenario) => scenario.id);
           selectedId = scenarios[0]?.id ?? "";
+          applyGlobalDefaults();
           saveState();
           renderAll();
           log("Reset idle scenarios to defaults.");
@@ -881,7 +803,7 @@
             }),
             button("Play", () => playScenarioById(scenario.id, { dryRun: false }), "primary"),
             button("Add Step", () => {
-              scenario.steps.push({ kind: "move", left: 0.08, right: 0.08, durationMs: 140, pauseMs: 80 });
+              scenario.steps.push({ kind: "move", left: 0.5, right: 0.5, durationMs: 80, pauseMs: 120 });
               renderAll();
             }),
             button("Remove", () => removeScenario(scenario.id), "danger")
@@ -1240,11 +1162,12 @@
         try {
           const raw = localStorage.getItem(STORAGE_KEY);
           if (!raw) {
+            applyGlobalDefaults();
             return;
           }
           const saved = JSON.parse(raw);
           if (Array.isArray(saved.scenarios) && saved.scenarios.length) {
-            scenarios = saved.scenarios;
+            scenarios = mergeDefaultScenarios(saved.scenarios);
           }
           if (Array.isArray(saved.order) && saved.order.length) {
             order = saved.order.filter((id) => scenarios.some((scenario) => scenario.id === id));
@@ -1261,9 +1184,50 @@
             ui.rampMs.value = saved.globals.rampMs ?? ui.rampMs.value;
             ui.angularSign.value = saved.globals.angularSign ?? ui.angularSign.value;
           }
+          mergeDefaultScenariosIntoOrder();
         } catch (error) {
           log(`Saved settings ignored: ${error.message}`, "warn");
         }
+      }
+
+      function applyGlobalDefaults() {
+        ui.speedScale.value = String(DEFAULT_GLOBALS.speedScale);
+        ui.durationScale.value = String(DEFAULT_GLOBALS.durationScale);
+        ui.rampMs.value = String(DEFAULT_GLOBALS.rampMs);
+        ui.angularSign.value = String(DEFAULT_GLOBALS.angularSign);
+      }
+
+      function mergeDefaultScenarios(savedScenarios = []) {
+        const merged = Array.isArray(savedScenarios)
+          ? savedScenarios.map((scenario) => ({
+              ...scenario,
+              steps: Array.isArray(scenario.steps) ? scenario.steps.map((step) => ({ ...step })) : []
+            }))
+          : [];
+
+        DEFAULT_SCENARIOS.forEach((defaultScenario) => {
+          const existing = merged.find((scenario) => scenario.id === defaultScenario.id);
+          if (existing) {
+            existing.title = defaultScenario.title;
+            existing.description = defaultScenario.description;
+            existing.pairWith = defaultScenario.pairWith;
+            return;
+          }
+          merged.push({
+            ...defaultScenario,
+            steps: defaultScenario.steps.map((step) => ({ ...step }))
+          });
+        });
+
+        return merged;
+      }
+
+      function mergeDefaultScenariosIntoOrder() {
+        scenarios.forEach((scenario) => {
+          if (!order.includes(scenario.id)) {
+            order.push(scenario.id);
+          }
+        });
       }
 
       function getScenario(id) {

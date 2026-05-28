@@ -48,16 +48,6 @@ export class ToolExecutor {
     this.scenarioToken = 0;
   }
 
-  setRobotInterfaces({ robotClient, commandQueue } = {}) {
-    if (robotClient) {
-      this.robotClient = robotClient;
-    }
-
-    if (commandQueue) {
-      this.commandQueue = commandQueue;
-    }
-  }
-
   setLifeEngine(lifeEngine) {
     this.lifeEngine = lifeEngine;
   }
@@ -180,7 +170,7 @@ export class ToolExecutor {
     }
 
     this.log(
-      `STEP 4 RUN_SCENARIO name=${normalizedArgs.name} label=${normalizedArgs.label || "none"} mode=${normalizedArgs.mode} camera=${normalizedArgs.camera}`
+      `STEP 4 RUN_SCENARIO name=${normalizedArgs.name} label=${normalizedArgs.label || "none"} mode=${normalizedArgs.mode}`
     );
 
     if (normalizedArgs.name === "follow_target") {
@@ -272,7 +262,6 @@ export class ToolExecutor {
 
     return this.executeScenario(scenario, action, {
       motionPermission,
-      requestArgs: normalizedArgs,
       forceBlocking
     });
   }
@@ -407,12 +396,12 @@ export class ToolExecutor {
     };
   }
 
-  async executeScenario(scenario, action, { motionPermission, requestArgs = {}, forceBlocking = false } = {}) {
+  async executeScenario(scenario, action, { motionPermission, forceBlocking = false } = {}) {
     const usesMotion = scenarioUsesMotion(scenario);
     const requiresMotion = scenarioRequiresMotion(scenario);
     const requiresCamera = scenarioRequiresCamera(scenario);
     const execution = forceBlocking ? "blocking" : scenarioExecutionMode(scenario);
-    const frames = buildScenarioFramesForRequest(scenario, requestArgs);
+    const frames = Array.isArray(scenario.sequence) ? [...scenario.sequence] : [];
 
     if (this.activeScenario) {
       return this.buildResult("rejected", {
@@ -441,9 +430,6 @@ export class ToolExecutor {
       name: `scenario_${scenario.name}`,
       frames,
       scenario: scenario.name,
-      request: {
-        camera: requestArgs.camera ?? "auto"
-      },
       requiresMotion: usesMotion,
       cooldownMs: scenario.cooldownMs,
       interruptible: scenario.interruptible,
@@ -1024,11 +1010,6 @@ function normalizeFollowMode(mode) {
   return ["gentle", "curious", "cautious"].includes(mode) ? mode : "gentle";
 }
 
-function normalizeCameraChoice(value) {
-  const normalized = String(value ?? "").trim().toLowerCase();
-  return ["auto", "front"].includes(normalized) ? normalized : "auto";
-}
-
 function normalizeRunScenarioArgs(args = {}, { allowInternalScenario = false } = {}) {
   const nested = args.args && typeof args.args === "object" && !Array.isArray(args.args)
     ? args.args
@@ -1043,29 +1024,6 @@ function normalizeRunScenarioArgs(args = {}, { allowInternalScenario = false } =
     name,
     label: normalizeShortText(args.label ?? args.targetLabel ?? nested.label ?? nested.targetLabel, 80),
     mode: normalizeFollowMode(mode),
-    reason: normalizeShortText(args.reason ?? nested.reason, 120),
-    camera: normalizeCameraChoice(args.camera ?? nested.camera)
+    reason: normalizeShortText(args.reason ?? nested.reason, 120)
   };
-}
-
-function buildScenarioFramesForRequest(scenario = {}, requestArgs = {}) {
-  const frames = Array.isArray(scenario.sequence) ? [...scenario.sequence] : [];
-  if (scenario.name !== "take_picture") {
-    return frames;
-  }
-
-  const camera = normalizeCameraChoice(requestArgs.camera);
-  return frames.map((frame) => {
-    if (frame?.type !== "action" || typeof frame.action !== "function") {
-      return frame;
-    }
-
-    return {
-      ...frame,
-      args: {
-        ...(frame.args ?? {}),
-        camera
-      }
-    };
-  });
 }

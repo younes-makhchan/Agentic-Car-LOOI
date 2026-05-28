@@ -3,7 +3,7 @@ import { clampNumber } from "../core/runtimeUtils.js";
 const STORAGE_KEY = "looi.bodyCalibration.v1";
 
 const DEFAULT_BODY_CALIBRATION = {
-  maxSpeed: 0.4,
+  maxSpeed: 0.5,
   gentleSpeed: 0.18,
   turnSpeed: 0.18,
   wiggleSpeed: 0.2,
@@ -49,9 +49,13 @@ export class BodyCalibration {
         return this.getSettings();
       }
 
+      const savedSettings = JSON.parse(raw);
+      if (savedSettings.maxSpeed === 0.4) {
+        savedSettings.maxSpeed = DEFAULT_BODY_CALIBRATION.maxSpeed;
+      }
       this.settings = normalizeSettings({
         ...DEFAULT_BODY_CALIBRATION,
-        ...JSON.parse(raw)
+        ...savedSettings
       });
       this.emitChange();
     } catch (error) {
@@ -157,7 +161,7 @@ export class BodyCalibration {
 
 function normalizeSettings(settings = {}) {
   return {
-    maxSpeed: clampNumber(settings.maxSpeed, 0.05, 0.4, DEFAULT_BODY_CALIBRATION.maxSpeed),
+    maxSpeed: clampNumber(settings.maxSpeed, 0.05, 0.5, DEFAULT_BODY_CALIBRATION.maxSpeed),
     gentleSpeed: clampNumber(settings.gentleSpeed, 0.05, 0.4, DEFAULT_BODY_CALIBRATION.gentleSpeed),
     turnSpeed: clampNumber(settings.turnSpeed, 0.05, 0.4, DEFAULT_BODY_CALIBRATION.turnSpeed),
     wiggleSpeed: clampNumber(settings.wiggleSpeed, 0.05, 0.4, DEFAULT_BODY_CALIBRATION.wiggleSpeed),

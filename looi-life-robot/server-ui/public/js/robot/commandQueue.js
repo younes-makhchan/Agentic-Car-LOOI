@@ -28,7 +28,7 @@ export class CommandQueue {
 
   setLimits({ maxSpeed, minDurationMs, maxDurationMs } = {}) {
     if (Number.isFinite(Number(maxSpeed))) {
-      this.maxSpeed = clamp(maxSpeed, 0.05, 0.4);
+      this.maxSpeed = clamp(maxSpeed, 0.05, 0.5);
     }
 
     if (Number.isFinite(Number(minDurationMs))) {

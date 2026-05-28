@@ -70,7 +70,7 @@ const calibration = new BodyCalibration({
 });
 
 const defaults = calibration.getSettings();
-assert.equal(defaults.maxSpeed, 0.4);
+assert.equal(defaults.maxSpeed, 0.5);
 assert.equal(defaults.rampMs, 150);
 
 const clamped = calibration.importJson({
@@ -81,7 +81,7 @@ const clamped = calibration.importJson({
   minPwm: 999,
   motionIntensityScale: 9
 });
-assert.equal(clamped.maxSpeed, 0.4);
+assert.equal(clamped.maxSpeed, 0.5);
 assert.equal(clamped.leftTrim, 1.3);
 assert.equal(clamped.rightTrim, 0.5);
 assert.equal(clamped.rampMs, 500);
@@ -104,7 +104,7 @@ const robot = new TestRobotClient();
 robot.connect();
 const applyResult = await calibration.applyToRobot(robot);
 assert.equal(applyResult.ok, true);
-assert.equal(robot.getLatestConfig().max_speed, 0.4);
+assert.equal(robot.getLatestConfig().max_speed, 0.5);
 
 const commandEvents = [];
 const queue = new CommandQueue({

@@ -19,6 +19,7 @@ export class GeminiLiveRuntime {
     face,
     lifeEngine,
     logger,
+    eventBus,
     getRuntimeContext,
     fetchToken,
     transportFactory,
@@ -30,6 +31,7 @@ export class GeminiLiveRuntime {
     this.face = face;
     this.lifeEngine = lifeEngine;
     this.logger = logger;
+    this.eventBus = eventBus;
     this.getRuntimeContext = getRuntimeContext;
     this.fetchToken = fetchToken ?? defaultFetchToken;
     this.transportFactory = transportFactory ?? createWebSocketTransport;
@@ -623,6 +625,10 @@ export class GeminiLiveRuntime {
       return this.deferSpeechStartToolCall({ id, name, action });
     }
 
+    this.publishGeminiScenarioEvent("gemini_scenario_started", action, {
+      toolCallId: id,
+      toolName: name
+    });
     this.pendingToolCalls.set(id, {
       name,
       action,
@@ -648,6 +654,12 @@ export class GeminiLiveRuntime {
       } else if (action.type === "run_scenario") {
         this.rememberAcceptedRunScenario(action.args?.name);
       }
+      this.publishGeminiScenarioEvent("gemini_scenario_finished", action, {
+        toolCallId: id,
+        toolName: name,
+        status,
+        executed
+      });
 
       return {
         id,
@@ -667,6 +679,12 @@ export class GeminiLiveRuntime {
       };
     } catch (error) {
       this.pendingToolCalls.delete(id);
+      this.publishGeminiScenarioEvent("gemini_scenario_finished", action, {
+        toolCallId: id,
+        toolName: name,
+        status: "failed",
+        error: error.message
+      });
       this.patchStatus({
         lastToolResult: `${name}: failed`,
         lastError: error.message
@@ -1125,6 +1143,9 @@ export class GeminiLiveRuntime {
       lastToolCallAt: now
     });
     this.log(`${logMessage}: ${scenarioName}`);
+    this.publishGeminiScenarioEvent("gemini_scenario_started", action, {
+      toolName: "speech_start"
+    });
     this.toolExecutor.executeAction(action)
       .then((result) => {
         const status = result?.status ?? "completed";
@@ -1140,6 +1161,11 @@ export class GeminiLiveRuntime {
         } else {
           this.rememberAcceptedRunScenario(scenarioName);
         }
+        this.publishGeminiScenarioEvent("gemini_scenario_finished", action, {
+          toolName: "speech_start",
+          status,
+          executed: result?.executed === true
+        });
       })
       .catch((error) => {
         this.patchStatus({
@@ -1147,9 +1173,31 @@ export class GeminiLiveRuntime {
           lastError: error.message
         });
         this.log(`Gemini speech-start scenario failed: ${error.message}`, "warn");
+        this.publishGeminiScenarioEvent("gemini_scenario_finished", action, {
+          toolName: "speech_start",
+          status: "failed",
+          error: error.message
+        });
       });
 
     return true;
+  }
+
+  publishGeminiScenarioEvent(type, action = {}, detail = {}) {
+    if (action.type !== "run_scenario" || !this.eventBus?.publish) {
+      return;
+    }
+
+    this.eventBus.publish(type, {
+      scenario: action.args?.name ?? "",
+      actionId: action.id ?? null,
+      actionSource: action.source ?? "",
+      reason: action.reason ?? "",
+      ...detail
+    }, {
+      source: "gemini_live",
+      priority: type === "gemini_scenario_started" ? 5 : 2
+    });
   }
 
   rememberAcceptedRunScenario(name) {

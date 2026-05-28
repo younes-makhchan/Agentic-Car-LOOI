@@ -8,7 +8,6 @@ export const GEMINI_LIVE_INPUT_RATE = 16000;
 export const GEMINI_LIVE_OUTPUT_RATE = 24000;
 
 const FOLLOW_MODES = Object.freeze(["gentle", "curious", "cautious"]);
-const CAMERA_CHOICES = Object.freeze(["auto", "front"]);
 
 const GEMINI_LIVE_SYSTEM_INSTRUCTION = [
   "<system>",
@@ -80,13 +79,6 @@ function buildGeminiLiveTools() {
               reason: {
                 type: "STRING",
                 description: "Short reason, mainly for stop_following.",
-                nullable: true
-              },
-              camera: {
-                type: "STRING",
-                description:
-                  "Optional only for take_picture. Use auto or front.",
-                enum: [...CAMERA_CHOICES],
                 nullable: true
               }
             },
@@ -163,7 +155,6 @@ export function geminiFunctionCallToAction(call = {}) {
   }
 
   const label = normalizeShortText(args.label ?? args.targetLabel ?? nested.label ?? nested.targetLabel, 80);
-  const camera = normalizeCameraChoice(args.camera ?? nested.camera);
 
   if (scenarioName === "follow_target" && !label) {
     return {
@@ -182,8 +173,7 @@ export function geminiFunctionCallToAction(call = {}) {
         name: scenarioName,
         label,
         mode: FOLLOW_MODES.includes(args.mode ?? nested.mode) ? (args.mode ?? nested.mode) : "gentle",
-        reason: normalizeShortText(args.reason ?? nested.reason, 120),
-        camera
+        reason: normalizeShortText(args.reason ?? nested.reason, 120)
       },
       reason: "gemini_live_run_scenario"
     }
@@ -196,7 +186,6 @@ export function summarizeGeminiAction(action = {}) {
     scenario: action.args?.name ?? action.args?.scenario ?? null,
     label: action.args?.label ?? null,
     mode: action.args?.mode ?? null,
-    camera: action.args?.camera ?? null,
     reason: action.reason ?? action.args?.reason ?? null
   };
 }
@@ -228,9 +217,4 @@ function normalizeShortText(value, maxLength) {
   }
 
   return value.trim().slice(0, maxLength);
-}
-
-function normalizeCameraChoice(value) {
-  const normalized = String(value ?? "").trim().toLowerCase();
-  return CAMERA_CHOICES.includes(normalized) ? normalized : "auto";
 }

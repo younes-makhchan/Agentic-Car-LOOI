@@ -119,20 +119,6 @@ export class LifeEngine {
     return [...this.state.recentEvents];
   }
 
-  setRobotInterfaces({ robotClient, commandQueue } = {}) {
-    if (robotClient) {
-      this.robotClient = robotClient;
-    }
-
-    if (commandQueue) {
-      this.commandQueue = commandQueue;
-    }
-
-    this.emitStatus();
-    this.log("Life Engine robot interface updated.");
-    return this.getState();
-  }
-
   setCalibration(calibration) {
     this.calibration = calibration;
     const settings = calibration?.getSettings?.() ?? calibration ?? {};

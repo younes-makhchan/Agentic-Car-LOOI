@@ -5,6 +5,8 @@ import { EmbodiedActionRouter } from "./embodiment/embodiedActionRouter.js";
 import { ScenarioFrameSequencer } from "./embodiment/scenarioFrameSequencer.js";
 import { PriorityScheduler } from "./embodiment/priorityScheduler.js";
 import { GeminiLiveRuntime } from "./gemini/geminiLiveRuntime.js";
+import { IDLE_SCENARIOS } from "./idle/idleScenarioCatalog.js";
+import { IdleScenarioScheduler } from "./idle/idleScenarioScheduler.js";
 import { LifeEngine } from "./life/lifeEngine.js";
 import { LocalBrainEngine } from "./localBrain/localBrainEngine.js";
 import { LocalServerBrainAdapter } from "./localBrain/localServerBrainAdapter.js";
@@ -39,9 +41,18 @@ const DEFAULT_SPEED = 0.2;
 const DEFAULT_DURATION_MS = 400;
 const LOCAL_VISION_SIZE_STORAGE_KEY = "looi.localVisionWidgetSizePx.v2";
 const FRONT_CAMERA_DEVICE_STORAGE_KEY = "looi.frontCameraDeviceId.v1";
-const BACK_CAMERA_DEVICE_STORAGE_KEY = "looi.backCameraDeviceId.v1";
+const IDLE_SCENARIO_SETTINGS_STORAGE_KEY = "looi.idleScenarioSettings.v1";
 const DEFAULT_FRONT_CAMERA_INDEX = 1;
-const DEFAULT_BACK_CAMERA_INDEX = 0;
+const DEFAULT_IDLE_SCENARIO_SETTINGS = Object.freeze({
+  firstIdleMinSec: 7,
+  firstIdleMaxSec: 12,
+  silentIdleMinSec: 12,
+  silentIdleMaxSec: 28,
+  speakingIdleMinSec: 18,
+  speakingIdleMaxSec: 38,
+  balanceStartPercent: 20,
+  balanceIncrementPercent: 20
+});
 const FOLLOW_TUNING_STORAGE_KEY = "looi.followTuning.v3";
 const FOLLOW_TUNING_PRESETS = Object.freeze({
   case1: Object.freeze({
@@ -128,7 +139,6 @@ const ui = {
   cameraLastError: document.getElementById("cameraLastError"),
   refreshCameraDevicesButton: document.getElementById("refreshCameraDevicesButton"),
   frontCameraDeviceSelect: document.getElementById("frontCameraDeviceSelect"),
-  backCameraDeviceSelect: document.getElementById("backCameraDeviceSelect"),
   cameraVisionSupport: document.getElementById("cameraVisionSupport"),
   geminiVisionAssistToggle: document.getElementById("geminiVisionAssistToggle"),
   geminiVisionAssistIntervalSlider: document.getElementById("geminiVisionAssistIntervalSlider"),
@@ -136,7 +146,6 @@ const ui = {
   geminiVisionAssistState: document.getElementById("geminiVisionAssistState"),
   geminiVisionAssistLastFrame: document.getElementById("geminiVisionAssistLastFrame"),
   startFrontCameraButton: document.getElementById("startFrontCameraButton"),
-  startBackCameraButton: document.getElementById("startBackCameraButton"),
   switchCameraButton: document.getElementById("switchCameraButton"),
   stopCameraButton: document.getElementById("stopCameraButton"),
   captureSnapshotButton: document.getElementById("captureSnapshotButton"),
@@ -193,6 +202,15 @@ const ui = {
   geminiLiveLatency: document.getElementById("geminiLiveLatency"),
   localBrainThoughtList: document.getElementById("localBrainThoughtList"),
   localMotionArmedToggle: document.getElementById("localMotionArmedToggle"),
+  idleFirstGapMinInput: document.getElementById("idleFirstGapMinInput"),
+  idleFirstGapMaxInput: document.getElementById("idleFirstGapMaxInput"),
+  idleSilentGapMinInput: document.getElementById("idleSilentGapMinInput"),
+  idleSilentGapMaxInput: document.getElementById("idleSilentGapMaxInput"),
+  idleSpeakingGapMinInput: document.getElementById("idleSpeakingGapMinInput"),
+  idleSpeakingGapMaxInput: document.getElementById("idleSpeakingGapMaxInput"),
+  idleBalanceStartInput: document.getElementById("idleBalanceStartInput"),
+  idleBalanceIncrementInput: document.getElementById("idleBalanceIncrementInput"),
+  idleScenarioTestList: document.getElementById("idleScenarioTestList"),
   startLocalBrainButton: document.getElementById("startLocalBrainButton"),
   stopLocalBrainButton: document.getElementById("stopLocalBrainButton"),
   thinkNowButton: document.getElementById("thinkNowButton"),
@@ -287,6 +305,7 @@ let bodyCalibration = null;
 let personalityTuning = null;
 let lifeEventEmitter = null;
 let toolExecutor = null;
+let idleScenarioScheduler = null;
 let activeConfig = { ...PUBLIC_CONFIG };
 let brainPolicy = createDefaultBrainPolicy();
 let latestActionResult = null;
@@ -300,7 +319,7 @@ let geminiVisionAssistLastFrameAt = 0;
 let geminiVisionAssistSending = false;
 let cameraDevices = [];
 let frontCameraDeviceId = "";
-let backCameraDeviceId = "";
+let idleScenarioSettings = { ...DEFAULT_IDLE_SCENARIO_SETTINGS };
 let learnedPhraseCache = [];
 let lifeEventsEnabled = false;
 let settingsOpen = false;
@@ -330,6 +349,9 @@ updateCameraUi();
 updatePersonalityUi();
 updateLifeEventsUi();
 updateProductionChrome();
+idleScenarioSettings = loadIdleScenarioSettings();
+updateIdleScenarioSettingsUi();
+renderIdleScenarioTestButtons();
 
 ui.productionStartButton.addEventListener("click", () => {
   startProductionRuntime().catch((error) => {
@@ -471,6 +493,21 @@ ui.localMotionArmedToggle.addEventListener("change", () => {
   );
 });
 
+[
+  ui.idleFirstGapMinInput,
+  ui.idleFirstGapMaxInput,
+  ui.idleSilentGapMinInput,
+  ui.idleSilentGapMaxInput,
+  ui.idleSpeakingGapMinInput,
+  ui.idleSpeakingGapMaxInput,
+  ui.idleBalanceStartInput,
+  ui.idleBalanceIncrementInput
+].forEach((element) => {
+  element?.addEventListener("change", () => {
+    applyIdleScenarioSettingsFromUi();
+  });
+});
+
 ui.geminiVisionAssistToggle?.addEventListener("change", () => {
   geminiVisionAssistEnabled = Boolean(ui.geminiVisionAssistToggle.checked);
   syncGeminiVisionAssist("toggle");
@@ -505,6 +542,7 @@ ui.startLocalBrainButton.addEventListener("click", () => {
 });
 
 ui.stopLocalBrainButton.addEventListener("click", () => {
+  idleScenarioScheduler?.stop?.("ui_stop_local_brain");
   stopGeminiVisionAssist("ui_stop_local_brain");
   clearPendingGeminiVisionAfterSpeech();
   stopLooiRoboflowRuntime("ui_stop_local_brain");
@@ -541,25 +579,13 @@ ui.refreshCameraDevicesButton?.addEventListener("click", () => {
 
 ui.frontCameraDeviceSelect?.addEventListener("change", () => {
   frontCameraDeviceId = normalizeCameraDeviceId(ui.frontCameraDeviceSelect.value);
-  saveCameraDeviceId("front", frontCameraDeviceId);
-  log(`Front camera device set to ${formatCameraDeviceForLog(getFrontCameraDeviceId(), "front")}.`);
-});
-
-ui.backCameraDeviceSelect?.addEventListener("change", () => {
-  backCameraDeviceId = normalizeCameraDeviceId(ui.backCameraDeviceSelect.value);
-  saveCameraDeviceId("back", backCameraDeviceId);
-  log(`Back camera device set to ${formatCameraDeviceForLog(getBackCameraDeviceId(), "back")}.`);
+  saveCameraDeviceId(frontCameraDeviceId);
+  log(`Front camera device set to ${formatCameraDeviceForLog(getFrontCameraDeviceId())}.`);
 });
 
 ui.startFrontCameraButton.addEventListener("click", () => {
   openCameraFromUi("user").catch((error) => {
     log(`Front camera failed: ${error.message}`, "error");
-  });
-});
-
-ui.startBackCameraButton.addEventListener("click", () => {
-  openCameraFromUi("environment").catch((error) => {
-    log(`Back camera failed: ${error.message}`, "error");
   });
 });
 
@@ -866,8 +892,7 @@ async function init() {
   if (ui.geminiVisionAssistIntervalValue) {
     ui.geminiVisionAssistIntervalValue.textContent = `${Math.round(geminiVisionAssistIntervalMs)} ms`;
   }
-  frontCameraDeviceId = loadCameraDeviceId("front");
-  backCameraDeviceId = loadCameraDeviceId("back");
+  frontCameraDeviceId = loadCameraDeviceId();
   syncCameraDeviceSelects();
 
   localEventBus = new LocalEventBus({
@@ -1088,6 +1113,7 @@ async function init() {
     toolExecutor,
     face,
     lifeEngine,
+    eventBus: localEventBus,
     getRuntimeContext,
     logger: (message, level = "info") => log(message, level)
   });
@@ -1120,6 +1146,16 @@ async function init() {
       logger: (message, level = "info") => log(message, level)
     }),
     fallback: new RuleBrainFallback(),
+    logger: (message, level = "info") => log(message, level)
+  });
+
+  idleScenarioScheduler = new IdleScenarioScheduler({
+    commandQueue,
+    robotClient,
+    eventBus: localEventBus,
+    getPolicy: getExecutionPolicy,
+    getRuntimeStatus: getIdleRuntimeStatus,
+    settings: toIdleSchedulerSettings(idleScenarioSettings),
     logger: (message, level = "info") => log(message, level)
   });
 
@@ -1280,6 +1316,7 @@ async function immediateStop(reason, message, level = "warn") {
     return;
   }
 
+  idleScenarioScheduler?.stop?.(reason);
   geminiLiveRuntime?.interrupt?.(reason);
   scenarioFrameSequencer?.interrupt?.(reason, 100);
   priorityScheduler?.interruptBelow?.(100, reason);
@@ -1430,7 +1467,7 @@ async function refreshCameraDevices({ quiet = false } = {}) {
   if (!quiet) {
     const hasHiddenLabels = cameraDevices.some((device) => !device.label);
     log(
-      `Camera devices refreshed: ${cameraDevices.length}. front=${formatCameraDeviceForLog(getFrontCameraDeviceId(), "front")} back=${formatCameraDeviceForLog(getBackCameraDeviceId(), "back")}${hasHiddenLabels ? " (labels may appear after camera permission)" : ""}.`
+      `Camera devices refreshed: ${cameraDevices.length}. front=${formatCameraDeviceForLog(getFrontCameraDeviceId())}${hasHiddenLabels ? " (labels may appear after camera permission)" : ""}.`
     );
   }
 
@@ -1439,32 +1476,24 @@ async function refreshCameraDevices({ quiet = false } = {}) {
 
 function syncCameraDeviceSelects() {
   populateCameraDeviceSelect(ui.frontCameraDeviceSelect, {
-    role: "front",
     selectedDeviceId: getFrontCameraDeviceId(),
     defaultIndex: DEFAULT_FRONT_CAMERA_INDEX
   });
-  populateCameraDeviceSelect(ui.backCameraDeviceSelect, {
-    role: "back",
-    selectedDeviceId: getBackCameraDeviceId(),
-    defaultIndex: DEFAULT_BACK_CAMERA_INDEX
-  });
 }
 
-function populateCameraDeviceSelect(select, { role, selectedDeviceId, defaultIndex }) {
+function populateCameraDeviceSelect(select, { selectedDeviceId, defaultIndex }) {
   if (!select) {
     return;
   }
 
   const cleanSelectedId = normalizeCameraDeviceId(selectedDeviceId);
-  const defaultLabel = role === "front"
-    ? `Default camera ${defaultIndex} / front`
-    : `Default camera ${defaultIndex} / back`;
+  const defaultLabel = `Default camera ${defaultIndex} / front`;
 
   select.replaceChildren();
   select.append(new Option(defaultLabel, ""));
 
   if (cleanSelectedId && !cameraDevices.some((device) => device.deviceId === cleanSelectedId)) {
-    select.append(new Option(`Saved ${role} camera (${shortCameraDeviceId(cleanSelectedId)})`, cleanSelectedId));
+    select.append(new Option(`Saved front camera (${shortCameraDeviceId(cleanSelectedId)})`, cleanSelectedId));
   }
 
   cameraDevices.forEach((device, index) => {
@@ -1480,41 +1509,32 @@ function populateCameraDeviceSelect(select, { role, selectedDeviceId, defaultInd
 }
 
 function getFrontCameraDeviceId() {
-  return normalizeCameraDeviceId(frontCameraDeviceId || getDefaultCameraDeviceId("front"));
+  return normalizeCameraDeviceId(frontCameraDeviceId || getDefaultCameraDeviceId());
 }
 
-function getBackCameraDeviceId() {
-  return normalizeCameraDeviceId(backCameraDeviceId || getDefaultCameraDeviceId("back"));
-}
-
-function getDefaultCameraDeviceId(role) {
-  const index = role === "back" ? DEFAULT_BACK_CAMERA_INDEX : DEFAULT_FRONT_CAMERA_INDEX;
-  const fallbackIndex = role === "front" ? DEFAULT_BACK_CAMERA_INDEX : DEFAULT_FRONT_CAMERA_INDEX;
+function getDefaultCameraDeviceId() {
   return normalizeCameraDeviceId(
-    cameraDevices[index]?.deviceId ||
-    cameraDevices[fallbackIndex]?.deviceId ||
+    cameraDevices[DEFAULT_FRONT_CAMERA_INDEX]?.deviceId ||
     cameraDevices[0]?.deviceId ||
     ""
   );
 }
 
-function loadCameraDeviceId(role) {
-  const key = role === "back" ? BACK_CAMERA_DEVICE_STORAGE_KEY : FRONT_CAMERA_DEVICE_STORAGE_KEY;
+function loadCameraDeviceId() {
   try {
-    return normalizeCameraDeviceId(globalThis.localStorage?.getItem?.(key) ?? "");
+    return normalizeCameraDeviceId(globalThis.localStorage?.getItem?.(FRONT_CAMERA_DEVICE_STORAGE_KEY) ?? "");
   } catch {
     return "";
   }
 }
 
-function saveCameraDeviceId(role, deviceId) {
-  const key = role === "back" ? BACK_CAMERA_DEVICE_STORAGE_KEY : FRONT_CAMERA_DEVICE_STORAGE_KEY;
+function saveCameraDeviceId(deviceId) {
   try {
     const cleanDeviceId = normalizeCameraDeviceId(deviceId);
     if (cleanDeviceId) {
-      globalThis.localStorage?.setItem?.(key, cleanDeviceId);
+      globalThis.localStorage?.setItem?.(FRONT_CAMERA_DEVICE_STORAGE_KEY, cleanDeviceId);
     } else {
-      globalThis.localStorage?.removeItem?.(key);
+      globalThis.localStorage?.removeItem?.(FRONT_CAMERA_DEVICE_STORAGE_KEY);
     }
   } catch {
     // Camera selection still applies for the current session when storage is blocked.
@@ -1529,15 +1549,14 @@ function formatCameraStatusFacing(status = {}) {
   const facingMode = status.facingMode ?? "unknown";
   const deviceId = normalizeCameraDeviceId(status.deviceId);
   return deviceId
-    ? `${facingMode} · ${formatCameraDeviceForLog(deviceId, facingMode === "environment" ? "back" : "front")}`
+    ? `${facingMode} · ${formatCameraDeviceForLog(deviceId)}`
     : facingMode;
 }
 
-function formatCameraDeviceForLog(deviceId, role = "front") {
+function formatCameraDeviceForLog(deviceId) {
   const cleanDeviceId = normalizeCameraDeviceId(deviceId);
   if (!cleanDeviceId) {
-    const defaultIndex = role === "back" ? DEFAULT_BACK_CAMERA_INDEX : DEFAULT_FRONT_CAMERA_INDEX;
-    return `facingMode fallback (default camera ${defaultIndex} not enumerated)`;
+    return `facingMode fallback (default camera ${DEFAULT_FRONT_CAMERA_INDEX} not enumerated)`;
   }
 
   const index = cameraDevices.findIndex((device) => device.deviceId === cleanDeviceId);
@@ -1558,9 +1577,12 @@ async function openCameraFromUi(facingMode) {
   }
 
   const normalizedFacingMode = facingMode === "environment" ? "environment" : "user";
-  const role = normalizedFacingMode === "environment" ? "back" : "front";
-  const deviceId = role === "back" ? getBackCameraDeviceId() : getFrontCameraDeviceId();
-  log(`Opening ${role} camera using ${formatCameraDeviceForLog(deviceId, role)}.`);
+  const deviceId = normalizedFacingMode === "user" ? getFrontCameraDeviceId() : "";
+  log(
+    normalizedFacingMode === "user"
+      ? `Opening front camera using ${formatCameraDeviceForLog(deviceId)}.`
+      : "Opening environment camera using browser facingMode."
+  );
   const result = await cameraInput.startCamera({
     facingMode: normalizedFacingMode,
     deviceId
@@ -1942,6 +1964,7 @@ async function startLocalBrainProductionMode() {
   attentionSystem?.wake?.("live_start", activeConfig.conversationWindowMs ?? 30000);
 
   requestPoseScenario("pose_happy");
+  idleScenarioScheduler?.start?.("start_looi");
   log(
     useGeminiLive
       ? "Gemini Live started: Gemini audio, camera, LOOI mode, and movement are enabled."
@@ -2872,7 +2895,7 @@ async function ensureFrontCameraForRoboflow(reason = "detector_start") {
     Boolean(frontDeviceId && cameraStatus.deviceId !== frontDeviceId);
 
   if (needsFrontCamera) {
-    log(`[roboflow] starting front camera reason=${reason} device=${formatCameraDeviceForLog(frontDeviceId, "front")}.`);
+    log(`[roboflow] starting front camera reason=${reason} device=${formatCameraDeviceForLog(frontDeviceId)}.`);
     const result = await cameraInput.startCamera({
       facingMode: "user",
       deviceId: frontDeviceId
@@ -3356,6 +3379,20 @@ function isBrainLive() {
   return Boolean(localBrainEngine?.isRunning?.() || geminiLiveRuntime?.getStatus?.().running);
 }
 
+function getIdleRuntimeStatus() {
+  const geminiStatus = geminiLiveRuntime?.getStatus?.() ?? {};
+  return {
+    brainLive: isBrainLive(),
+    geminiSpeaking: isGeminiAudioPlaying(geminiStatus),
+    scenarioRunning: Boolean(
+      scenarioFrameSequencer?.isRunning?.() ||
+      scenarioFrameSequencer?.getCurrentSequence?.()
+    ),
+    followRunning: Boolean(followTargetController?.isRunning?.()),
+    idleMotionEnabled: bodyCalibration?.getSettings?.().idleMotionEnabled !== false
+  };
+}
+
 function getExecutionPolicy() {
   return {
     source: "local",
@@ -3388,6 +3425,7 @@ function getRuntimeContext() {
       current: scenarioFrameSequencer?.getCurrentSequence?.() ?? null,
       history: scenarioFrameSequencer?.getHistory?.({ limit: 5 }) ?? []
     },
+    idleScenarioStatus: idleScenarioScheduler?.getStatus?.() ?? null,
     performanceStatus: performanceMonitor?.getStatus?.() ?? null,
     reliabilityStatus: reliabilityManager?.getStatus?.() ?? null,
     geminiLive: geminiLiveRuntime?.getStatus?.() ?? null,
@@ -3559,6 +3597,148 @@ function applyLocalVisionWidgetSize(value, { persist = true } = {}) {
       // Storage can be blocked in some mobile browser modes; the size still applies this session.
     }
   }
+}
+
+function loadIdleScenarioSettings() {
+  try {
+    const stored = globalThis.localStorage?.getItem?.(IDLE_SCENARIO_SETTINGS_STORAGE_KEY);
+    if (!stored) {
+      return { ...DEFAULT_IDLE_SCENARIO_SETTINGS };
+    }
+    return normalizeIdleScenarioSettings(JSON.parse(stored));
+  } catch {
+    return { ...DEFAULT_IDLE_SCENARIO_SETTINGS };
+  }
+}
+
+function saveIdleScenarioSettings(settings = idleScenarioSettings) {
+  try {
+    globalThis.localStorage?.setItem?.(
+      IDLE_SCENARIO_SETTINGS_STORAGE_KEY,
+      JSON.stringify(normalizeIdleScenarioSettings(settings))
+    );
+  } catch {
+    // Settings still apply for this session if browser storage is blocked.
+  }
+}
+
+function applyIdleScenarioSettingsFromUi() {
+  idleScenarioSettings = normalizeIdleScenarioSettings({
+    firstIdleMinSec: ui.idleFirstGapMinInput?.value,
+    firstIdleMaxSec: ui.idleFirstGapMaxInput?.value,
+    silentIdleMinSec: ui.idleSilentGapMinInput?.value,
+    silentIdleMaxSec: ui.idleSilentGapMaxInput?.value,
+    speakingIdleMinSec: ui.idleSpeakingGapMinInput?.value,
+    speakingIdleMaxSec: ui.idleSpeakingGapMaxInput?.value,
+    balanceStartPercent: ui.idleBalanceStartInput?.value,
+    balanceIncrementPercent: ui.idleBalanceIncrementInput?.value
+  });
+  saveIdleScenarioSettings(idleScenarioSettings);
+  updateIdleScenarioSettingsUi();
+  idleScenarioScheduler?.setSettings?.(toIdleSchedulerSettings(idleScenarioSettings));
+  log("Idle scenario settings updated.");
+}
+
+function updateIdleScenarioSettingsUi() {
+  setInputValue(ui.idleFirstGapMinInput, idleScenarioSettings.firstIdleMinSec);
+  setInputValue(ui.idleFirstGapMaxInput, idleScenarioSettings.firstIdleMaxSec);
+  setInputValue(ui.idleSilentGapMinInput, idleScenarioSettings.silentIdleMinSec);
+  setInputValue(ui.idleSilentGapMaxInput, idleScenarioSettings.silentIdleMaxSec);
+  setInputValue(ui.idleSpeakingGapMinInput, idleScenarioSettings.speakingIdleMinSec);
+  setInputValue(ui.idleSpeakingGapMaxInput, idleScenarioSettings.speakingIdleMaxSec);
+  setInputValue(ui.idleBalanceStartInput, idleScenarioSettings.balanceStartPercent);
+  setInputValue(ui.idleBalanceIncrementInput, idleScenarioSettings.balanceIncrementPercent);
+}
+
+function renderIdleScenarioTestButtons() {
+  if (!ui.idleScenarioTestList) {
+    return;
+  }
+
+  ui.idleScenarioTestList.replaceChildren();
+  IDLE_SCENARIOS.forEach((scenario) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "idle-scenario-test-button";
+    button.textContent = scenario.title;
+    button.title = scenario.id;
+    button.addEventListener("click", () => {
+      testIdleScenarioFromUi(scenario.id).catch((error) => {
+        log(`Idle scenario test failed: ${error.message}`, "warn");
+      });
+    });
+    ui.idleScenarioTestList.append(button);
+  });
+}
+
+async function testIdleScenarioFromUi(id) {
+  if (!idleScenarioScheduler?.testScenario) {
+    log("Idle scenario scheduler is not ready yet.", "warn");
+    return;
+  }
+
+  const result = await idleScenarioScheduler.testScenario(id);
+  log(result.message, result.executed ? "info" : "warn");
+}
+
+function normalizeIdleScenarioSettings(settings = {}) {
+  const source = settings && typeof settings === "object" ? settings : {};
+  const [firstIdleMinSec, firstIdleMaxSec] = normalizeIdleGapSeconds(
+    source.firstIdleMinSec,
+    source.firstIdleMaxSec,
+    DEFAULT_IDLE_SCENARIO_SETTINGS.firstIdleMinSec,
+    DEFAULT_IDLE_SCENARIO_SETTINGS.firstIdleMaxSec
+  );
+  const [silentIdleMinSec, silentIdleMaxSec] = normalizeIdleGapSeconds(
+    source.silentIdleMinSec,
+    source.silentIdleMaxSec,
+    DEFAULT_IDLE_SCENARIO_SETTINGS.silentIdleMinSec,
+    DEFAULT_IDLE_SCENARIO_SETTINGS.silentIdleMaxSec
+  );
+  const [speakingIdleMinSec, speakingIdleMaxSec] = normalizeIdleGapSeconds(
+    source.speakingIdleMinSec,
+    source.speakingIdleMaxSec,
+    DEFAULT_IDLE_SCENARIO_SETTINGS.speakingIdleMinSec,
+    DEFAULT_IDLE_SCENARIO_SETTINGS.speakingIdleMaxSec
+  );
+
+  return {
+    firstIdleMinSec,
+    firstIdleMaxSec,
+    silentIdleMinSec,
+    silentIdleMaxSec,
+    speakingIdleMinSec,
+    speakingIdleMaxSec,
+    balanceStartPercent: Math.round(clampNumber(
+      source.balanceStartPercent,
+      0,
+      100,
+      DEFAULT_IDLE_SCENARIO_SETTINGS.balanceStartPercent
+    )),
+    balanceIncrementPercent: Math.round(clampNumber(
+      source.balanceIncrementPercent,
+      0,
+      100,
+      DEFAULT_IDLE_SCENARIO_SETTINGS.balanceIncrementPercent
+    ))
+  };
+}
+
+function normalizeIdleGapSeconds(minValue, maxValue, fallbackMin, fallbackMax) {
+  const min = Math.round(clampNumber(minValue, 1, 120, fallbackMin));
+  const max = Math.round(clampNumber(maxValue, 1, 120, fallbackMax));
+  return max >= min ? [min, max] : [max, min];
+}
+
+function toIdleSchedulerSettings(settings = idleScenarioSettings) {
+  const normalized = normalizeIdleScenarioSettings(settings);
+  return {
+    firstIdleGapMs: [normalized.firstIdleMinSec * 1000, normalized.firstIdleMaxSec * 1000],
+    silentIdleGapMs: [normalized.silentIdleMinSec * 1000, normalized.silentIdleMaxSec * 1000],
+    speakingIdleGapMs: [normalized.speakingIdleMinSec * 1000, normalized.speakingIdleMaxSec * 1000],
+    balanceStartChance: normalized.balanceStartPercent / 100,
+    balanceChanceIncrement: normalized.balanceIncrementPercent / 100
+  };
 }
 
 function loadFollowTuningSettings() {

@@ -1,6 +1,6 @@
 export const PUBLIC_CONFIG = {
   defaultEsp32WsUrl: "ws://192.168.4.1:81",
-  maxSpeed: 0.4,
+  maxSpeed: 0.5,
   maxDurationMs: 1000,
   localFirstMode: true,
   localBrainMaxThoughtsPerMinute: 12,

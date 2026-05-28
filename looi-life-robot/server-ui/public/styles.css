@@ -3377,32 +3377,36 @@ body {
   order: 5;
 }
 
-.camera-card {
+.settings-section-idle-scenarios {
   order: 6;
 }
 
-.settings-section-movement {
+.camera-card {
   order: 7;
 }
 
-.settings-section-life {
+.settings-section-movement {
   order: 8;
 }
 
-.settings-section-face-demo {
+.settings-section-life {
   order: 9;
 }
 
-.settings-section-scenarios {
+.settings-section-face-demo {
   order: 10;
 }
 
-.personality-card {
+.settings-section-scenarios {
   order: 11;
 }
 
-.log-card {
+.personality-card {
   order: 12;
+}
+
+.log-card {
+  order: 13;
 }
 
 .camera-card {
@@ -3415,6 +3419,10 @@ body {
 
 .local-brain-card {
   border-color: rgba(144, 231, 255, 0.2);
+}
+
+.settings-section-idle-scenarios {
+  border-color: rgba(126, 224, 186, 0.24);
 }
 
 .local-motion-armed .local-brain-card {
@@ -3636,6 +3644,59 @@ button {
   margin-top: 0.85rem;
   grid-template-columns: minmax(0, 1fr);
   min-width: 0;
+}
+
+.idle-settings-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.65rem;
+  margin-top: 0.85rem;
+}
+
+.idle-number-field {
+  display: grid;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.idle-number-field span {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.idle-number-field input {
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0 0.7rem;
+  border-radius: 0.85rem;
+  border: 1px solid rgba(122, 193, 255, 0.2);
+  background: rgba(8, 13, 23, 0.9);
+  color: var(--text);
+  font: inherit;
+}
+
+.idle-number-field input:focus {
+  outline: none;
+  border-color: rgba(144, 231, 255, 0.55);
+  box-shadow: 0 0 0 3px rgba(97, 211, 255, 0.12);
+}
+
+.settings-section-idle-scenarios h3 {
+  margin: 1rem 0 0;
+  font-size: 1rem;
+}
+
+.idle-scenario-test-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.65rem;
+  margin-top: 0.85rem;
+}
+
+.idle-scenario-test-button {
+  min-height: 2.75rem;
+  padding: 0.65rem 0.75rem;
+  font-size: 0.88rem;
 }
 
 .personality-grid {
@@ -4055,6 +4116,8 @@ button:active {
   .button-grid,
   .movement-grid,
   .camera-preview-grid,
+  .idle-settings-grid,
+  .idle-scenario-test-grid,
   .personality-grid {
     grid-template-columns: 1fr;
   }
