@@ -1,0 +1,416 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>LOOI Wake Phrase Demo</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #07090d;
+        --panel: rgba(14, 20, 31, 0.86);
+        --line: rgba(139, 197, 255, 0.18);
+        --text: #eef7ff;
+        --muted: #8da2b9;
+        --good: #7ef0c4;
+        --bad: #ff9e9e;
+        --blue: #52dcff;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        min-height: 100vh;
+        margin: 0;
+        padding: 28px;
+        background:
+          radial-gradient(circle at 18% 16%, rgba(82, 220, 255, 0.16), transparent 34%),
+          radial-gradient(circle at 82% 18%, rgba(126, 240, 196, 0.1), transparent 28%),
+          linear-gradient(145deg, #05070b 0%, var(--bg) 58%, #020305 100%);
+        color: var(--text);
+        font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      main {
+        width: min(980px, 100%);
+        margin: 0 auto;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: clamp(2rem, 5vw, 4.6rem);
+        letter-spacing: -0.06em;
+      }
+
+      p {
+        color: var(--muted);
+        line-height: 1.55;
+      }
+
+      .hero,
+      .card {
+        border: 1px solid var(--line);
+        border-radius: 26px;
+        background: var(--panel);
+        box-shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
+        backdrop-filter: blur(20px);
+      }
+
+      .hero {
+        padding: clamp(22px, 4vw, 38px);
+        margin-bottom: 18px;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 18px;
+      }
+
+      .card {
+        padding: 20px;
+      }
+
+      .controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 20px;
+      }
+
+      button {
+        border: 1px solid rgba(82, 220, 255, 0.38);
+        border-radius: 999px;
+        padding: 12px 18px;
+        background: rgba(82, 220, 255, 0.12);
+        color: var(--text);
+        font: 800 0.94rem/1 ui-sans-serif, system-ui, sans-serif;
+        cursor: pointer;
+      }
+
+      button:hover {
+        background: rgba(82, 220, 255, 0.2);
+      }
+
+      button:disabled {
+        cursor: not-allowed;
+        opacity: 0.5;
+      }
+
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 34px;
+        padding: 0 12px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        color: var(--muted);
+        background: rgba(255, 255, 255, 0.04);
+        font-size: 0.9rem;
+      }
+
+      .dot {
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        background: var(--bad);
+        box-shadow: 0 0 16px rgba(255, 158, 158, 0.5);
+      }
+
+      .pill[data-state="on"] .dot,
+      .pill[data-state="match"] .dot {
+        background: var(--good);
+        box-shadow: 0 0 16px rgba(126, 240, 196, 0.56);
+      }
+
+      .readout {
+        min-height: 58px;
+        padding: 14px;
+        border-radius: 16px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        background: rgba(0, 0, 0, 0.24);
+        overflow-wrap: anywhere;
+        font-size: 1.05rem;
+      }
+
+      .readout strong {
+        color: var(--blue);
+      }
+
+      .stack {
+        display: grid;
+        gap: 12px;
+      }
+
+      .history {
+        display: grid;
+        gap: 8px;
+        max-height: 300px;
+        overflow: auto;
+      }
+
+      .history-item {
+        padding: 10px 12px;
+        border-radius: 14px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        background: rgba(255, 255, 255, 0.04);
+      }
+
+      .history-item[data-match="true"] {
+        border-color: rgba(126, 240, 196, 0.34);
+        background: rgba(126, 240, 196, 0.08);
+      }
+
+      label {
+        display: grid;
+        gap: 8px;
+        color: var(--muted);
+      }
+
+      input {
+        width: 100%;
+        min-height: 46px;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        padding: 0 14px;
+        background: rgba(0, 0, 0, 0.24);
+        color: var(--text);
+        font: inherit;
+      }
+
+      code {
+        color: #bdfcff;
+      }
+
+      @media (max-width: 760px) {
+        body {
+          padding: 16px;
+        }
+
+        .grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section class="hero">
+        <div class="pill" id="supportPill"><span class="dot"></span><span id="supportText">Checking speech support</span></div>
+        <h1>Wake Phrase Test</h1>
+        <p>
+          Press Start, say phrases like <code>hey LOOI can you hear me</code>, then copy the transcript
+          Chrome hears if it does not match. This page uses the same wake phrase matcher as the app.
+        </p>
+        <div class="controls">
+          <button id="startButton" type="button">Start Listening</button>
+          <button id="stopButton" type="button">Stop</button>
+          <button id="clearButton" type="button">Clear History</button>
+        </div>
+      </section>
+
+      <section class="grid">
+        <div class="card stack">
+          <div class="pill" id="listeningPill"><span class="dot"></span><span id="listeningText">Stopped</span></div>
+          <label>
+            Raw transcript
+            <div class="readout" id="rawTranscript">--</div>
+          </label>
+          <label>
+            Normalized transcript
+            <div class="readout" id="normalizedTranscript">--</div>
+          </label>
+          <label>
+            Match result
+            <div class="readout" id="matchResult">--</div>
+          </label>
+          <label>
+            Command after wake phrase
+            <div class="readout" id="commandText">--</div>
+          </label>
+        </div>
+
+        <div class="card stack">
+          <label>
+            Manual text test
+            <input id="manualInput" value="hey looi can you hear me" autocomplete="off" />
+          </label>
+          <button id="testManualButton" type="button">Test Manual Text</button>
+          <div class="readout" id="manualResult">--</div>
+          <p>
+            Accepted patterns include <code>hey/hello/hi looi</code>, <code>looi wake up</code>,
+            and <code>wake up looi</code>. Variants <code>louie</code>, <code>looey</code>, and
+            <code>loey</code> are also included.
+          </p>
+        </div>
+      </section>
+
+      <section class="card stack" style="margin-top: 18px;">
+        <h2 style="margin: 0;">Transcript History</h2>
+        <div id="history" class="history"></div>
+      </section>
+    </main>
+
+    <script type="module">
+      import {
+        extractWakeCommandText,
+        findWakePhrase,
+        normalizeSpeechText
+      } from "./js/audio/wakePhraseDetector.js";
+
+      const RecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition || null;
+      const supportPill = document.getElementById("supportPill");
+      const supportText = document.getElementById("supportText");
+      const listeningPill = document.getElementById("listeningPill");
+      const listeningText = document.getElementById("listeningText");
+      const rawTranscript = document.getElementById("rawTranscript");
+      const normalizedTranscript = document.getElementById("normalizedTranscript");
+      const matchResult = document.getElementById("matchResult");
+      const commandText = document.getElementById("commandText");
+      const history = document.getElementById("history");
+      const manualInput = document.getElementById("manualInput");
+      const manualResult = document.getElementById("manualResult");
+      const startButton = document.getElementById("startButton");
+      const stopButton = document.getElementById("stopButton");
+      const clearButton = document.getElementById("clearButton");
+      const testManualButton = document.getElementById("testManualButton");
+
+      let recognition = null;
+      let wanted = false;
+
+      setSupport(Boolean(RecognitionCtor));
+      setListening(false);
+      renderResult("");
+
+      startButton.addEventListener("click", startListening);
+      stopButton.addEventListener("click", stopListening);
+      clearButton.addEventListener("click", () => history.replaceChildren());
+      testManualButton.addEventListener("click", () => {
+        const text = manualInput.value;
+        manualResult.innerHTML = formatResultHtml(text);
+        renderResult(text, { addHistory: true });
+      });
+
+      function setSupport(supported) {
+        supportPill.dataset.state = supported ? "on" : "off";
+        supportText.textContent = supported
+          ? "SpeechRecognition supported"
+          : "SpeechRecognition unavailable in this browser";
+        startButton.disabled = !supported;
+      }
+
+      function setListening(active) {
+        listeningPill.dataset.state = active ? "on" : "off";
+        listeningText.textContent = active ? "Listening" : "Stopped";
+        startButton.disabled = !RecognitionCtor || active;
+        stopButton.disabled = !active;
+      }
+
+      function startListening() {
+        if (!RecognitionCtor) {
+          return;
+        }
+
+        wanted = true;
+        recognition?.abort?.();
+        recognition = new RecognitionCtor();
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.lang = "en-US";
+        recognition.maxAlternatives = 3;
+
+        recognition.onstart = () => setListening(true);
+        recognition.onend = () => {
+          setListening(false);
+          recognition = null;
+          if (wanted) {
+            window.setTimeout(startListening, 500);
+          }
+        };
+        recognition.onerror = (event) => {
+          rawTranscript.textContent = `Speech error: ${event.error || "unknown"}`;
+        };
+        recognition.onresult = (event) => {
+          const lines = [];
+          for (let index = event.resultIndex || 0; index < event.results.length; index += 1) {
+            const result = event.results[index];
+            const alternatives = [];
+            for (let alt = 0; alt < result.length; alt += 1) {
+              alternatives.push(result[alt].transcript.trim());
+            }
+            lines.push(alternatives.join(" | "));
+          }
+
+          renderResult(lines.join(" ").trim(), { addHistory: true });
+        };
+
+        try {
+          recognition.start();
+        } catch (error) {
+          rawTranscript.textContent = error.message;
+        }
+      }
+
+      function stopListening() {
+        wanted = false;
+        recognition?.stop?.();
+        recognition = null;
+        setListening(false);
+      }
+
+      function renderResult(text, { addHistory = false } = {}) {
+        const normalized = normalizeSpeechText(text);
+        const match = findWakePhrase(text);
+        const command = extractWakeCommandText(text);
+
+        rawTranscript.textContent = text || "--";
+        normalizedTranscript.textContent = normalized || "--";
+        matchResult.innerHTML = match
+          ? `<strong>MATCH</strong> phrase="${escapeHtml(match.phrase)}"`
+          : "No wake phrase match";
+        commandText.textContent = command || "--";
+
+        if (addHistory && text) {
+          addHistoryItem(text, normalized, match, command);
+        }
+      }
+
+      function addHistoryItem(text, normalized, match, command) {
+        const item = document.createElement("div");
+        item.className = "history-item";
+        item.dataset.match = String(Boolean(match));
+        item.innerHTML = `
+          <strong>${match ? "MATCH" : "NO MATCH"}</strong>
+          <div>raw: ${escapeHtml(text)}</div>
+          <div>normalized: ${escapeHtml(normalized || "--")}</div>
+          <div>phrase: ${escapeHtml(match?.phrase || "--")}</div>
+          <div>command: ${escapeHtml(command || "--")}</div>
+        `;
+        history.prepend(item);
+      }
+
+      function formatResultHtml(text) {
+        const normalized = normalizeSpeechText(text);
+        const match = findWakePhrase(text);
+        const command = extractWakeCommandText(text);
+        return `
+          <div>normalized: <strong>${escapeHtml(normalized || "--")}</strong></div>
+          <div>match: <strong>${escapeHtml(match?.phrase || "NO")}</strong></div>
+          <div>command: <strong>${escapeHtml(command || "--")}</strong></div>
+        `;
+      }
+
+      function escapeHtml(value) {
+        return String(value ?? "")
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#039;");
+      }
+    </script>
+  </body>
+</html>

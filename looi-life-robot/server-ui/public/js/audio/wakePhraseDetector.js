@@ -16,7 +16,27 @@ const DEFAULT_WAKE_PHRASES = Object.freeze([
   "hello loey",
   "hi loey",
   "loey wake up",
-  "wake up loey"
+  "wake up loey",
+  "hey louis",
+  "hello louis",
+  "hi louis",
+  "louis wake up",
+  "wake up louis",
+  "hey luis",
+  "hello luis",
+  "hi luis",
+  "luis wake up",
+  "wake up luis",
+  "hey louise",
+  "hello louise",
+  "hi louise",
+  "louise wake up",
+  "wake up louise",
+  "hey hallelui",
+  "hello hallelui",
+  "hi hallelui",
+  "hallelui wake up",
+  "wake up hallelui"
 ]);
 
 const RESTART_DELAY_MS = 650;
@@ -241,9 +261,9 @@ export function findWakePhrase(transcript = "", phrases = DEFAULT_WAKE_PHRASES) 
 export function extractWakeCommandText(transcript = "") {
   const normalized = normalizeSpeechText(transcript);
   const patterns = [
-    /\b(?:hey|hello|hi)\s+(?:looi|louie|looey|loey)\b\s*(.*)$/u,
-    /\b(?:looi|louie|looey|loey)\s+wake\s+up\b\s*(.*)$/u,
-    /\bwake\s+up\s+(?:looi|louie|looey|loey)\b\s*(.*)$/u
+    /\b(?:hey|hello|hi)\s+(?:looi|louie|looey|loey|louis|luis|louise|hallelui)\b\s*(.*)$/u,
+    /\b(?:looi|louie|looey|loey|louis|luis|louise|hallelui)\s+wake\s+up\b\s*(.*)$/u,
+    /\bwake\s+up\s+(?:looi|louie|looey|loey|louis|luis|louise|hallelui)\b\s*(.*)$/u
   ];
 
   for (const pattern of patterns) {
