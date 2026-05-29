@@ -21,6 +21,7 @@ const FACE_STATE = {
   shockedTimer: 0,
   tellingTimer: 0,
   kissTimer: 0,
+  wakeTimer: 0,
   previewTimer: 0,
   latestPhotoUrl: "",
   followVisualState: "idle",
@@ -45,6 +46,7 @@ const SHOCKED_TIME_MS = 1700;
 const TELL_OPEN_TIME_MS = 1400;
 const TELL_FINISH_TIME_MS = 1200;
 const KISS_TIME_MS = 2600;
+const WAKE_ACTIVATION_TIME_MS = 1900;
 const AUTO_BLINK_MIN_MS = 2200;
 const AUTO_BLINK_JITTER_MS = 2400;
 const AUTO_GLANCE_MIN_MS = 1400;
@@ -89,6 +91,7 @@ function initFaceCanvas(element) {
     "is-telling",
     "is-tell-finishing",
     "is-kissing",
+    "is-wake-activating",
     "is-thinking"
   );
   rootRef.setAttribute("role", "img");
@@ -538,6 +541,21 @@ function showKiss() {
   return true;
 }
 
+function showWakeActivation() {
+  if (!rootRef) {
+    return false;
+  }
+
+  window.clearTimeout(FACE_STATE.wakeTimer);
+  rootRef.classList.remove("is-wake-activating");
+  forceRestartAnimation();
+  rootRef.classList.add("is-wake-activating");
+  FACE_STATE.wakeTimer = window.setTimeout(() => {
+    rootRef?.classList.remove("is-wake-activating");
+  }, WAKE_ACTIVATION_TIME_MS);
+  return true;
+}
+
 export function startFollow() {
   if (!rootRef || !eyesRef) {
     return;
@@ -662,6 +680,7 @@ export function createFaceController(element) {
     finishTellMeAboutYourself,
     isTellingActive,
     showKiss,
+    showWakeActivation,
     startFollow,
     stopFollow,
     showPhoto,
@@ -827,6 +846,21 @@ function createEyeDom() {
   const kissHeart = document.createElement("div");
   kissHeart.className = "looi-kiss-heart";
 
+  const wakeLeftLight = document.createElement("div");
+  wakeLeftLight.className = "looi-wake-side-light looi-wake-side-light--left";
+  wakeLeftLight.setAttribute("aria-hidden", "true");
+
+  const wakeRightLight = document.createElement("div");
+  wakeRightLight.className = "looi-wake-side-light looi-wake-side-light--right";
+  wakeRightLight.setAttribute("aria-hidden", "true");
+
+  const wakeSparks = ["one", "two", "three"].map((name) => {
+    const spark = document.createElement("div");
+    spark.className = `looi-wake-spark looi-wake-spark--${name}`;
+    spark.setAttribute("aria-hidden", "true");
+    return spark;
+  });
+
   const eyes = document.createElement("div");
   eyes.className = "looi-eyes";
   eyes.append(createEye(), createEye());
@@ -852,6 +886,9 @@ function createEyeDom() {
     tellMouth,
     kissMouth,
     kissHeart,
+    wakeLeftLight,
+    wakeRightLight,
+    ...wakeSparks,
     followTarget,
     preview,
     cameraIcon,
@@ -983,6 +1020,7 @@ function canAutoGlance() {
     !rootRef?.classList.contains("is-telling") &&
     !rootRef?.classList.contains("is-tell-finishing") &&
     !rootRef?.classList.contains("is-kissing") &&
+    !rootRef?.classList.contains("is-wake-activating") &&
     !eyesRef.classList.contains("is-blinking") &&
     !eyesRef.classList.contains("is-soft-closing")
   );
@@ -1025,6 +1063,7 @@ function clearAllTimers() {
   window.clearTimeout(FACE_STATE.shockedTimer);
   window.clearTimeout(FACE_STATE.tellingTimer);
   window.clearTimeout(FACE_STATE.kissTimer);
+  window.clearTimeout(FACE_STATE.wakeTimer);
   window.clearTimeout(FACE_STATE.previewTimer);
 }
 
@@ -1058,7 +1097,8 @@ function hasBlockingFaceAnimation() {
     rootRef?.classList.contains("is-tell-opening") ||
     rootRef?.classList.contains("is-telling") ||
     rootRef?.classList.contains("is-tell-finishing") ||
-    rootRef?.classList.contains("is-kissing")
+    rootRef?.classList.contains("is-kissing") ||
+    rootRef?.classList.contains("is-wake-activating")
   );
 }
 

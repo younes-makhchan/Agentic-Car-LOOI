@@ -4,6 +4,7 @@ import { clampNumber, safeStringify } from "./core/runtimeUtils.js";
 import { EmbodiedActionRouter } from "./embodiment/embodiedActionRouter.js";
 import { ScenarioFrameSequencer } from "./embodiment/scenarioFrameSequencer.js";
 import { PriorityScheduler } from "./embodiment/priorityScheduler.js";
+import { WakePhraseDetector } from "./audio/wakePhraseDetector.js";
 import { GeminiLiveRuntime } from "./gemini/geminiLiveRuntime.js";
 import { IDLE_SCENARIOS } from "./idle/idleScenarioCatalog.js";
 import {
@@ -45,10 +46,12 @@ const DEFAULT_DURATION_MS = 400;
 const LOCAL_VISION_SIZE_STORAGE_KEY = "looi.localVisionWidgetSizePx.v2";
 const FRONT_CAMERA_DEVICE_STORAGE_KEY = "looi.frontCameraDeviceId.v1";
 const IDLE_SCENARIO_SETTINGS_STORAGE_KEY = "looi.idleScenarioSettings.v2";
+const CONVERSATION_SLEEP_TIMEOUT_STORAGE_KEY = "looi.conversationSleepTimeoutSec.v1";
 const DEFAULT_FRONT_CAMERA_INDEX = 1;
 const IDLE_GAP_MIN_SEC = msToSec(DEFAULT_IDLE_SCHEDULER_SETTINGS.firstIdleGapMs[0]);
 const IDLE_GAP_MAX_SEC = msToSec(DEFAULT_IDLE_SCHEDULER_SETTINGS.firstIdleGapMs[1]);
-const DEFAULT_IDLE_GEMINI_BODY_CONTEXT_GAP_RANGE_SEC = Object.freeze([4, 7]);
+const DEFAULT_IDLE_GEMINI_BODY_CONTEXT_GAP_RANGE_SEC = Object.freeze([4, 10]);
+const PREVIOUS_DEFAULT_IDLE_GEMINI_BODY_CONTEXT_GAP_RANGE_SEC = Object.freeze([4, 7]);
 const LEGACY_IDLE_GEMINI_BODY_CONTEXT_GAP_SEC = 5;
 const IDLE_BODY_CONTEXT_GAP_MIN_SEC = 0;
 const IDLE_BODY_CONTEXT_GAP_MAX_SEC = 120;
@@ -99,6 +102,10 @@ const LOOI_ACTIVITY_STEP_MS = 1050;
 const LOOI_ACTIVITY_ORBIT_RADIUS = 9;
 const GEMINI_VISION_RESUME_AFTER_SPEECH_MS = 300;
 const MAX_LOG_PANEL_ENTRIES = 180;
+const DEFAULT_CONVERSATION_SLEEP_TIMEOUT_SEC = 10;
+const CONVERSATION_SLEEP_TIMEOUT_MIN_SEC = 1;
+const CONVERSATION_SLEEP_TIMEOUT_MAX_SEC = 120;
+const WAKE_GATE_MIC_START_DELAY_MS = 120;
 
 const ui = {
   canvas: document.getElementById("faceCanvas"),
@@ -201,6 +208,7 @@ const ui = {
   geminiLiveOutputTranscript: document.getElementById("geminiLiveOutputTranscript"),
   geminiLiveLastToolCall: document.getElementById("geminiLiveLastToolCall"),
   geminiLiveLatency: document.getElementById("geminiLiveLatency"),
+  conversationSleepTimeoutInput: document.getElementById("conversationSleepTimeoutInput"),
   localBrainThoughtList: document.getElementById("localBrainThoughtList"),
   localMotionArmedToggle: document.getElementById("localMotionArmedToggle"),
   idleFirstGapMinInput: document.getElementById("idleFirstGapMinInput"),
@@ -298,6 +306,8 @@ let wakeLockManager = null;
 let performanceMonitor = null;
 let reliabilityManager = null;
 let geminiLiveRuntime = null;
+let wakePhraseDetector = null;
+let wakePhraseStatus = null;
 let cameraInput = null;
 let objectDetectorEngine = null;
 let objectTracker = null;
@@ -337,11 +347,19 @@ let geminiAudioWasPlaying = false;
 let geminiVisionResumeTimer = null;
 let geminiAudioEndedAt = 0;
 let nextIdleBodyContextAllowedAt = 0;
+let conversationSleepTimeoutSec = loadConversationSleepTimeoutSec();
+let looiStartupActive = false;
+let looiStartupLabel = "Starting LOOI";
 let looiActivityRaf = 0;
 let looiActivitySlotForDot = [0, 1, 2, 3, 4];
 let looiActivityActiveStep = 0;
 let looiActivityStepStart = 0;
 let looiActivityState = "listening";
+let conversationGateState = "inactive";
+let conversationGateActivatedAt = 0;
+let conversationGateLastInputTranscriptAt = 0;
+let conversationGateActivationInProgress = false;
+let conversationSilenceTimer = 0;
 
 face = createFaceController(ui.canvas);
 applyLocalVisionWidgetSize(localVisionWidgetSizePx, { persist: false });
@@ -355,6 +373,7 @@ updateLifeEventsUi();
 updateProductionChrome();
 idleScenarioSettings = loadIdleScenarioSettings();
 updateIdleScenarioSettingsUi();
+updateConversationSleepTimeoutUi();
 renderIdleScenarioTestButtons();
 
 ui.productionStartButton.addEventListener("click", () => {
@@ -497,6 +516,10 @@ ui.localMotionArmedToggle.addEventListener("change", () => {
   );
 });
 
+ui.conversationSleepTimeoutInput?.addEventListener("change", () => {
+  applyConversationSleepTimeoutFromUi();
+});
+
 [
   ui.idleFirstGapMinInput,
   ui.idleFirstGapMaxInput,
@@ -549,6 +572,7 @@ ui.startLocalBrainButton.addEventListener("click", () => {
 
 ui.stopLocalBrainButton.addEventListener("click", () => {
   idleScenarioScheduler?.stop?.("ui_stop_local_brain");
+  stopConversationWakeGate("ui_stop_local_brain");
   stopGeminiVisionAssist("ui_stop_local_brain");
   clearPendingGeminiVisionAfterSpeech();
   stopLooiRoboflowRuntime("ui_stop_local_brain");
@@ -1121,7 +1145,12 @@ async function init() {
     logger: (message, level = "info") => log(message, level)
   });
   geminiLiveRuntime.configure(activeConfig);
-  geminiLiveRuntime.onStatus(updateGeminiLiveUi);
+  geminiLiveRuntime.onStatus(handleGeminiLiveStatus);
+  wakePhraseDetector = new WakePhraseDetector({
+    onWakePhrase: handleWakePhraseDetected,
+    onStatus: handleWakePhraseStatus,
+    logger: (message, level = "info") => log(message, level)
+  });
   [
     "vision_follow_started",
     "vision_follow_stopped",
@@ -1897,7 +1926,7 @@ async function applyCalibrationToRobot({ quiet = false } = {}) {
   return result;
 }
 
-async function startProductionRuntime() {
+async function startProductionRuntime({ quietReadyLog = false } = {}) {
   await requestFullscreenSafe();
 
   if (robotClient?.refreshStatus) {
@@ -1915,67 +1944,98 @@ async function startProductionRuntime() {
   ui.runtimeGate.classList.add("runtime-gate--hidden");
   document.body.classList.add("production-ready");
   requestPoseScenario("pose_curious");
-  log("Local runtime ready. LOOI face is live.");
+  if (!quietReadyLog) {
+    log("Local runtime ready. LOOI face is live.");
+  }
   updateProductionChrome();
 }
 
 async function startLocalBrainProductionMode() {
+  if (looiStartupActive) {
+    log("LOOI startup is already in progress.", "warn");
+    return;
+  }
+
+  setLooiStartupLoading(true, "Starting LOOI");
   const useGeminiLive = isGeminiLivePrimary();
   const geminiStartPromise = useGeminiLive
     ? geminiLiveRuntime.start({
         model: activeConfig.geminiLiveModel,
         voice: activeConfig.geminiLiveVoice,
-        thinkingLevel: activeConfig.geminiLiveThinkingLevel
+        thinkingLevel: activeConfig.geminiLiveThinkingLevel,
+        captureAudio: false
       }).catch((error) => ({ error }))
     : null;
 
-  await startProductionRuntime();
-  await ensureOfficialRobotConnection();
+  let roboflowReady = false;
 
-  patchBrainPolicy({
-    localMotionArmed: true
-  });
+  try {
+    setLooiStartupPhase("Opening LOOI face");
+    await startProductionRuntime({ quietReadyLog: true });
 
-  lifeEventsEnabled = true;
-  globalThis.localStorage?.setItem?.("looi.lifeEventsEnabled.v1", "true");
+    setLooiStartupPhase("Connecting body");
+    await ensureOfficialRobotConnection();
 
-  performanceMonitor?.start?.();
-  reliabilityManager?.start?.();
-  wakeLockManager?.request?.().catch((error) => {
-    log(`Wake lock unavailable: ${error.message}`, "warn");
-  });
+    patchBrainPolicy({
+      localMotionArmed: true
+    });
 
-  updateLocalBrainUi();
-  updateCameraUi();
+    lifeEventsEnabled = true;
+    globalThis.localStorage?.setItem?.("looi.lifeEventsEnabled.v1", "true");
 
-  localBrainEngine?.start?.();
+    performanceMonitor?.start?.();
+    reliabilityManager?.start?.();
+    wakeLockManager?.request?.().catch((error) => {
+      log(`Wake lock unavailable: ${error.message}`, "warn");
+    });
 
-  if (!lifeEventEmitter?.getStatus?.().running) {
-    lifeEventEmitter?.start?.();
+    updateLocalBrainUi();
+    updateCameraUi();
+
+    setLooiStartupPhase("Starting local brain");
+    localBrainEngine?.start?.();
+
+    if (!lifeEventEmitter?.getStatus?.().running) {
+      lifeEventEmitter?.start?.();
+    }
+    updateLifeEventsUi();
+
+    setLooiStartupPhase("Starting Roboflow");
+    await ensureRoboflowDetectorRunning("looi_start")
+      .then((status) => {
+        roboflowReady = Boolean(status?.running || status?.starting || isRoboflowDetectorActive());
+      })
+      .catch((error) => {
+        roboflowReady = false;
+        log(`Roboflow prewarm skipped: ${error.message}`, "warn");
+      });
+
+    if (useGeminiLive) {
+      setLooiStartupPhase("Connecting Gemini");
+    }
+    const geminiStartResult = useGeminiLive ? await geminiStartPromise : null;
+    if (geminiStartResult?.error) {
+      throw geminiStartResult.error;
+    }
+    if (useGeminiLive) {
+      startConversationWakeGate("looi_start");
+    }
+    attentionSystem?.wake?.("live_start", activeConfig.conversationWindowMs ?? 30000);
+
+    requestPoseScenario("pose_happy");
+    idleScenarioScheduler?.start?.("start_looi");
+    log(
+      useGeminiLive
+        ? `Gemini Live connected: say Hey LOOI to talk. Camera, Roboflow ${roboflowReady ? "ready" : "unavailable"}, LOOI mode, and movement are enabled.`
+        : `Local Brain Live started: camera, Roboflow ${roboflowReady ? "ready" : "unavailable"}, LOOI mode, and movement are enabled.`,
+      "warn"
+    );
+    updateAttentionUi();
+    updateGeminiLiveUi();
+  } finally {
+    setLooiStartupLoading(false);
+    updateProductionChrome();
   }
-  updateLifeEventsUi();
-
-  await ensureRoboflowDetectorRunning("looi_start").catch((error) => {
-    log(`Roboflow prewarm skipped: ${error.message}`, "warn");
-  });
-
-  const geminiStartResult = useGeminiLive ? await geminiStartPromise : null;
-  if (geminiStartResult?.error) {
-    throw geminiStartResult.error;
-  }
-  attentionSystem?.wake?.("live_start", activeConfig.conversationWindowMs ?? 30000);
-
-  requestPoseScenario("pose_happy");
-  idleScenarioScheduler?.start?.("start_looi");
-  log(
-    useGeminiLive
-      ? "Gemini Live started: Gemini audio, camera, LOOI mode, and movement are enabled."
-      : "Local Brain Live started: camera, LOOI mode, and movement are enabled.",
-    "warn"
-  );
-  updateAttentionUi();
-  updateGeminiLiveUi();
-  updateProductionChrome();
 }
 
 function primeLiveInputsFromUserGesture() {
@@ -2053,7 +2113,9 @@ function updateProductionChrome() {
   const cameraStatus = cameraInput?.getCameraStatus?.() ?? {};
 
   ui.localBrainQuickButton.textContent =
-    liveRunning
+    looiStartupActive
+      ? "Starting LOOI..."
+      : liveRunning
       ? geminiRunning
         ? "LOOI Live"
         : "LOOI Brain Live"
@@ -2090,6 +2152,32 @@ function updateProductionChrome() {
   }
 
   document.body.classList.toggle("local-motion-armed", brainPolicy.localMotionArmed);
+}
+
+function setLooiStartupLoading(active, label = "Starting LOOI") {
+  looiStartupActive = Boolean(active);
+  looiStartupLabel = label || "Starting LOOI";
+  document.body.classList.toggle("looi-starting", looiStartupActive);
+
+  ui.localBrainQuickButton.disabled = looiStartupActive;
+  ui.startLocalBrainButton.disabled = looiStartupActive;
+  ui.productionStartButton.disabled = looiStartupActive;
+  if (ui.startLocalBrainButton) {
+    ui.startLocalBrainButton.textContent = looiStartupActive ? "Starting LOOI..." : "Start Local Brain";
+  }
+
+  updateProductionChrome();
+  updateLooiActivityIndicator();
+}
+
+function setLooiStartupPhase(label = "Starting LOOI") {
+  if (!looiStartupActive) {
+    return;
+  }
+
+  looiStartupLabel = label;
+  updateProductionChrome();
+  updateLooiActivityIndicator();
 }
 
 function updateConnectionState(status) {
@@ -2254,7 +2342,17 @@ function updateGeminiLiveUi(status = geminiLiveRuntime?.getStatus?.() ?? {}) {
   }
 
   if (ui.geminiLiveMicState) {
-    ui.geminiLiveMicState.textContent = status.micStreaming ? "streaming" : status.connecting ? "starting" : "off";
+    ui.geminiLiveMicState.textContent = status.micStreaming
+      ? "streaming"
+      : status.connecting
+        ? "starting"
+        : status.connected && isConversationWakeRequired()
+          ? wakePhraseStatus?.supported === false
+            ? "wake unavailable"
+            : wakePhraseStatus?.listening
+              ? "say Hey LOOI"
+              : "wake standby"
+          : "off";
   }
 
   if (ui.geminiLiveAudioState) {
@@ -2302,6 +2400,11 @@ function updateLooiActivityIndicator(geminiStatus = geminiLiveRuntime?.getStatus
     return;
   }
 
+  if (looiStartupActive) {
+    setLooiActivityState("starting", looiStartupLabel);
+    return;
+  }
+
   const lifeState = lifeEngine?.getState?.() ?? {};
   const localBrainStatus = localBrainEngine?.getStatus?.() ?? {};
   const looiSpeaking = Boolean(geminiStatus.audioPlaying || lifeState.isSpeaking);
@@ -2315,7 +2418,11 @@ function updateLooiActivityIndicator(geminiStatus = geminiLiveRuntime?.getStatus
     : hearingUser
       ? "hearing"
       : "listening";
-  const label = thinking ? "Thinking" : "Listening";
+  const label = thinking
+    ? "Thinking"
+    : isConversationWakeRequired()
+      ? "Say Hey LOOI"
+      : "Listening";
 
   setLooiActivityState(state, label);
 }
@@ -2333,8 +2440,8 @@ function setLooiActivityState(state, label) {
     ui.looiActivityLabel.textContent = label;
   }
 
-  if (state === "thinking") {
-    if (previousState !== "thinking") {
+  if (isLooiActivityOrbitingState(state)) {
+    if (!isLooiActivityOrbitingState(previousState)) {
       startLooiThinkingDots();
     }
     return;
@@ -2377,7 +2484,7 @@ function stopLooiThinkingDots({ clearDots = true } = {}) {
 }
 
 function drawLooiThinkingDots(now) {
-  if (looiActivityState !== "thinking") {
+  if (!isLooiActivityOrbitingState(looiActivityState)) {
     stopLooiThinkingDots();
     return;
   }
@@ -2443,6 +2550,10 @@ function drawLooiThinkingDots(now) {
 
 function getLooiActivityDots() {
   return Array.from(ui.looiActivityIndicator?.querySelectorAll?.(".looi-activity-points span") ?? []);
+}
+
+function isLooiActivityOrbitingState(state) {
+  return state === "thinking" || state === "starting";
 }
 
 function easeInOutCubic(t) {
@@ -2798,6 +2909,200 @@ function updateOutputAudioUi() {
   updateProductionChrome();
 }
 
+function handleGeminiLiveStatus(status = geminiLiveRuntime?.getStatus?.() ?? {}) {
+  updateConversationGateFromGeminiStatus(status);
+  updateGeminiLiveUi(status);
+}
+
+function handleWakePhraseStatus(status = {}) {
+  wakePhraseStatus = status;
+  updateGeminiLiveUi();
+}
+
+function startConversationWakeGate(reason = "wake_gate_start") {
+  clearConversationSilenceTimer();
+  conversationGateActivationInProgress = false;
+  conversationGateActivatedAt = 0;
+  conversationGateLastInputTranscriptAt = Number(geminiLiveRuntime?.getStatus?.().lastInputTranscriptAt || 0);
+  geminiLiveRuntime?.stopAudioInput?.(`${reason}_reset`);
+  setConversationGateState("wake_required", reason);
+
+  const started = wakePhraseDetector?.start?.(reason);
+  if (started === false) {
+    log("Wake phrase detector is unavailable; Gemini mic will stay off until this browser supports speech recognition.", "warn");
+  } else {
+    log("Conversation gate ready. Say Hey LOOI to talk.");
+  }
+  updateGeminiLiveUi();
+}
+
+function stopConversationWakeGate(reason = "wake_gate_stop") {
+  clearConversationSilenceTimer();
+  wakePhraseDetector?.stop?.(reason);
+  geminiLiveRuntime?.stopAudioInput?.(reason);
+  conversationGateActivationInProgress = false;
+  conversationGateActivatedAt = 0;
+  conversationGateLastInputTranscriptAt = 0;
+  setConversationGateState("inactive", reason);
+  updateGeminiLiveUi();
+}
+
+function handleWakePhraseDetected(event = {}) {
+  activateConversationFromWake(event).catch((error) => {
+    conversationGateActivationInProgress = false;
+    log(`Wake phrase activation failed: ${error.message}`, "warn");
+    if (geminiLiveRuntime?.getStatus?.().connected) {
+      startConversationWakeGate("wake_activation_failed");
+    }
+  });
+}
+
+async function activateConversationFromWake({
+  phrase = "",
+  commandText = ""
+} = {}) {
+  if (conversationGateState === "active" || conversationGateActivationInProgress) {
+    return;
+  }
+
+  const geminiStatus = geminiLiveRuntime?.getStatus?.() ?? {};
+  if (!geminiStatus.connected) {
+    log("Wake phrase heard, but Gemini Live is not connected yet.", "warn");
+    return;
+  }
+
+  conversationGateActivationInProgress = true;
+  wakePhraseDetector?.stop?.("wake_phrase_detected");
+  setConversationGateState("active", "wake_phrase_detected");
+  conversationGateActivatedAt = Date.now();
+  conversationGateLastInputTranscriptAt = Number(geminiStatus.lastInputTranscriptAt || 0);
+  scheduleConversationSilenceTimeout("wake_phrase_detected");
+
+  runScenarioFromUi("wake_activation").catch((error) => {
+    log(`Wake activation animation failed: ${error.message}`, "warn");
+  });
+
+  try {
+    await waitMs(WAKE_GATE_MIC_START_DELAY_MS);
+    await geminiLiveRuntime.startAudioInput("wake_phrase");
+
+    const cleanCommandText = String(commandText ?? "").trim();
+    if (cleanCommandText) {
+      const sent = await geminiLiveRuntime.sendText(cleanCommandText);
+      if (sent) {
+        log(`Wake command forwarded to Gemini: "${cleanCommandText}"`, "debug");
+      }
+    }
+
+    log(`Wake phrase accepted${phrase ? `: ${phrase}` : ""}. Gemini mic is active.`);
+  } catch (error) {
+    log(`Wake phrase accepted, but Gemini mic could not start: ${error.message}`, "warn");
+    setConversationGateState("wake_required", "wake_mic_failed");
+    wakePhraseDetector?.start?.("wake_mic_failed");
+  } finally {
+    conversationGateActivationInProgress = false;
+    updateGeminiLiveUi();
+  }
+}
+
+function updateConversationGateFromGeminiStatus(status = {}) {
+  if (!status.connected && !status.connecting && conversationGateState !== "inactive") {
+    clearConversationSilenceTimer();
+    wakePhraseDetector?.stop?.("gemini_disconnected");
+    setConversationGateState("inactive", "gemini_disconnected");
+    return;
+  }
+
+  if (conversationGateState !== "active") {
+    return;
+  }
+
+  const transcriptAt = Number(status.lastInputTranscriptAt || 0);
+  if (transcriptAt > 0 && transcriptAt !== conversationGateLastInputTranscriptAt) {
+    conversationGateLastInputTranscriptAt = transcriptAt;
+    scheduleConversationSilenceTimeout("user_transcript");
+  }
+}
+
+function setConversationGateState(nextState, reason = "state_change") {
+  if (conversationGateState === nextState) {
+    return;
+  }
+
+  conversationGateState = nextState;
+  log(`Conversation gate ${formatConversationGateState(nextState)} (${reason}).`, "debug");
+}
+
+function scheduleConversationSilenceTimeout(reason = "conversation_activity") {
+  clearConversationSilenceTimer();
+  if (conversationGateState !== "active") {
+    return;
+  }
+
+  const now = Date.now();
+  const lastUserInputAt = conversationGateLastInputTranscriptAt || conversationGateActivatedAt || now;
+  const elapsedMs = now - lastUserInputAt;
+  const timeoutMs = getConversationSleepTimeoutMs();
+  const delayMs = Math.max(250, timeoutMs - elapsedMs);
+  conversationSilenceTimer = globalThis.setTimeout?.(() => {
+    conversationSilenceTimer = 0;
+    handleConversationSilenceTimeout(reason);
+  }, delayMs) ?? 0;
+}
+
+function handleConversationSilenceTimeout(reason = "conversation_silence_timeout") {
+  if (conversationGateState !== "active") {
+    return;
+  }
+
+  const now = Date.now();
+  const lastUserInputAt = conversationGateLastInputTranscriptAt || conversationGateActivatedAt || now;
+  const remainingMs = getConversationSleepTimeoutMs() - (now - lastUserInputAt);
+  if (remainingMs > 250) {
+    scheduleConversationSilenceTimeout(reason);
+    return;
+  }
+
+  clearConversationSilenceTimer();
+  geminiLiveRuntime?.stopAudioInput?.("conversation_silence_timeout");
+  conversationGateActivationInProgress = false;
+  conversationGateActivatedAt = 0;
+  conversationGateLastInputTranscriptAt = 0;
+  setConversationGateState("wake_required", "conversation_silence_timeout");
+  wakePhraseDetector?.start?.("conversation_silence_timeout");
+  log("Conversation gate sleeping. Say Hey LOOI to talk again.");
+  updateGeminiLiveUi();
+}
+
+function clearConversationSilenceTimer() {
+  if (!conversationSilenceTimer) {
+    return;
+  }
+
+  globalThis.clearTimeout?.(conversationSilenceTimer);
+  conversationSilenceTimer = 0;
+}
+
+function isConversationGateActive() {
+  return conversationGateState === "active";
+}
+
+function isConversationWakeRequired() {
+  return conversationGateState === "wake_required";
+}
+
+function formatConversationGateState(state = conversationGateState) {
+  return state === "wake_required"
+    ? "wake-required"
+    : state === "active"
+      ? "active"
+      : "inactive";
+}
+
+function getConversationSleepTimeoutMs() {
+  return conversationSleepTimeoutSec * 1000;
+}
+
 function updateCameraUi(status = cameraInput?.getCameraStatus?.()) {
   const cameraStatus = status ?? {
     supported: false,
@@ -3037,6 +3342,10 @@ function sendIdleBodyContextToGemini(payload = {}, reason = "idle_body_context")
     return false;
   }
 
+  if (isConversationGateActive()) {
+    return false;
+  }
+
   const gapRangeSec = getIdleBodyContextGapRangeSec();
   if (!gapRangeSec) {
     return false;
@@ -3068,7 +3377,7 @@ function sendIdleBodyContextToGemini(payload = {}, reason = "idle_body_context")
     movementId: scenarioId,
     source: "local_idle_scheduler",
     note: "Local idle body micro-movement completed. This is body awareness only, not a user command.",
-    instruction: "Do not call tools because of body_context. Usually respond with one short natural personality comment. Stay silent only if it would interrupt the user or feel repetitive.",
+    instruction: "Do not call tools because of body_context. Usually respond with one short natural personality comment. Stay silent if it would interrupt the user or feel repetitive.",
     timestamp: new Date().toISOString()
   };
 
@@ -3710,6 +4019,43 @@ function saveIdleScenarioSettings(settings = idleScenarioSettings) {
   }
 }
 
+function loadConversationSleepTimeoutSec() {
+  try {
+    return normalizeConversationSleepTimeoutSec(
+      globalThis.localStorage?.getItem?.(CONVERSATION_SLEEP_TIMEOUT_STORAGE_KEY)
+    );
+  } catch {
+    return DEFAULT_CONVERSATION_SLEEP_TIMEOUT_SEC;
+  }
+}
+
+function saveConversationSleepTimeoutSec(value = conversationSleepTimeoutSec) {
+  try {
+    globalThis.localStorage?.setItem?.(
+      CONVERSATION_SLEEP_TIMEOUT_STORAGE_KEY,
+      String(normalizeConversationSleepTimeoutSec(value))
+    );
+  } catch {
+    // Setting still applies for this session if browser storage is blocked.
+  }
+}
+
+function applyConversationSleepTimeoutFromUi() {
+  conversationSleepTimeoutSec = normalizeConversationSleepTimeoutSec(
+    ui.conversationSleepTimeoutInput?.value
+  );
+  saveConversationSleepTimeoutSec(conversationSleepTimeoutSec);
+  updateConversationSleepTimeoutUi();
+  if (conversationGateState === "active") {
+    scheduleConversationSilenceTimeout("conversation_sleep_timeout_changed");
+  }
+  log(`Conversation sleep timeout updated: ${conversationSleepTimeoutSec}s.`);
+}
+
+function updateConversationSleepTimeoutUi() {
+  setInputValue(ui.conversationSleepTimeoutInput, conversationSleepTimeoutSec);
+}
+
 function applyIdleScenarioSettingsFromUi() {
   idleScenarioSettings = normalizeIdleScenarioSettings({
     firstIdleMinSec: ui.idleFirstGapMinInput?.value,
@@ -3820,6 +4166,13 @@ function normalizeIdleScenarioSettings(settings = {}) {
     DEFAULT_IDLE_SCENARIO_SETTINGS.geminiBodyContextGapMinSec,
     DEFAULT_IDLE_SCENARIO_SETTINGS.geminiBodyContextGapMaxSec
   );
+  const [bodyContextMinSec, bodyContextMaxSec] = isPreviousDefaultBodyContextGap(
+    source,
+    geminiBodyContextGapMinSec,
+    geminiBodyContextGapMaxSec
+  )
+    ? DEFAULT_IDLE_GEMINI_BODY_CONTEXT_GAP_RANGE_SEC
+    : [geminiBodyContextGapMinSec, geminiBodyContextGapMaxSec];
 
   return {
     firstIdleMinSec,
@@ -3840,9 +4193,18 @@ function normalizeIdleScenarioSettings(settings = {}) {
       100,
       DEFAULT_IDLE_SCENARIO_SETTINGS.balanceIncrementPercent
     )),
-    geminiBodyContextGapMinSec,
-    geminiBodyContextGapMaxSec
+    geminiBodyContextGapMinSec: bodyContextMinSec,
+    geminiBodyContextGapMaxSec: bodyContextMaxSec
   };
+}
+
+function isPreviousDefaultBodyContextGap(source = {}, minSec, maxSec) {
+  if (source.geminiBodyContextGapSec !== undefined) {
+    return false;
+  }
+
+  return minSec === PREVIOUS_DEFAULT_IDLE_GEMINI_BODY_CONTEXT_GAP_RANGE_SEC[0] &&
+    maxSec === PREVIOUS_DEFAULT_IDLE_GEMINI_BODY_CONTEXT_GAP_RANGE_SEC[1];
 }
 
 function normalizeIdleGapSeconds(minValue, maxValue, fallbackMin, fallbackMax) {
@@ -3865,6 +4227,15 @@ function normalizeBodyContextGapSeconds(minValue, maxValue, fallbackMin, fallbac
     fallbackMax
   ));
   return max >= min ? [min, max] : [max, min];
+}
+
+function normalizeConversationSleepTimeoutSec(value) {
+  return Math.round(clampNumber(
+    value,
+    CONVERSATION_SLEEP_TIMEOUT_MIN_SEC,
+    CONVERSATION_SLEEP_TIMEOUT_MAX_SEC,
+    DEFAULT_CONVERSATION_SLEEP_TIMEOUT_SEC
+  ));
 }
 
 function getIdleBodyContextGapRangeSec(settings = idleScenarioSettings) {

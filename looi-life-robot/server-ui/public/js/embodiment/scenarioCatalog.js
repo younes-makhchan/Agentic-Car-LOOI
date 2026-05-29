@@ -8,6 +8,7 @@ import { showLoving } from "./scenarioActions/lovingActions.js";
 import { showShocked } from "./scenarioActions/shockedActions.js";
 import { finishTellMeAboutYourself, showTellMeAboutYourself } from "./scenarioActions/tellMeAboutYourselfActions.js";
 import { showKiss } from "./scenarioActions/kissActions.js";
+import { showWakeActivation } from "./scenarioActions/wakeActivationActions.js";
 
 const PERMISSIONS = Object.freeze({
   none: Object.freeze({ motion: false, camera: false }),
@@ -77,6 +78,21 @@ const SCENARIO_DEFINITIONS = Object.freeze({
     modelVisible: false,
     sequence: [
       face("shy", 0.9, "down", 180)
+    ]
+  }),
+  wake_activation: scenario({
+    name: "wake_activation",
+    description: "Internal wake phrase activation flash.",
+    permissions: PERMISSIONS.none,
+    modelVisible: false,
+    sequence: [
+      {
+        type: "action",
+        action: showWakeActivation,
+        args: {
+          durationMs: 1900
+        }
+      }
     ]
   }),
   still: scenario({

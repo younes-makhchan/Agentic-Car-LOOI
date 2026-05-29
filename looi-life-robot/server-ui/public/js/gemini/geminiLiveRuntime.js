@@ -212,7 +212,7 @@ export class GeminiLiveRuntime {
         connecting: false,
         connected: true
       });
-      this.lifeEngine?.setListening?.(true);
+      this.lifeEngine?.setListening?.(Boolean(captureAudio));
       return this.getStatus();
     } catch (error) {
       this.patchStatus({
@@ -258,6 +258,32 @@ export class GeminiLiveRuntime {
       thinking: false,
       lastToolResult: `interrupted:${reason}`
     });
+  }
+
+  async startAudioInput(reason = "gemini_live_audio_input_start") {
+    if (this.status.micStreaming) {
+      return this.getStatus();
+    }
+    if (!this.status.connected) {
+      throw new Error("Gemini Live is not connected.");
+    }
+
+    await this.startMic(this.runToken);
+    this.lifeEngine?.setListening?.(true);
+    this.log(`Gemini Live mic enabled: ${reason}`);
+    return this.getStatus();
+  }
+
+  stopAudioInput(reason = "gemini_live_audio_input_stop") {
+    if (!this.status.micStreaming) {
+      this.lifeEngine?.setListening?.(false);
+      return this.getStatus();
+    }
+
+    this.stopMic();
+    this.lifeEngine?.setListening?.(false);
+    this.log(`Gemini Live mic disabled: ${reason}`);
+    return this.getStatus();
   }
 
   async sendText(text) {

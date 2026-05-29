@@ -668,6 +668,10 @@
               <input id="localMotionArmedToggle" type="checkbox" />
               <span>Local Motion Armed</span>
             </label>
+            <label class="idle-number-field" for="conversationSleepTimeoutInput">
+              <span>Sleep after silence (s)</span>
+              <input id="conversationSleepTimeoutInput" type="number" min="1" max="120" step="1" value="10" inputmode="numeric" />
+            </label>
           </div>
           <div class="button-grid">
             <button id="startLocalBrainButton" class="primary-button" type="button">
@@ -738,7 +742,7 @@
             </label>
             <label class="idle-number-field" for="idleGeminiBodyContextGapMaxInput">
               <span>Gemini ctx max (s)</span>
-              <input id="idleGeminiBodyContextGapMaxInput" type="number" min="0" max="120" step="1" value="7" inputmode="numeric" />
+              <input id="idleGeminiBodyContextGapMaxInput" type="number" min="0" max="120" step="1" value="10" inputmode="numeric" />
             </label>
           </div>
           <h3>Test Animations</h3>
