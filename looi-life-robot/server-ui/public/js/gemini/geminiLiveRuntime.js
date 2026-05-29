@@ -80,6 +80,7 @@ export class GeminiLiveRuntime {
       audioPlaying: false,
       thinking: false,
       lastInputTranscript: "",
+      lastInputTranscriptAt: 0,
       lastOutputTranscript: "",
       lastToolCall: "",
       lastToolResult: "",
@@ -125,7 +126,12 @@ export class GeminiLiveRuntime {
   }
 
   getStatus() {
-    return { ...this.status };
+    const pendingToolCallCount = this.pendingToolCalls?.size ?? 0;
+    return {
+      ...this.status,
+      pendingToolCallCount,
+      toolCallActive: pendingToolCallCount > 0 || Boolean(this.deferredSpeechStartScenario)
+    };
   }
 
   isRunning() {
@@ -556,7 +562,11 @@ export class GeminiLiveRuntime {
       "";
 
     if (inputText) {
-      this.patchStatus({ lastInputTranscript: inputText, thinking: true });
+      this.patchStatus({
+        lastInputTranscript: inputText,
+        lastInputTranscriptAt: this.now(),
+        thinking: true
+      });
     }
 
     if (outputText) {

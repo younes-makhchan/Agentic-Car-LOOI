@@ -49,6 +49,7 @@ const DEFAULT_FRONT_CAMERA_INDEX = 1;
 const IDLE_GAP_MIN_SEC = msToSec(DEFAULT_IDLE_SCHEDULER_SETTINGS.firstIdleGapMs[0]);
 const IDLE_GAP_MAX_SEC = msToSec(DEFAULT_IDLE_SCHEDULER_SETTINGS.firstIdleGapMs[1]);
 const DEFAULT_IDLE_GEMINI_BODY_CONTEXT_GAP_SEC = 5;
+const IDLE_BODY_CONTEXT_USER_TRANSCRIPT_COOLDOWN_MS = 2000;
 const DEFAULT_IDLE_SCENARIO_SETTINGS = createDefaultIdleScenarioSettings();
 const FOLLOW_TUNING_STORAGE_KEY = "looi.followTuning.v3";
 const FOLLOW_TUNING_PRESETS = Object.freeze({
@@ -3016,12 +3017,18 @@ function handleIdleScenarioCompleted(event = {}) {
   sendIdleBodyContextToGemini(event.payload ?? {}, "idle_scenario_completed");
 }
 
+function isRecentUserTranscript(geminiStatus = {}, now = Date.now()) {
+  const transcriptAt = Number(geminiStatus.lastInputTranscriptAt || 0);
+  return transcriptAt > 0 && now - transcriptAt < IDLE_BODY_CONTEXT_USER_TRANSCRIPT_COOLDOWN_MS;
+}
+
 function sendIdleBodyContextToGemini(payload = {}, reason = "idle_body_context") {
   if (!geminiLiveRuntime?.sendText) {
     return false;
   }
 
-  if (!geminiLiveRuntime.getStatus?.().connected) {
+  const geminiStatus = geminiLiveRuntime.getStatus?.() ?? {};
+  if (!geminiStatus.connected) {
     return false;
   }
 
@@ -3036,6 +3043,10 @@ function sendIdleBodyContextToGemini(payload = {}, reason = "idle_body_context")
   }
 
   if (shouldHoldGeminiVisionInput()) {
+    return false;
+  }
+
+  if (geminiStatus.thinking || geminiStatus.toolCallActive || isRecentUserTranscript(geminiStatus, now)) {
     return false;
   }
 

@@ -302,6 +302,8 @@ await wait(5);
 assert.equal(runtime.getStatus().thinking, false);
 assert.equal(runtime.getStatus().setupComplete, true);
 assert.equal(runtime.getStatus().lastInputTranscript, "move backward more");
+assert.ok(runtime.getStatus().lastInputTranscriptAt > 0);
+assert.equal(runtime.getStatus().toolCallActive, false);
 assert.equal(runtime.getStatus().lastOutputTranscript, "I can move back a little.");
 assert.ok(runtimeLogs.some((entry) => entry.message === "Gemini tool requests: none"));
 assert.equal(actions.some((action) => action.source === "gemini_live_speech_start"), false);
