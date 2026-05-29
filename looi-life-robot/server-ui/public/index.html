@@ -732,9 +732,13 @@
               <span>Balance + %</span>
               <input id="idleBalanceIncrementInput" type="number" min="0" max="100" step="1" value="20" inputmode="numeric" />
             </label>
-            <label class="idle-number-field" for="idleGeminiBodyContextGapInput">
-              <span>Gemini ctx gap (s)</span>
-              <input id="idleGeminiBodyContextGapInput" type="number" min="0" max="120" step="1" value="5" inputmode="numeric" />
+            <label class="idle-number-field" for="idleGeminiBodyContextGapMinInput">
+              <span>Gemini ctx min (s)</span>
+              <input id="idleGeminiBodyContextGapMinInput" type="number" min="0" max="120" step="1" value="4" inputmode="numeric" />
+            </label>
+            <label class="idle-number-field" for="idleGeminiBodyContextGapMaxInput">
+              <span>Gemini ctx max (s)</span>
+              <input id="idleGeminiBodyContextGapMaxInput" type="number" min="0" max="120" step="1" value="7" inputmode="numeric" />
             </label>
           </div>
           <h3>Test Animations</h3>

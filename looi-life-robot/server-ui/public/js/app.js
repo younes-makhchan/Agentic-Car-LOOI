@@ -48,7 +48,10 @@ const IDLE_SCENARIO_SETTINGS_STORAGE_KEY = "looi.idleScenarioSettings.v2";
 const DEFAULT_FRONT_CAMERA_INDEX = 1;
 const IDLE_GAP_MIN_SEC = msToSec(DEFAULT_IDLE_SCHEDULER_SETTINGS.firstIdleGapMs[0]);
 const IDLE_GAP_MAX_SEC = msToSec(DEFAULT_IDLE_SCHEDULER_SETTINGS.firstIdleGapMs[1]);
-const DEFAULT_IDLE_GEMINI_BODY_CONTEXT_GAP_SEC = 5;
+const DEFAULT_IDLE_GEMINI_BODY_CONTEXT_GAP_RANGE_SEC = Object.freeze([4, 7]);
+const LEGACY_IDLE_GEMINI_BODY_CONTEXT_GAP_SEC = 5;
+const IDLE_BODY_CONTEXT_GAP_MIN_SEC = 0;
+const IDLE_BODY_CONTEXT_GAP_MAX_SEC = 120;
 const IDLE_BODY_CONTEXT_USER_TRANSCRIPT_COOLDOWN_MS = 2000;
 const DEFAULT_IDLE_SCENARIO_SETTINGS = createDefaultIdleScenarioSettings();
 const FOLLOW_TUNING_STORAGE_KEY = "looi.followTuning.v3";
@@ -208,7 +211,8 @@ const ui = {
   idleSpeakingGapMaxInput: document.getElementById("idleSpeakingGapMaxInput"),
   idleBalanceStartInput: document.getElementById("idleBalanceStartInput"),
   idleBalanceIncrementInput: document.getElementById("idleBalanceIncrementInput"),
-  idleGeminiBodyContextGapInput: document.getElementById("idleGeminiBodyContextGapInput"),
+  idleGeminiBodyContextGapMinInput: document.getElementById("idleGeminiBodyContextGapMinInput"),
+  idleGeminiBodyContextGapMaxInput: document.getElementById("idleGeminiBodyContextGapMaxInput"),
   idleScenarioTestList: document.getElementById("idleScenarioTestList"),
   startLocalBrainButton: document.getElementById("startLocalBrainButton"),
   stopLocalBrainButton: document.getElementById("stopLocalBrainButton"),
@@ -332,7 +336,7 @@ let pendingFollowVisionContextReason = "";
 let geminiAudioWasPlaying = false;
 let geminiVisionResumeTimer = null;
 let geminiAudioEndedAt = 0;
-let lastIdleBodyContextSentAt = 0;
+let nextIdleBodyContextAllowedAt = 0;
 let looiActivityRaf = 0;
 let looiActivitySlotForDot = [0, 1, 2, 3, 4];
 let looiActivityActiveStep = 0;
@@ -502,7 +506,8 @@ ui.localMotionArmedToggle.addEventListener("change", () => {
   ui.idleSpeakingGapMaxInput,
   ui.idleBalanceStartInput,
   ui.idleBalanceIncrementInput,
-  ui.idleGeminiBodyContextGapInput
+  ui.idleGeminiBodyContextGapMinInput,
+  ui.idleGeminiBodyContextGapMaxInput
 ].forEach((element) => {
   element?.addEventListener("change", () => {
     applyIdleScenarioSettingsFromUi();
@@ -3032,13 +3037,13 @@ function sendIdleBodyContextToGemini(payload = {}, reason = "idle_body_context")
     return false;
   }
 
-  const gapSec = Number(idleScenarioSettings.geminiBodyContextGapSec);
-  if (!Number.isFinite(gapSec) || gapSec <= 0) {
+  const gapRangeSec = getIdleBodyContextGapRangeSec();
+  if (!gapRangeSec) {
     return false;
   }
 
   const now = Date.now();
-  if (now - lastIdleBodyContextSentAt < gapSec * 1000) {
+  if (nextIdleBodyContextAllowedAt > 0 && now < nextIdleBodyContextAllowedAt) {
     return false;
   }
 
@@ -3070,8 +3075,12 @@ function sendIdleBodyContextToGemini(payload = {}, reason = "idle_body_context")
   const sent = geminiLiveRuntime.sendText(`<body_context>${safeStringify(context)}</body_context>`);
   sent?.then?.((ok) => {
     if (ok) {
-      lastIdleBodyContextSentAt = now;
-      log(`Gemini idle body context sent movement=${scenarioId || "unknown"} gap=${Math.round(gapSec)}s`, "debug");
+      const nextGapSec = pickIdleBodyContextGapSec();
+      nextIdleBodyContextAllowedAt = now + nextGapSec * 1000;
+      log(
+        `Gemini idle body context sent movement=${scenarioId || "unknown"} nextGap=${formatNumber(nextGapSec)}s range=${gapRangeSec.join("-")}s`,
+        "debug"
+      );
     }
   })?.catch?.((error) => {
     log(`Gemini idle body context failed: ${error.message}`, "warn");
@@ -3711,8 +3720,10 @@ function applyIdleScenarioSettingsFromUi() {
     speakingIdleMaxSec: ui.idleSpeakingGapMaxInput?.value,
     balanceStartPercent: ui.idleBalanceStartInput?.value,
     balanceIncrementPercent: ui.idleBalanceIncrementInput?.value,
-    geminiBodyContextGapSec: ui.idleGeminiBodyContextGapInput?.value
+    geminiBodyContextGapMinSec: ui.idleGeminiBodyContextGapMinInput?.value,
+    geminiBodyContextGapMaxSec: ui.idleGeminiBodyContextGapMaxInput?.value
   });
+  nextIdleBodyContextAllowedAt = 0;
   saveIdleScenarioSettings(idleScenarioSettings);
   updateIdleScenarioSettingsUi();
   idleScenarioScheduler?.setSettings?.(toIdleSchedulerSettings(idleScenarioSettings));
@@ -3728,7 +3739,8 @@ function updateIdleScenarioSettingsUi() {
   setInputValue(ui.idleSpeakingGapMaxInput, idleScenarioSettings.speakingIdleMaxSec);
   setInputValue(ui.idleBalanceStartInput, idleScenarioSettings.balanceStartPercent);
   setInputValue(ui.idleBalanceIncrementInput, idleScenarioSettings.balanceIncrementPercent);
-  setInputValue(ui.idleGeminiBodyContextGapInput, idleScenarioSettings.geminiBodyContextGapSec);
+  setInputValue(ui.idleGeminiBodyContextGapMinInput, idleScenarioSettings.geminiBodyContextGapMinSec);
+  setInputValue(ui.idleGeminiBodyContextGapMaxInput, idleScenarioSettings.geminiBodyContextGapMaxSec);
 }
 
 function renderIdleScenarioTestButtons() {
@@ -3772,7 +3784,8 @@ function createDefaultIdleScenarioSettings() {
     speakingIdleMaxSec: msToSec(DEFAULT_IDLE_SCHEDULER_SETTINGS.speakingIdleGapMs[1]),
     balanceStartPercent: chanceToPercent(DEFAULT_IDLE_SCHEDULER_SETTINGS.balanceStartChance),
     balanceIncrementPercent: chanceToPercent(DEFAULT_IDLE_SCHEDULER_SETTINGS.balanceChanceIncrement),
-    geminiBodyContextGapSec: DEFAULT_IDLE_GEMINI_BODY_CONTEXT_GAP_SEC
+    geminiBodyContextGapMinSec: DEFAULT_IDLE_GEMINI_BODY_CONTEXT_GAP_RANGE_SEC[0],
+    geminiBodyContextGapMaxSec: DEFAULT_IDLE_GEMINI_BODY_CONTEXT_GAP_RANGE_SEC[1]
   });
 }
 
@@ -3796,6 +3809,17 @@ function normalizeIdleScenarioSettings(settings = {}) {
     DEFAULT_IDLE_SCENARIO_SETTINGS.speakingIdleMinSec,
     DEFAULT_IDLE_SCENARIO_SETTINGS.speakingIdleMaxSec
   );
+  const legacyBodyContextGapSec = Number(source.geminiBodyContextGapSec);
+  const legacyBodyContextGapValue = Number.isFinite(legacyBodyContextGapSec) &&
+    legacyBodyContextGapSec !== LEGACY_IDLE_GEMINI_BODY_CONTEXT_GAP_SEC
+    ? legacyBodyContextGapSec
+    : undefined;
+  const [geminiBodyContextGapMinSec, geminiBodyContextGapMaxSec] = normalizeBodyContextGapSeconds(
+    source.geminiBodyContextGapMinSec ?? legacyBodyContextGapValue,
+    source.geminiBodyContextGapMaxSec ?? legacyBodyContextGapValue,
+    DEFAULT_IDLE_SCENARIO_SETTINGS.geminiBodyContextGapMinSec,
+    DEFAULT_IDLE_SCENARIO_SETTINGS.geminiBodyContextGapMaxSec
+  );
 
   return {
     firstIdleMinSec,
@@ -3816,12 +3840,8 @@ function normalizeIdleScenarioSettings(settings = {}) {
       100,
       DEFAULT_IDLE_SCENARIO_SETTINGS.balanceIncrementPercent
     )),
-    geminiBodyContextGapSec: Math.round(clampNumber(
-      source.geminiBodyContextGapSec,
-      0,
-      120,
-      DEFAULT_IDLE_SCENARIO_SETTINGS.geminiBodyContextGapSec
-    ))
+    geminiBodyContextGapMinSec,
+    geminiBodyContextGapMaxSec
   };
 }
 
@@ -3829,6 +3849,42 @@ function normalizeIdleGapSeconds(minValue, maxValue, fallbackMin, fallbackMax) {
   const min = Math.round(clampNumber(minValue, IDLE_GAP_MIN_SEC, IDLE_GAP_MAX_SEC, fallbackMin));
   const max = Math.round(clampNumber(maxValue, IDLE_GAP_MIN_SEC, IDLE_GAP_MAX_SEC, fallbackMax));
   return max >= min ? [min, max] : [max, min];
+}
+
+function normalizeBodyContextGapSeconds(minValue, maxValue, fallbackMin, fallbackMax) {
+  const min = Math.round(clampNumber(
+    minValue,
+    IDLE_BODY_CONTEXT_GAP_MIN_SEC,
+    IDLE_BODY_CONTEXT_GAP_MAX_SEC,
+    fallbackMin
+  ));
+  const max = Math.round(clampNumber(
+    maxValue,
+    IDLE_BODY_CONTEXT_GAP_MIN_SEC,
+    IDLE_BODY_CONTEXT_GAP_MAX_SEC,
+    fallbackMax
+  ));
+  return max >= min ? [min, max] : [max, min];
+}
+
+function getIdleBodyContextGapRangeSec(settings = idleScenarioSettings) {
+  const min = Number(settings.geminiBodyContextGapMinSec);
+  const max = Number(settings.geminiBodyContextGapMaxSec);
+  if (!Number.isFinite(min) || !Number.isFinite(max) || max <= 0) {
+    return null;
+  }
+
+  return max >= min ? [min, max] : [max, min];
+}
+
+function pickIdleBodyContextGapSec(settings = idleScenarioSettings) {
+  const range = getIdleBodyContextGapRangeSec(settings);
+  if (!range) {
+    return 0;
+  }
+
+  const [min, max] = range;
+  return min + Math.random() * Math.max(0, max - min);
 }
 
 function toIdleSchedulerSettings(settings = idleScenarioSettings) {
