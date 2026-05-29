@@ -3063,7 +3063,7 @@ function sendIdleBodyContextToGemini(payload = {}, reason = "idle_body_context")
     movementId: scenarioId,
     source: "local_idle_scheduler",
     note: "Local idle body micro-movement completed. This is body awareness only, not a user command.",
-    instruction: "Do not call tools from this context. You may stay silent, or say one short natural personality comment.",
+    instruction: "Do not call tools because of body_context. Usually respond with one short natural personality comment. Stay silent only if it would interrupt the user or feel repetitive.",
     timestamp: new Date().toISOString()
   };
 
