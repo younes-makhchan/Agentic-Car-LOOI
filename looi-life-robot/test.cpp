@@ -4,7 +4,7 @@
 
 const int I2C_SDA_PIN = 13;
 const int I2C_SCL_PIN = 14;
-const int SERVO_CHANNEL = 0;
+const int SERVO_CHANNEL = 7;
 
 const int SERVO_MIN = 200;
 const int SERVO_MAX = 500;
