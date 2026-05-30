@@ -1,0 +1,540 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LOOI Manual Drive Demo</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #080806;
+      --panel: rgba(20, 22, 18, 0.9);
+      --panel-strong: rgba(28, 32, 25, 0.94);
+      --line: rgba(233, 255, 184, 0.17);
+      --text: #f8ffe9;
+      --muted: #b8c6a4;
+      --accent: #dbff64;
+      --good: #8cff9d;
+      --warn: #ffd166;
+      --bad: #ff718d;
+    }
+
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    html,
+    body {
+      width: 100%;
+      min-height: 100%;
+      margin: 0;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 14% 10%, rgba(219, 255, 100, 0.16), transparent 28%),
+        radial-gradient(circle at 85% 18%, rgba(140, 255, 157, 0.12), transparent 30%),
+        linear-gradient(145deg, #050603, var(--bg));
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    body {
+      padding: clamp(14px, 3vw, 28px);
+      touch-action: manipulation;
+    }
+
+    main {
+      width: min(980px, 100%);
+      margin: 0 auto;
+      display: grid;
+      gap: 16px;
+    }
+
+    h1,
+    p {
+      margin: 0;
+    }
+
+    h1 {
+      font-size: clamp(2.4rem, 9vw, 5.2rem);
+      line-height: 0.88;
+      letter-spacing: -0.08em;
+    }
+
+    .hero {
+      display: grid;
+      gap: 10px;
+    }
+
+    .hero p,
+    .note,
+    label span {
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    .panel {
+      display: grid;
+      gap: 14px;
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 26px;
+      background: var(--panel);
+      box-shadow: 0 26px 80px rgba(0, 0, 0, 0.34);
+    }
+
+    .card {
+      display: grid;
+      gap: 12px;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      background: var(--panel-strong);
+    }
+
+    .grid-2,
+    .grid-3 {
+      display: grid;
+      gap: 10px;
+    }
+
+    .grid-2 {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .grid-3 {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    label {
+      display: grid;
+      gap: 7px;
+    }
+
+    input,
+    button {
+      min-height: 44px;
+      border: 1px solid var(--line);
+      border-radius: 15px;
+      background: rgba(4, 6, 3, 0.92);
+      color: var(--text);
+      font: inherit;
+    }
+
+    input {
+      padding: 0 12px;
+    }
+
+    input[type="range"] {
+      accent-color: var(--accent);
+      padding: 0;
+    }
+
+    button {
+      padding: 12px;
+      font-weight: 900;
+      cursor: pointer;
+      user-select: none;
+      touch-action: none;
+    }
+
+    button.primary {
+      color: #111707;
+      border-color: rgba(219, 255, 100, 0.7);
+      background: var(--accent);
+    }
+
+    button.drive {
+      min-height: clamp(82px, 16vw, 130px);
+      font-size: clamp(1.05rem, 3vw, 1.5rem);
+      background:
+        linear-gradient(135deg, rgba(219, 255, 100, 0.16), transparent),
+        rgba(255, 255, 255, 0.055);
+    }
+
+    button.drive.is-active {
+      color: #0b1105;
+      background: linear-gradient(135deg, var(--accent), #8cff9d);
+      transform: translateY(1px);
+    }
+
+    button.stop {
+      border-color: rgba(255, 113, 141, 0.6);
+      background: rgba(255, 113, 141, 0.18);
+      color: #ffc4cf;
+    }
+
+    .readout {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 1px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: var(--line);
+    }
+
+    .metric {
+      display: grid;
+      gap: 5px;
+      padding: 12px;
+      background: rgba(6, 8, 4, 0.9);
+    }
+
+    .metric span {
+      color: var(--muted);
+      font-size: 0.8rem;
+    }
+
+    .metric strong {
+      font-size: clamp(1.05rem, 4vw, 1.45rem);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .status-good { color: var(--good); }
+    .status-warn { color: var(--warn); }
+    .status-bad { color: var(--bad); }
+
+    .log {
+      min-height: 150px;
+      max-height: 240px;
+      overflow: auto;
+      padding: 10px;
+      border-radius: 16px;
+      background: rgba(0, 0, 0, 0.3);
+      color: #e4f7d1;
+      font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      white-space: pre-wrap;
+    }
+
+    @media (max-width: 720px) {
+      .grid-2,
+      .grid-3,
+      .readout {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="hero">
+      <h1>Manual Drive Demo</h1>
+      <p>Press and hold a direction. Release, leave the button, or lift your finger to stop.</p>
+      <p class="note">Safety: lift the wheels for the first test. Default speed is max.</p>
+    </section>
+
+    <section class="panel">
+      <section class="card">
+        <label>
+          <span>ESP32 WebSocket URL</span>
+          <input id="esp32Url" type="text" autocomplete="off" />
+        </label>
+        <div class="grid-2">
+          <button id="connectButton" class="primary" type="button">Connect</button>
+          <button id="disconnectButton" type="button">Disconnect</button>
+        </div>
+      </section>
+
+      <section class="readout">
+        <div class="metric">
+          <span>ESP32</span>
+          <strong id="esp32Status" class="status-bad">disconnected</strong>
+        </div>
+        <div class="metric">
+          <span>Command</span>
+          <strong id="commandStatus">idle</strong>
+        </div>
+        <div class="metric">
+          <span>Speed</span>
+          <strong id="speedValue">0.50</strong>
+        </div>
+      </section>
+
+      <section class="card">
+        <label>
+          <span>Speed</span>
+          <input id="speedInput" type="range" min="0" max="0.5" step="0.01" value="0.5" />
+        </label>
+        <div class="grid-2">
+          <label>
+            <span>Command duration ms</span>
+            <input id="durationInput" type="number" min="80" max="1000" step="10" value="250" />
+          </label>
+          <label>
+            <span>Refresh interval ms</span>
+            <input id="refreshInput" type="number" min="40" max="500" step="10" value="120" />
+          </label>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="grid-3">
+          <span></span>
+          <button class="drive" type="button" data-action="forward">Forward</button>
+          <span></span>
+          <button class="drive" type="button" data-action="left">Rotate Left</button>
+          <button id="stopButton" class="stop" type="button">Stop</button>
+          <button class="drive" type="button" data-action="right">Rotate Right</button>
+          <span></span>
+          <button class="drive" type="button" data-action="backward">Backward</button>
+          <span></span>
+        </div>
+      </section>
+
+      <section class="card">
+        <div id="log" class="log"></div>
+      </section>
+    </section>
+  </main>
+
+  <script type="module">
+    import { PUBLIC_CONFIG } from "./js/config.js";
+    import { ESP32Client } from "./js/robot/esp32Client.js";
+
+    const MAX_SPEED = 0.5;
+    const STORAGE_KEY = "looi.manualDriveDemo.v1";
+
+    const ACTIONS = Object.freeze({
+      forward: { linear: 1, angular: 0, label: "manual_forward" },
+      backward: { linear: -1, angular: 0, label: "manual_backward" },
+      left: { linear: 0, angular: -1, label: "manual_rotate_left" },
+      right: { linear: 0, angular: 1, label: "manual_rotate_right" }
+    });
+
+    const ui = {
+      esp32Url: document.getElementById("esp32Url"),
+      connectButton: document.getElementById("connectButton"),
+      disconnectButton: document.getElementById("disconnectButton"),
+      esp32Status: document.getElementById("esp32Status"),
+      commandStatus: document.getElementById("commandStatus"),
+      speedValue: document.getElementById("speedValue"),
+      speedInput: document.getElementById("speedInput"),
+      durationInput: document.getElementById("durationInput"),
+      refreshInput: document.getElementById("refreshInput"),
+      stopButton: document.getElementById("stopButton"),
+      driveButtons: [...document.querySelectorAll("[data-action]")],
+      log: document.getElementById("log")
+    };
+
+    let activeAction = null;
+    let activeButton = null;
+    let repeatTimer = null;
+
+    const robotClient = new ESP32Client({
+      url: PUBLIC_CONFIG.defaultEsp32WsUrl,
+      maxSpeed: MAX_SPEED,
+      minDurationMs: 0,
+      logger: (message, level = "info") => log(message, level)
+    });
+
+    init();
+
+    function init() {
+      const settings = loadSettings();
+      ui.esp32Url.value = settings.esp32Url || PUBLIC_CONFIG.defaultEsp32WsUrl || "ws://192.168.4.1:81";
+      ui.speedInput.value = settings.speed;
+      ui.durationInput.value = settings.durationMs;
+      ui.refreshInput.value = settings.refreshMs;
+
+      robotClient.onStatus(updateEsp32Status);
+      robotClient.onError((error) => log(error.message || JSON.stringify(error), "error"));
+      robotClient.onAck((message) => log(`ACK ${message.cmd ?? "unknown"} ${message.label ?? message.reason ?? ""}`));
+
+      ui.connectButton.addEventListener("click", () => connectEsp32().catch((error) => {
+        log(`ESP32 connect failed: ${error.message}`, "error");
+      }));
+      ui.disconnectButton.addEventListener("click", () => {
+        stopDrive("disconnect");
+        robotClient.disconnect();
+      });
+      ui.stopButton.addEventListener("click", () => stopDrive("manual_stop_button"));
+      ui.speedInput.addEventListener("input", () => {
+        updateSpeedUi();
+        saveSettings();
+      });
+      ui.durationInput.addEventListener("change", saveSettings);
+      ui.refreshInput.addEventListener("change", saveSettings);
+
+      ui.driveButtons.forEach((button) => bindDriveButton(button));
+
+      globalThis.addEventListener("pointerup", () => stopDrive("pointer_up"));
+      globalThis.addEventListener("pointercancel", () => stopDrive("pointer_cancel"));
+      globalThis.addEventListener("blur", () => stopDrive("window_blur"));
+      globalThis.addEventListener("beforeunload", () => stopDrive("unload"));
+
+      updateSpeedUi();
+      updateEsp32Status(robotClient.getStatus());
+      log("Manual drive demo ready.");
+    }
+
+    function bindDriveButton(button) {
+      button.addEventListener("pointerdown", (event) => {
+        event.preventDefault();
+        button.setPointerCapture?.(event.pointerId);
+        startDrive(button.dataset.action, button);
+      });
+      button.addEventListener("pointerup", () => stopDrive("button_pointer_up"));
+      button.addEventListener("pointercancel", () => stopDrive("button_pointer_cancel"));
+      button.addEventListener("pointerleave", () => stopDrive("button_pointer_leave"));
+      button.addEventListener("contextmenu", (event) => event.preventDefault());
+    }
+
+    async function connectEsp32() {
+      const url = ui.esp32Url.value.trim() || PUBLIC_CONFIG.defaultEsp32WsUrl || "ws://192.168.4.1:81";
+      ui.esp32Url.value = url;
+      saveSettings();
+      log(`Connecting ESP32 gateway to ${url}`);
+      await robotClient.connect(url);
+    }
+
+    function startDrive(actionName, button) {
+      if (!ACTIONS[actionName]) {
+        return;
+      }
+
+      if (!robotClient.isConnected()) {
+        log("ESP32 is not connected.", "warn");
+        return;
+      }
+
+      if (activeAction && activeAction !== actionName) {
+        stopDrive("switch_direction");
+      }
+
+      activeAction = actionName;
+      activeButton = button;
+      activeButton?.classList.add("is-active");
+      sendDriveCommand();
+      scheduleNextCommand();
+    }
+
+    function scheduleNextCommand() {
+      clearRepeatTimer();
+      repeatTimer = setTimeout(() => {
+        if (!activeAction) {
+          return;
+        }
+
+        sendDriveCommand();
+        scheduleNextCommand();
+      }, getRefreshMs());
+    }
+
+    function sendDriveCommand() {
+      if (!activeAction || !robotClient.isConnected()) {
+        stopDrive("send_not_ready");
+        return;
+      }
+
+      const action = ACTIONS[activeAction];
+      const speed = getSpeed();
+      const linear = action.linear * speed;
+      const angular = action.angular * speed;
+      const durationMs = getDurationMs();
+      const id = robotClient.sendMotion({
+        linear,
+        angular,
+        durationMs,
+        rampMs: 0,
+        label: action.label
+      });
+      ui.commandStatus.textContent = `${activeAction} id=${id}`;
+    }
+
+    function stopDrive(reason = "manual_stop") {
+      const hadActiveAction = Boolean(activeAction);
+      clearRepeatTimer();
+      activeAction = null;
+      activeButton?.classList.remove("is-active");
+      activeButton = null;
+      ui.commandStatus.textContent = "idle";
+
+      if (robotClient.isConnected()) {
+        try {
+          robotClient.stop(reason);
+        } catch (error) {
+          log(`Stop failed: ${error.message}`, "warn");
+        }
+      }
+
+      if (hadActiveAction) {
+        log(`Stopped (${reason}).`);
+      }
+    }
+
+    function clearRepeatTimer() {
+      if (repeatTimer) {
+        clearTimeout(repeatTimer);
+        repeatTimer = null;
+      }
+    }
+
+    function updateEsp32Status(status) {
+      ui.esp32Status.textContent = status.state;
+      ui.esp32Status.className = status.connected ? "status-good" : status.state === "connecting" ? "status-warn" : "status-bad";
+    }
+
+    function updateSpeedUi() {
+      ui.speedValue.textContent = getSpeed().toFixed(2);
+    }
+
+    function getSpeed() {
+      return clamp(Number(ui.speedInput.value), 0, MAX_SPEED);
+    }
+
+    function getDurationMs() {
+      return Math.round(clamp(Number(ui.durationInput.value), 80, 1000));
+    }
+
+    function getRefreshMs() {
+      return Math.round(clamp(Number(ui.refreshInput.value), 40, 500));
+    }
+
+    function saveSettings() {
+      const settings = {
+        esp32Url: ui.esp32Url.value.trim(),
+        speed: getSpeed(),
+        durationMs: getDurationMs(),
+        refreshMs: getRefreshMs()
+      };
+      ui.durationInput.value = settings.durationMs;
+      ui.refreshInput.value = settings.refreshMs;
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+    }
+
+    function loadSettings() {
+      try {
+        const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
+        return {
+          esp32Url: typeof saved.esp32Url === "string" ? saved.esp32Url : "",
+          speed: clamp(saved.speed ?? MAX_SPEED, 0, MAX_SPEED),
+          durationMs: clamp(saved.durationMs ?? 250, 80, 1000),
+          refreshMs: clamp(saved.refreshMs ?? 120, 40, 500)
+        };
+      } catch (_error) {
+        return {
+          esp32Url: "",
+          speed: MAX_SPEED,
+          durationMs: 250,
+          refreshMs: 120
+        };
+      }
+    }
+
+    function clamp(value, min, max) {
+      const numeric = Number(value);
+
+      if (!Number.isFinite(numeric)) {
+        return min;
+      }
+
+      return Math.min(max, Math.max(min, numeric));
+    }
+
+    function log(message, level = "info") {
+      const line = `[${new Date().toLocaleTimeString()}] ${level.toUpperCase()} ${message}`;
+      ui.log.textContent = `${line}\n${ui.log.textContent}`.slice(0, 6000);
+    }
+  </script>
+</body>
+</html>
