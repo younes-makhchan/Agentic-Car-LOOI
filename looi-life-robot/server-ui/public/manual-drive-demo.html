@@ -245,15 +245,15 @@
           <strong id="commandStatus">idle</strong>
         </div>
         <div class="metric">
-          <span>Speed</span>
-          <strong id="speedValue">0.50</strong>
+          <span>PWM</span>
+          <strong id="speedValue">255</strong>
         </div>
       </section>
 
       <section class="card">
         <label>
-          <span>Speed</span>
-          <input id="speedInput" type="range" min="0" max="0.5" step="0.01" value="0.5" />
+          <span>Direct PWM target</span>
+          <input id="speedInput" type="range" min="210" max="255" step="1" value="255" />
         </label>
         <div class="grid-2">
           <label>
@@ -292,6 +292,8 @@
     import { ESP32Client } from "./js/robot/esp32Client.js";
 
     const MAX_SPEED = 0.5;
+    const PWM_MIN = 210;
+    const PWM_MAX = 255;
     const STORAGE_KEY = "looi.manualDriveDemo.v1";
 
     const ACTIONS = Object.freeze({
@@ -332,7 +334,7 @@
     function init() {
       const settings = loadSettings();
       ui.esp32Url.value = settings.esp32Url || PUBLIC_CONFIG.defaultEsp32WsUrl || "ws://192.168.4.1:81";
-      ui.speedInput.value = settings.speed;
+      ui.speedInput.value = settings.pwm;
       ui.durationInput.value = settings.durationMs;
       ui.refreshInput.value = settings.refreshMs;
 
@@ -475,11 +477,19 @@
     }
 
     function updateSpeedUi() {
-      ui.speedValue.textContent = getSpeed().toFixed(2);
+      ui.speedValue.textContent = String(getPwm());
     }
 
     function getSpeed() {
-      return clamp(Number(ui.speedInput.value), 0, MAX_SPEED);
+      return pwmToNormalizedSpeed(getPwm());
+    }
+
+    function getPwm() {
+      return Math.round(clamp(Number(ui.speedInput.value), PWM_MIN, PWM_MAX));
+    }
+
+    function pwmToNormalizedSpeed(pwm) {
+      return clamp(pwm / PWM_MAX * MAX_SPEED, 0, MAX_SPEED);
     }
 
     function getDurationMs() {
@@ -493,10 +503,11 @@
     function saveSettings() {
       const settings = {
         esp32Url: ui.esp32Url.value.trim(),
-        speed: getSpeed(),
+        pwm: getPwm(),
         durationMs: getDurationMs(),
         refreshMs: getRefreshMs()
       };
+      ui.speedInput.value = settings.pwm;
       ui.durationInput.value = settings.durationMs;
       ui.refreshInput.value = settings.refreshMs;
       localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
@@ -507,18 +518,28 @@
         const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
         return {
           esp32Url: typeof saved.esp32Url === "string" ? saved.esp32Url : "",
-          speed: clamp(saved.speed ?? MAX_SPEED, 0, MAX_SPEED),
+          pwm: Math.round(clamp(saved.pwm ?? legacySpeedToPwm(saved.speed), PWM_MIN, PWM_MAX)),
           durationMs: clamp(saved.durationMs ?? 250, 80, 1000),
           refreshMs: clamp(saved.refreshMs ?? 120, 40, 500)
         };
       } catch (_error) {
         return {
           esp32Url: "",
-          speed: MAX_SPEED,
+          pwm: PWM_MAX,
           durationMs: 250,
           refreshMs: 120
         };
       }
+    }
+
+    function legacySpeedToPwm(speed) {
+      const numeric = Number(speed);
+
+      if (!Number.isFinite(numeric)) {
+        return PWM_MAX;
+      }
+
+      return Math.round(clamp(numeric, 0, MAX_SPEED) / MAX_SPEED * PWM_MAX);
     }
 
     function clamp(value, min, max) {
