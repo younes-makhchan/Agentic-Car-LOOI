@@ -30,8 +30,8 @@ constexpr uint8_t RIGHT_PWM_CHANNEL = 1;
 constexpr int8_t CHASSIS_LINEAR_SIGN = -1;
 constexpr int8_t CHASSIS_ANGULAR_SIGN = -1;
 
-constexpr uint8_t HEAD_I2C_SDA = 33;
-constexpr uint8_t HEAD_I2C_SCL = 32;
+constexpr uint8_t HEAD_I2C_SDA = 32;
+constexpr uint8_t HEAD_I2C_SCL = 33;
 constexpr uint8_t HEAD_PITCH_SERVO_CHANNEL = 7;
 constexpr uint8_t HEAD_SERVO_FREQUENCY_HZ = 50;
 constexpr uint16_t HEAD_PITCH_SAFE_MIN_PULSE = 500;
@@ -41,6 +41,12 @@ constexpr uint32_t HEAD_PITCH_DEFAULT_DURATION_MS = 350;
 constexpr uint32_t HEAD_PITCH_MAX_DURATION_MS = 2000;
 constexpr uint32_t HEAD_PITCH_UPDATE_INTERVAL_MS = 20;
 constexpr char HEAD_PITCH_DEFAULT_EASING[] = "ease_in_out_cubic";
+constexpr char HEAD_PITCH_EASE_OUT_CUBIC[] = "ease_out_cubic";
+constexpr char HEAD_PITCH_EASE_OUT_QUART[] = "ease_out_quart";
+constexpr char HEAD_PITCH_EXPONENTIAL_SMOOTHING[] = "exponential_smoothing";
+constexpr char HEAD_PITCH_CRITICALLY_DAMPED_SPRING[] =
+    "critically_damped_spring";
+constexpr char HEAD_PITCH_MINIMUM_JERK[] = "minimum_jerk";
 
 // Flip one of these if a motor side spins the wrong way.
 constexpr bool LEFT_INVERT = false;
@@ -86,7 +92,7 @@ constexpr uint32_t MOTOR_UPDATE_INTERVAL_MS = 20;
 constexpr uint32_t TELEMETRY_INTERVAL_MS = 1000;
 constexpr uint32_t WIFI_CONNECT_TIMEOUT_MS = 15000;
 constexpr uint8_t MAX_TRACKED_CLIENTS = 10;
-constexpr size_t JSON_DOC_SIZE = 1536;
+constexpr size_t JSON_DOC_SIZE = 2048;
 
 WebSocketsServer webSocket(WS_PORT);
 Adafruit_PWMServoDriver headServoDriver = Adafruit_PWMServoDriver(0x40);
@@ -127,7 +133,7 @@ uint32_t headPitchStartAt = 0;
 uint32_t headPitchDurationMs = 0;
 uint32_t headPitchLastUpdateAt = 0;
 bool headPitchMoving = false;
-char headPitchEasing[24] = "ease_in_out_cubic";
+char headPitchEasing[32] = "ease_in_out_cubic";
 
 void setupPins();
 void setupHeadServo();
@@ -1087,6 +1093,13 @@ void addConfig(JsonObject target) {
   head["target_pulse"] = headPitchTargetPulse;
   head["duration_ms"] = headPitchDurationMs;
   head["easing"] = headPitchEasing;
+  JsonArray easingModes = head.createNestedArray("easing_modes");
+  easingModes.add(HEAD_PITCH_DEFAULT_EASING);
+  easingModes.add(HEAD_PITCH_EASE_OUT_CUBIC);
+  easingModes.add(HEAD_PITCH_EASE_OUT_QUART);
+  easingModes.add(HEAD_PITCH_EXPONENTIAL_SMOOTHING);
+  easingModes.add(HEAD_PITCH_CRITICALLY_DAMPED_SPRING);
+  easingModes.add(HEAD_PITCH_MINIMUM_JERK);
   head["channel"] = HEAD_PITCH_SERVO_CHANNEL;
   head["sda"] = HEAD_I2C_SDA;
   head["scl"] = HEAD_I2C_SCL;
@@ -1181,8 +1194,32 @@ const char *normalizeHeadPitchEasing(JsonVariantConst value) {
 
   const char *requested = value.as<const char *>();
 
-  if (requested && strcmp(requested, HEAD_PITCH_DEFAULT_EASING) == 0) {
+  if (!requested) {
     return HEAD_PITCH_DEFAULT_EASING;
+  }
+
+  if (strcmp(requested, HEAD_PITCH_DEFAULT_EASING) == 0) {
+    return HEAD_PITCH_DEFAULT_EASING;
+  }
+
+  if (strcmp(requested, HEAD_PITCH_EASE_OUT_CUBIC) == 0) {
+    return HEAD_PITCH_EASE_OUT_CUBIC;
+  }
+
+  if (strcmp(requested, HEAD_PITCH_EASE_OUT_QUART) == 0) {
+    return HEAD_PITCH_EASE_OUT_QUART;
+  }
+
+  if (strcmp(requested, HEAD_PITCH_EXPONENTIAL_SMOOTHING) == 0) {
+    return HEAD_PITCH_EXPONENTIAL_SMOOTHING;
+  }
+
+  if (strcmp(requested, HEAD_PITCH_CRITICALLY_DAMPED_SPRING) == 0) {
+    return HEAD_PITCH_CRITICALLY_DAMPED_SPRING;
+  }
+
+  if (strcmp(requested, HEAD_PITCH_MINIMUM_JERK) == 0) {
+    return HEAD_PITCH_MINIMUM_JERK;
   }
 
   return HEAD_PITCH_DEFAULT_EASING;
@@ -1194,6 +1231,35 @@ float easeHeadPitchProgress(float progress, const char *easing) {
   if (!easing || strcmp(easing, HEAD_PITCH_DEFAULT_EASING) == 0) {
     return t < 0.5f ? 4.0f * t * t * t
                     : 1.0f - powf(-2.0f * t + 2.0f, 3.0f) / 2.0f;
+  }
+
+  if (strcmp(easing, HEAD_PITCH_EASE_OUT_CUBIC) == 0) {
+    const float inverse = 1.0f - t;
+    return 1.0f - inverse * inverse * inverse;
+  }
+
+  if (strcmp(easing, HEAD_PITCH_EASE_OUT_QUART) == 0) {
+    const float inverse = 1.0f - t;
+    return 1.0f - inverse * inverse * inverse * inverse;
+  }
+
+  if (strcmp(easing, HEAD_PITCH_EXPONENTIAL_SMOOTHING) == 0) {
+    constexpr float response = 5.0f;
+    const float normalizedEnd = 1.0f - expf(-response);
+    return (1.0f - expf(-response * t)) / normalizedEnd;
+  }
+
+  if (strcmp(easing, HEAD_PITCH_CRITICALLY_DAMPED_SPRING) == 0) {
+    constexpr float response = 6.0f;
+    const float value = 1.0f - (1.0f + response * t) * expf(-response * t);
+    const float endValue = 1.0f - (1.0f + response) * expf(-response);
+    return value / endValue;
+  }
+
+  if (strcmp(easing, HEAD_PITCH_MINIMUM_JERK) == 0) {
+    const float t2 = t * t;
+    const float t3 = t2 * t;
+    return 10.0f * t3 - 15.0f * t3 * t + 6.0f * t3 * t2;
   }
 
   return t;

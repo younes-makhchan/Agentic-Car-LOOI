@@ -330,7 +330,7 @@
         <section class="card">
           <div class="grid-2">
             <label>
-              <span>Transition duration ms</span>
+              <span>Base transition duration ms</span>
               <input id="transitionDuration" type="number" min="0" max="2000" step="10" value="350" />
             </label>
             <label>
@@ -369,6 +369,8 @@
     const DURATION_MAX = HEAD_PITCH_MAX_DURATION_MS;
     const DEFAULT_DURATION_MS = HEAD_PITCH_DEFAULT_DURATION_MS;
     const DEFAULT_EASING = HEAD_PITCH_DEFAULT_EASING;
+    const DISTANCE_DURATION_MIN_MS = 180;
+    const DISTANCE_DURATION_MAX_MS = 900;
     const DEFAULT_SETTINGS = Object.freeze({
       topPulse: 530,
       defaultPulse: HEAD_PITCH_DEFAULT_PULSE,
@@ -486,10 +488,10 @@
 
     function sendNamedPulse(name, value) {
       const pulse = clampPulse(value);
-      const durationMs = getTransitionDurationMs();
+      const startPulse = getCurrentPulseForDuration();
+      const durationMs = getDistanceScaledDurationMs(startPulse, pulse);
       const easing = getEasing();
       ui.customPulse.value = pulse;
-      currentPulse = pulse;
 
       if (!robotClient.isConnected()) {
         log("ESP32 is not connected.", "warn");
@@ -502,8 +504,9 @@
         easing,
         label: `head_pitch_${name}`
       });
-      log(`Sent ${name} pulse=${pulse} duration=${durationMs} easing=${easing} id=${id}`);
-      return true;
+      currentPulse = pulse;
+      log(`Sent ${name} ${startPulse}->${pulse} duration=${durationMs}ms base=${getTransitionDurationMs()}ms easing=${easing} id=${id}`);
+      return { durationMs };
     }
 
     function nudge(delta) {
@@ -527,8 +530,6 @@
       ui.previewMotionButton.disabled = true;
 
       try {
-        const durationMs = getTransitionDurationMs();
-        const waitMs = Math.max(220, durationMs + 140);
         const sequence = [
           ["preview_default_1", ui.defaultPulse.value],
           ["preview_top", ui.topPulse.value],
@@ -538,11 +539,12 @@
         ];
 
         for (const [name, pulse] of sequence) {
-          if (!sendNamedPulse(name, pulse)) {
+          const result = sendNamedPulse(name, pulse);
+          if (!result) {
             break;
           }
 
-          await sleep(waitMs);
+          await sleep(result.durationMs + 140);
         }
       } finally {
         previewRunning = false;
@@ -696,6 +698,34 @@
 
     function getTransitionDurationMs() {
       return clampDuration(ui.transitionDuration.value);
+    }
+
+    function getCurrentPulseForDuration() {
+      return clampPulse(currentPulse);
+    }
+
+    function getBaseDistancePulse() {
+      const defaultPulse = clampPulse(ui.defaultPulse.value);
+      const topDistance = Math.abs(defaultPulse - clampPulse(ui.topPulse.value));
+      const bottomDistance = Math.abs(defaultPulse - clampPulse(ui.bottomPulse.value));
+      return Math.max(1, topDistance, bottomDistance);
+    }
+
+    function getDistanceScaledDurationMs(fromPulse, toPulse) {
+      const baseDurationMs = getTransitionDurationMs();
+
+      if (baseDurationMs <= 0) {
+        return 0;
+      }
+
+      const distance = Math.abs(clampPulse(toPulse) - clampPulse(fromPulse));
+
+      if (distance <= 0) {
+        return 0;
+      }
+
+      const scaledDuration = Math.round(baseDurationMs * distance / getBaseDistancePulse());
+      return Math.min(DISTANCE_DURATION_MAX_MS, Math.max(DISTANCE_DURATION_MIN_MS, scaledDuration));
     }
 
     function clampDuration(value) {
