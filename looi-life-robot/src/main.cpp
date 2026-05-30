@@ -1,7 +1,10 @@
 #include <Arduino.h>
+#include <Adafruit_PWMServoDriver.h>
 #include <ArduinoJson.h>
 #include <WebSocketsServer.h>
 #include <WiFi.h>
+#include <Wire.h>
+#include <esp_arduino_version.h>
 
 #include <math.h>
 
@@ -15,10 +18,29 @@
 constexpr uint8_t LEFT_IN1 = 22;
 constexpr uint8_t LEFT_IN2 = 21;
 constexpr uint8_t LEFT_EN = 5;
+constexpr uint8_t LEFT_PWM_CHANNEL = 0;
 
 constexpr uint8_t RIGHT_IN1 = 19;
 constexpr uint8_t RIGHT_IN2 = 18;
 constexpr uint8_t RIGHT_EN = 23;
+constexpr uint8_t RIGHT_PWM_CHANNEL = 1;
+
+// The face/gimbal is now mounted on the opposite side of the chassis.
+// Keep incoming commands in LOOI's face-frame, then flip them for the motor base.
+constexpr int8_t CHASSIS_LINEAR_SIGN = -1;
+constexpr int8_t CHASSIS_ANGULAR_SIGN = -1;
+
+constexpr uint8_t HEAD_I2C_SDA = 33;
+constexpr uint8_t HEAD_I2C_SCL = 32;
+constexpr uint8_t HEAD_PITCH_SERVO_CHANNEL = 7;
+constexpr uint8_t HEAD_SERVO_FREQUENCY_HZ = 50;
+constexpr uint16_t HEAD_PITCH_SAFE_MIN_PULSE = 500;
+constexpr uint16_t HEAD_PITCH_SAFE_MAX_PULSE = 620;
+constexpr uint16_t HEAD_PITCH_DEFAULT_PULSE = 570;
+constexpr uint32_t HEAD_PITCH_DEFAULT_DURATION_MS = 350;
+constexpr uint32_t HEAD_PITCH_MAX_DURATION_MS = 2000;
+constexpr uint32_t HEAD_PITCH_UPDATE_INTERVAL_MS = 20;
+constexpr char HEAD_PITCH_DEFAULT_EASING[] = "ease_in_out_cubic";
 
 // Flip one of these if a motor side spins the wrong way.
 constexpr bool LEFT_INVERT = false;
@@ -64,9 +86,10 @@ constexpr uint32_t MOTOR_UPDATE_INTERVAL_MS = 20;
 constexpr uint32_t TELEMETRY_INTERVAL_MS = 1000;
 constexpr uint32_t WIFI_CONNECT_TIMEOUT_MS = 15000;
 constexpr uint8_t MAX_TRACKED_CLIENTS = 10;
-constexpr size_t JSON_DOC_SIZE = 1024;
+constexpr size_t JSON_DOC_SIZE = 1536;
 
 WebSocketsServer webSocket(WS_PORT);
+Adafruit_PWMServoDriver headServoDriver = Adafruit_PWMServoDriver(0x40);
 
 bool clientConnected[MAX_TRACKED_CLIENTS] = {false};
 uint8_t connectedClientCount = 0;
@@ -97,14 +120,24 @@ float runtimeDeadband = DEFAULT_DEADBAND;
 uint32_t defaultRampMs = DEFAULT_RAMP_MS;
 uint8_t minPwm = DEFAULT_MIN_PWM;
 char motionLabel[48] = "";
+uint16_t currentHeadPitchPulse = HEAD_PITCH_DEFAULT_PULSE;
+uint16_t headPitchStartPulse = HEAD_PITCH_DEFAULT_PULSE;
+uint16_t headPitchTargetPulse = HEAD_PITCH_DEFAULT_PULSE;
+uint32_t headPitchStartAt = 0;
+uint32_t headPitchDurationMs = 0;
+uint32_t headPitchLastUpdateAt = 0;
+bool headPitchMoving = false;
+char headPitchEasing[24] = "ease_in_out_cubic";
 
 void setupPins();
+void setupHeadServo();
 void setupWifi();
 void setupWebSocket();
 void handleWebSocketEvent(uint8_t clientNum, WStype_t type, uint8_t *payload,
                           size_t length);
 void handleJsonMessage(uint8_t clientNum, uint8_t *payload, size_t length);
 void handleMotionCommand(uint8_t clientNum, JsonObjectConst root);
+void handleHeadPitchCommand(uint8_t clientNum, JsonObjectConst root);
 void handleStopCommand(uint8_t clientNum, JsonObjectConst root);
 void handleConfigUpdateCommand(uint8_t clientNum, JsonObjectConst root);
 void handleConfigGetCommand(uint8_t clientNum, JsonObjectConst root);
@@ -121,9 +154,16 @@ void sendError(uint8_t clientNum, const char *cmd, const char *message,
 void setDrive(float linear, float angular, uint32_t durationMs, uint32_t rampMs,
               const char *label);
 void updateRampedMotion(bool force = false);
+void updateHeadPitchMotion(bool force = false);
 void applyMotorSpeeds(float leftSpeed, float rightSpeed);
 void setMotorSide(uint8_t in1Pin, uint8_t in2Pin, uint8_t enablePin, float speed,
-                  bool invert);
+                  bool invert, uint8_t pwmChannel);
+bool attachMotorPwm(uint8_t pin, uint8_t channel);
+void writeMotorPwm(uint8_t pin, uint8_t channel, uint32_t duty);
+void writeHeadPitchPulse(uint16_t pulse);
+void setHeadPitchImmediate(uint16_t pulse, const char *label);
+void startHeadPitchTransition(uint16_t targetPulse, uint32_t durationMs,
+                              const char *easing, const char *label);
 void stopMotors(const char *reason);
 void addConfig(JsonObject target);
 void addConfigWarnings(JsonArray warnings, const char *field, double requested,
@@ -135,6 +175,12 @@ bool isFiniteNumber(double value);
 float clampSpeed(float value);
 float applyDeadband(float value);
 float applyTrimAndClamp(float value, float trim);
+float toChassisLinear(float logicalLinear);
+float toChassisAngular(float logicalAngular);
+uint16_t clampHeadPitchPulse(double pulse);
+uint32_t clampHeadPitchDuration(double durationMs);
+const char *normalizeHeadPitchEasing(JsonVariantConst value);
+float easeHeadPitchProgress(float progress, const char *easing);
 uint32_t clampDuration(double durationMs);
 uint32_t clampRamp(double rampMs, uint32_t durationMs);
 uint8_t clampMinPwm(double value);
@@ -172,6 +218,7 @@ void setup() {
   Serial.println("[BOOT] ESP32 will only execute short, safe motor commands");
 
   setupPins();
+  setupHeadServo();
   setupWifi();
   setupWebSocket();
   stopMotors("boot");
@@ -183,6 +230,7 @@ void loop() {
   webSocket.loop();
 
   updateRampedMotion();
+  updateHeadPitchMotion();
 
   if (!motionActive && !isStopped()) {
     Serial.println("[SAFE] No active motion scheduled, forcing stop");
@@ -201,11 +249,11 @@ void setupPins() {
   pinMode(RIGHT_IN1, OUTPUT);
   pinMode(RIGHT_IN2, OUTPUT);
 
-  if (!ledcAttach(LEFT_EN, PWM_FREQUENCY_HZ, PWM_RESOLUTION_BITS)) {
+  if (!attachMotorPwm(LEFT_EN, LEFT_PWM_CHANNEL)) {
     Serial.println("[BOOT] Failed to attach left PWM pin");
   }
 
-  if (!ledcAttach(RIGHT_EN, PWM_FREQUENCY_HZ, PWM_RESOLUTION_BITS)) {
+  if (!attachMotorPwm(RIGHT_EN, RIGHT_PWM_CHANNEL)) {
     Serial.println("[BOOT] Failed to attach right PWM pin");
   }
 
@@ -213,10 +261,24 @@ void setupPins() {
   digitalWrite(LEFT_IN2, LOW);
   digitalWrite(RIGHT_IN1, LOW);
   digitalWrite(RIGHT_IN2, LOW);
-  ledcWrite(LEFT_EN, 0);
-  ledcWrite(RIGHT_EN, 0);
+  writeMotorPwm(LEFT_EN, LEFT_PWM_CHANNEL, 0);
+  writeMotorPwm(RIGHT_EN, RIGHT_PWM_CHANNEL, 0);
 
   Serial.println("[BOOT] Motor pins configured");
+}
+
+void setupHeadServo() {
+  Wire.begin(HEAD_I2C_SDA, HEAD_I2C_SCL);
+  headServoDriver.begin();
+  headServoDriver.setPWMFreq(HEAD_SERVO_FREQUENCY_HZ);
+  delay(10);
+  setHeadPitchImmediate(HEAD_PITCH_DEFAULT_PULSE, "boot_center");
+
+  Serial.printf("[BOOT] Head pitch servo configured sda=%u scl=%u channel=%u range=%u..%u default=%u duration=%lu\n",
+                HEAD_I2C_SDA, HEAD_I2C_SCL, HEAD_PITCH_SERVO_CHANNEL,
+                HEAD_PITCH_SAFE_MIN_PULSE, HEAD_PITCH_SAFE_MAX_PULSE,
+                HEAD_PITCH_DEFAULT_PULSE,
+                static_cast<unsigned long>(HEAD_PITCH_DEFAULT_DURATION_MS));
 }
 
 void setupWifi() {
@@ -337,6 +399,11 @@ void handleJsonMessage(uint8_t clientNum, uint8_t *payload, size_t length) {
     return;
   }
 
+  if (strcmp(type, "head_pitch") == 0) {
+    handleHeadPitchCommand(clientNum, root);
+    return;
+  }
+
   if (strcmp(type, "stop") == 0) {
     handleStopCommand(clientNum, root);
     return;
@@ -443,8 +510,10 @@ void handleMotionCommand(uint8_t clientNum, JsonObjectConst root) {
   setDrive(acceptedLinear, acceptedAngular, acceptedDuration, acceptedRamp,
            acceptedLabel);
 
-  const float mixedLeftBeforeClamp = acceptedLinear - acceptedAngular;
-  const float mixedRightBeforeClamp = acceptedLinear + acceptedAngular;
+  const float chassisLinear = toChassisLinear(acceptedLinear);
+  const float chassisAngular = toChassisAngular(acceptedAngular);
+  const float mixedLeftBeforeClamp = chassisLinear - chassisAngular;
+  const float mixedRightBeforeClamp = chassisLinear + chassisAngular;
 
   const bool commandAdjusted =
       fabsf(static_cast<float>(rawLinear) - acceptedLinear) > 0.0001f ||
@@ -467,6 +536,62 @@ void handleMotionCommand(uint8_t clientNum, JsonObjectConst root) {
   sendAck(clientNum, "motion", requestId, currentLinear, currentAngular,
           acceptedDuration, targetLeftSpeed, targetRightSpeed, acceptedRamp,
           motionLabel);
+}
+
+void handleHeadPitchCommand(uint8_t clientNum, JsonObjectConst root) {
+  const JsonVariantConst requestId = root["id"];
+  JsonVariantConst pulseValue = root["pulse"];
+
+  if (pulseValue.isNull()) {
+    pulseValue = root["orientation"];
+  }
+
+  if (!isStrictNumber(pulseValue) || !isFiniteNumber(pulseValue.as<double>())) {
+    sendError(clientNum, "head_pitch", "pulse must be numeric", requestId);
+    return;
+  }
+
+  const double requestedPulse = pulseValue.as<double>();
+  const uint16_t acceptedPulse = clampHeadPitchPulse(requestedPulse);
+  const JsonVariantConst durationValue = root["duration_ms"];
+  double rawDuration = HEAD_PITCH_DEFAULT_DURATION_MS;
+
+  if (!durationValue.isNull() && isStrictNumber(durationValue) &&
+      isFiniteNumber(durationValue.as<double>())) {
+    rawDuration = durationValue.as<double>();
+  }
+
+  const uint32_t acceptedDuration = clampHeadPitchDuration(rawDuration);
+  const char *acceptedEasing = normalizeHeadPitchEasing(root["easing"]);
+  char acceptedLabel[48] = "";
+  sanitizeLabel(root["label"].is<const char *>() ? root["label"].as<const char *>()
+                                                 : "head_pitch",
+                acceptedLabel, sizeof(acceptedLabel));
+
+  updateHeadPitchMotion(true);
+  startHeadPitchTransition(acceptedPulse, acceptedDuration, acceptedEasing,
+                           acceptedLabel);
+  lastCommandAt = millis();
+
+  StaticJsonDocument<512> doc;
+  addRequestId(doc, requestId);
+  doc["type"] = "ack";
+  doc["cmd"] = "head_pitch";
+  doc["accepted"] = true;
+  doc["pulse"] = acceptedPulse;
+  doc["target_pulse"] = acceptedPulse;
+  doc["start_pulse"] = headPitchStartPulse;
+  doc["current_pulse"] = currentHeadPitchPulse;
+  doc["requested_pulse"] = requestedPulse;
+  doc["clamped"] = fabs(requestedPulse - acceptedPulse) > 0.5;
+  doc["duration_ms"] = acceptedDuration;
+  doc["requested_duration_ms"] = rawDuration;
+  doc["duration_clamped"] = fabs(rawDuration - acceptedDuration) > 0.5;
+  doc["easing"] = acceptedEasing;
+  doc["safe_min"] = HEAD_PITCH_SAFE_MIN_PULSE;
+  doc["safe_max"] = HEAD_PITCH_SAFE_MAX_PULSE;
+  doc["label"] = acceptedLabel;
+  sendJsonToClient(clientNum, doc);
 }
 
 void handleStopCommand(uint8_t clientNum, JsonObjectConst root) {
@@ -690,11 +815,13 @@ void setDrive(float linear, float angular, uint32_t durationMs, uint32_t rampMs,
   currentLinear = applyDeadband(clampSpeed(linear));
   currentAngular = applyDeadband(clampSpeed(angular));
 
+  const float chassisLinear = toChassisLinear(currentLinear);
+  const float chassisAngular = toChassisAngular(currentAngular);
   const float leftSpeed =
-      applyTrimAndClamp(applyDeadband(clampSpeed(currentLinear - currentAngular)),
+      applyTrimAndClamp(applyDeadband(clampSpeed(chassisLinear - chassisAngular)),
                         leftTrim);
   const float rightSpeed =
-      applyTrimAndClamp(applyDeadband(clampSpeed(currentLinear + currentAngular)),
+      applyTrimAndClamp(applyDeadband(clampSpeed(chassisLinear + chassisAngular)),
                         rightTrim);
 
   lastCommandAt = now;
@@ -778,16 +905,54 @@ void updateRampedMotion(bool force) {
   }
 }
 
+void updateHeadPitchMotion(bool force) {
+  if (!headPitchMoving) {
+    return;
+  }
+
+  const uint32_t now = millis();
+
+  if (!force && now - headPitchLastUpdateAt < HEAD_PITCH_UPDATE_INTERVAL_MS) {
+    return;
+  }
+
+  headPitchLastUpdateAt = now;
+
+  if (headPitchDurationMs == 0 ||
+      now - headPitchStartAt >= headPitchDurationMs) {
+    writeHeadPitchPulse(headPitchTargetPulse);
+    headPitchMoving = false;
+    Serial.printf("[HEAD] pitch complete pulse=%u easing=%s\n",
+                  currentHeadPitchPulse, headPitchEasing);
+    return;
+  }
+
+  const float progress = constrain(
+      static_cast<float>(now - headPitchStartAt) /
+          static_cast<float>(headPitchDurationMs),
+      0.0f, 1.0f);
+  const float easedProgress = easeHeadPitchProgress(progress, headPitchEasing);
+  const float nextPulse =
+      static_cast<float>(headPitchStartPulse) +
+      (static_cast<float>(headPitchTargetPulse) -
+       static_cast<float>(headPitchStartPulse)) *
+          easedProgress;
+
+  writeHeadPitchPulse(static_cast<uint16_t>(lroundf(nextPulse)));
+}
+
 void applyMotorSpeeds(float leftSpeed, float rightSpeed) {
   currentLeftSpeed = applyDeadband(clampSpeed(leftSpeed));
   currentRightSpeed = applyDeadband(clampSpeed(rightSpeed));
 
-  setMotorSide(LEFT_IN1, LEFT_IN2, LEFT_EN, currentLeftSpeed, LEFT_INVERT);
-  setMotorSide(RIGHT_IN1, RIGHT_IN2, RIGHT_EN, currentRightSpeed, RIGHT_INVERT);
+  setMotorSide(LEFT_IN1, LEFT_IN2, LEFT_EN, currentLeftSpeed, LEFT_INVERT,
+               LEFT_PWM_CHANNEL);
+  setMotorSide(RIGHT_IN1, RIGHT_IN2, RIGHT_EN, currentRightSpeed, RIGHT_INVERT,
+               RIGHT_PWM_CHANNEL);
 }
 
 void setMotorSide(uint8_t in1Pin, uint8_t in2Pin, uint8_t enablePin, float speed,
-                  bool invert) {
+                  bool invert, uint8_t pwmChannel) {
   const float effectiveSpeed = invert ? -speed : speed;
   uint32_t duty = static_cast<uint32_t>(
       roundf(fabsf(effectiveSpeed) * static_cast<float>(PWM_MAX_DUTY)));
@@ -795,7 +960,7 @@ void setMotorSide(uint8_t in1Pin, uint8_t in2Pin, uint8_t enablePin, float speed
   if (fabsf(effectiveSpeed) < 0.0001f) {
     digitalWrite(in1Pin, LOW);
     digitalWrite(in2Pin, LOW);
-    ledcWrite(enablePin, 0);
+    writeMotorPwm(enablePin, pwmChannel, 0);
     return;
   }
 
@@ -811,7 +976,74 @@ void setMotorSide(uint8_t in1Pin, uint8_t in2Pin, uint8_t enablePin, float speed
     digitalWrite(in2Pin, HIGH);
   }
 
-  ledcWrite(enablePin, duty);
+  writeMotorPwm(enablePin, pwmChannel, duty);
+}
+
+bool attachMotorPwm(uint8_t pin, uint8_t channel) {
+#if defined(ESP_ARDUINO_VERSION_MAJOR) && ESP_ARDUINO_VERSION_MAJOR >= 3
+  return ledcAttach(pin, PWM_FREQUENCY_HZ, PWM_RESOLUTION_BITS);
+#else
+  ledcSetup(channel, PWM_FREQUENCY_HZ, PWM_RESOLUTION_BITS);
+  ledcAttachPin(pin, channel);
+  return true;
+#endif
+}
+
+void writeMotorPwm(uint8_t pin, uint8_t channel, uint32_t duty) {
+#if defined(ESP_ARDUINO_VERSION_MAJOR) && ESP_ARDUINO_VERSION_MAJOR >= 3
+  ledcWrite(pin, duty);
+#else
+  ledcWrite(channel, duty);
+#endif
+}
+
+void writeHeadPitchPulse(uint16_t pulse) {
+  currentHeadPitchPulse = clampHeadPitchPulse(pulse);
+  headServoDriver.setPWM(HEAD_PITCH_SERVO_CHANNEL, 0, currentHeadPitchPulse);
+}
+
+void setHeadPitchImmediate(uint16_t pulse, const char *label) {
+  headPitchMoving = false;
+  headPitchStartPulse = currentHeadPitchPulse;
+  headPitchTargetPulse = clampHeadPitchPulse(pulse);
+  headPitchDurationMs = 0;
+  writeHeadPitchPulse(headPitchTargetPulse);
+
+  Serial.printf("[HEAD] pitch immediate pulse=%u label=%s\n",
+                currentHeadPitchPulse,
+                label && strlen(label) > 0 ? label : "head_pitch");
+}
+
+void startHeadPitchTransition(uint16_t targetPulse, uint32_t durationMs,
+                              const char *easing, const char *label) {
+  const uint16_t acceptedTarget = clampHeadPitchPulse(targetPulse);
+  const uint32_t acceptedDuration = clampHeadPitchDuration(durationMs);
+  const char *acceptedEasing = easing && strlen(easing) > 0
+                                   ? easing
+                                   : HEAD_PITCH_DEFAULT_EASING;
+
+  if (acceptedDuration == 0 || acceptedTarget == currentHeadPitchPulse) {
+    setHeadPitchImmediate(acceptedTarget, label);
+    return;
+  }
+
+  headPitchStartPulse = currentHeadPitchPulse;
+  headPitchTargetPulse = acceptedTarget;
+  headPitchStartAt = millis();
+  headPitchDurationMs = acceptedDuration;
+  headPitchLastUpdateAt = 0;
+  headPitchMoving = true;
+  strncpy(headPitchEasing, acceptedEasing, sizeof(headPitchEasing) - 1);
+  headPitchEasing[sizeof(headPitchEasing) - 1] = '\0';
+
+  Serial.printf(
+      "[HEAD] pitch transition start=%u target=%u duration=%lu easing=%s "
+      "label=%s\n",
+      headPitchStartPulse, headPitchTargetPulse,
+      static_cast<unsigned long>(headPitchDurationMs), headPitchEasing,
+      label && strlen(label) > 0 ? label : "head_pitch");
+
+  updateHeadPitchMotion(true);
 }
 
 void stopMotors(const char *reason) {
@@ -843,6 +1075,21 @@ void addConfig(JsonObject target) {
   target["deadband"] = runtimeDeadband;
   target["default_ramp_ms"] = defaultRampMs;
   target["min_pwm"] = minPwm;
+  JsonObject head = target.createNestedObject("head_pitch");
+  head["pulse"] = currentHeadPitchPulse;
+  head["safe_min"] = HEAD_PITCH_SAFE_MIN_PULSE;
+  head["safe_max"] = HEAD_PITCH_SAFE_MAX_PULSE;
+  head["default"] = HEAD_PITCH_DEFAULT_PULSE;
+  head["default_duration_ms"] = HEAD_PITCH_DEFAULT_DURATION_MS;
+  head["max_duration_ms"] = HEAD_PITCH_MAX_DURATION_MS;
+  head["update_interval_ms"] = HEAD_PITCH_UPDATE_INTERVAL_MS;
+  head["moving"] = headPitchMoving;
+  head["target_pulse"] = headPitchTargetPulse;
+  head["duration_ms"] = headPitchDurationMs;
+  head["easing"] = headPitchEasing;
+  head["channel"] = HEAD_PITCH_SERVO_CHANNEL;
+  head["sda"] = HEAD_I2C_SDA;
+  head["scl"] = HEAD_I2C_SCL;
 }
 
 void addConfigWarnings(JsonArray warnings, const char *field, double requested,
@@ -904,6 +1151,52 @@ float applyDeadband(float value) {
 
 float applyTrimAndClamp(float value, float trim) {
   return applyDeadband(clampSpeed(value * trim));
+}
+
+float toChassisLinear(float logicalLinear) {
+  return logicalLinear * static_cast<float>(CHASSIS_LINEAR_SIGN);
+}
+
+float toChassisAngular(float logicalAngular) {
+  return logicalAngular * static_cast<float>(CHASSIS_ANGULAR_SIGN);
+}
+
+uint16_t clampHeadPitchPulse(double pulse) {
+  const double bounded =
+      constrain(pulse, static_cast<double>(HEAD_PITCH_SAFE_MIN_PULSE),
+                static_cast<double>(HEAD_PITCH_SAFE_MAX_PULSE));
+  return static_cast<uint16_t>(lround(bounded));
+}
+
+uint32_t clampHeadPitchDuration(double durationMs) {
+  const double bounded =
+      constrain(durationMs, 0.0, static_cast<double>(HEAD_PITCH_MAX_DURATION_MS));
+  return static_cast<uint32_t>(lround(bounded));
+}
+
+const char *normalizeHeadPitchEasing(JsonVariantConst value) {
+  if (!value.is<const char *>()) {
+    return HEAD_PITCH_DEFAULT_EASING;
+  }
+
+  const char *requested = value.as<const char *>();
+
+  if (requested && strcmp(requested, HEAD_PITCH_DEFAULT_EASING) == 0) {
+    return HEAD_PITCH_DEFAULT_EASING;
+  }
+
+  return HEAD_PITCH_DEFAULT_EASING;
+}
+
+float easeHeadPitchProgress(float progress, const char *easing) {
+  const float t = constrain(progress, 0.0f, 1.0f);
+
+  if (!easing || strcmp(easing, HEAD_PITCH_DEFAULT_EASING) == 0) {
+    return t < 0.5f ? 4.0f * t * t * t
+                    : 1.0f - powf(-2.0f * t + 2.0f, 3.0f) / 2.0f;
+  }
+
+  return t;
 }
 
 uint32_t clampDuration(double durationMs) {

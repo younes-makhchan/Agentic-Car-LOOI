@@ -15,7 +15,8 @@
     "smoke:camera": "node scripts/smoke-camera.mjs",
     "smoke:calibration": "node scripts/smoke-calibration.mjs",
     "smoke:personality": "node scripts/smoke-memory-personality.mjs",
-    "smoke:esp32": "node scripts/smoke-esp32-gateway.mjs"
+    "smoke:esp32": "node scripts/smoke-esp32-gateway.mjs",
+    "wake:openwakeword": "python3 scripts/openwakeword_server.py"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

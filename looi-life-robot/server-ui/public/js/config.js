@@ -12,6 +12,12 @@ export const PUBLIC_CONFIG = {
   geminiLiveModel: "gemini-3.1-flash-live-preview",
   geminiLiveVoice: "Kore",
   geminiLiveThinkingLevel: "minimal",
+  wakeDetectorProvider: "web_speech",
+  openWakeWord: {
+    enabled: false,
+    wsUrl: "",
+    fallbackToWebSpeech: true
+  },
   roboflowWebrtc: {
     enabled: true,
     configured: false,

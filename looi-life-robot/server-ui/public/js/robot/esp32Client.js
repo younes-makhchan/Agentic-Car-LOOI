@@ -3,6 +3,12 @@ const MAX_SPEED = 0.4;
 const MAX_DURATION_MS = 1000;
 const MIN_DURATION_MS = 50;
 const MAX_RAMP_MS = 500;
+export const HEAD_PITCH_MIN_PULSE = 500;
+export const HEAD_PITCH_MAX_PULSE = 620;
+export const HEAD_PITCH_DEFAULT_PULSE = 570;
+export const HEAD_PITCH_DEFAULT_DURATION_MS = 350;
+export const HEAD_PITCH_MAX_DURATION_MS = 2000;
+export const HEAD_PITCH_DEFAULT_EASING = "ease_in_out_cubic";
 const POLL_FALLBACK_INTERVAL_MS = 1000;
 const READY_STATE = {
   CONNECTING: 0,
@@ -179,6 +185,26 @@ export class ESP32Client {
     if (Number.isFinite(Number(rampMs))) {
       payload.ramp_ms = clamp(rampMs, 0, MAX_RAMP_MS);
     }
+
+    if (typeof label === "string" && label.trim()) {
+      payload.label = label.trim().slice(0, 60);
+    }
+
+    return this.sendJson(payload);
+  }
+
+  sendHeadPitch({
+    pulse = HEAD_PITCH_DEFAULT_PULSE,
+    durationMs = HEAD_PITCH_DEFAULT_DURATION_MS,
+    easing = HEAD_PITCH_DEFAULT_EASING,
+    label
+  } = {}) {
+    const payload = {
+      type: "head_pitch",
+      pulse: Math.round(clamp(pulse, HEAD_PITCH_MIN_PULSE, HEAD_PITCH_MAX_PULSE)),
+      duration_ms: Math.round(clamp(durationMs, 0, HEAD_PITCH_MAX_DURATION_MS)),
+      easing: easing === HEAD_PITCH_DEFAULT_EASING ? HEAD_PITCH_DEFAULT_EASING : HEAD_PITCH_DEFAULT_EASING
+    };
 
     if (typeof label === "string" && label.trim()) {
       payload.label = label.trim().slice(0, 60);

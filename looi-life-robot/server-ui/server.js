@@ -69,6 +69,12 @@ const PUBLIC_CONFIG = {
   geminiLiveModel: geminiLiveConfig.model,
   geminiLiveVoice: geminiLiveConfig.voice,
   geminiLiveThinkingLevel: geminiLiveConfig.thinkingLevel,
+  wakeDetectorProvider: process.env.LOOI_WAKE_DETECTOR_PROVIDER || "web_speech",
+  openWakeWord: {
+    enabled: process.env.OPENWAKEWORD_ENABLED === "true",
+    wsUrl: process.env.OPENWAKEWORD_WS_URL || "",
+    fallbackToWebSpeech: process.env.OPENWAKEWORD_FALLBACK_TO_WEB_SPEECH !== "false"
+  },
   roboflowWebrtc: publicRoboflowWebrtcConfig(roboflowWebrtcConfig),
   roboflowWebrtcProxyUrl: "/api/init-webrtc",
   roboflowWebrtcTurnConfigUrl: "/api/roboflow-webrtc/turn-config",

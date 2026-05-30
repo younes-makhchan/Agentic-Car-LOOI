@@ -4,6 +4,7 @@ import { clampNumber, safeStringify } from "./core/runtimeUtils.js";
 import { EmbodiedActionRouter } from "./embodiment/embodiedActionRouter.js";
 import { ScenarioFrameSequencer } from "./embodiment/scenarioFrameSequencer.js";
 import { PriorityScheduler } from "./embodiment/priorityScheduler.js";
+import { OpenWakeWordWakeDetector } from "./audio/openWakeWordWakeDetector.js";
 import { WakePhraseDetector } from "./audio/wakePhraseDetector.js";
 import { GeminiLiveRuntime } from "./gemini/geminiLiveRuntime.js";
 import { IDLE_SCENARIOS } from "./idle/idleScenarioCatalog.js";
@@ -1146,11 +1147,7 @@ async function init() {
   });
   geminiLiveRuntime.configure(activeConfig);
   geminiLiveRuntime.onStatus(handleGeminiLiveStatus);
-  wakePhraseDetector = new WakePhraseDetector({
-    onWakePhrase: handleWakePhraseDetected,
-    onStatus: handleWakePhraseStatus,
-    logger: (message, level = "info") => log(message, level)
-  });
+  wakePhraseDetector = createWakePhraseDetector();
   [
     "vision_follow_started",
     "vision_follow_stopped",
@@ -2914,6 +2911,30 @@ function handleGeminiLiveStatus(status = geminiLiveRuntime?.getStatus?.() ?? {})
   updateGeminiLiveUi(status);
 }
 
+function createWakePhraseDetector() {
+  const webSpeechDetector = new WakePhraseDetector({
+    onWakePhrase: handleWakePhraseDetected,
+    onStatus: handleWakePhraseStatus,
+    logger: (message, level = "info") => log(message, level)
+  });
+  const openWakeWordConfig = activeConfig.openWakeWord ?? {};
+  const provider = String(activeConfig.wakeDetectorProvider ?? "web_speech").trim().toLowerCase();
+  const shouldUseOpenWakeWord = provider === "openwakeword" ||
+    (provider === "auto" && openWakeWordConfig.enabled === true);
+
+  if (!shouldUseOpenWakeWord) {
+    return webSpeechDetector;
+  }
+
+  return new OpenWakeWordWakeDetector({
+    wsUrl: resolveOpenWakeWordWsUrl(openWakeWordConfig.wsUrl),
+    fallbackDetector: openWakeWordConfig.fallbackToWebSpeech === false ? null : webSpeechDetector,
+    onWakePhrase: handleWakePhraseDetected,
+    onStatus: handleWakePhraseStatus,
+    logger: (message, level = "info") => log(message, level)
+  });
+}
+
 function handleWakePhraseStatus(status = {}) {
   wakePhraseStatus = status;
   updateGeminiLiveUi();
@@ -3097,6 +3118,17 @@ function formatConversationGateState(state = conversationGateState) {
     : state === "active"
       ? "active"
       : "inactive";
+}
+
+function resolveOpenWakeWordWsUrl(configUrl = "") {
+  const cleanUrl = String(configUrl ?? "").trim();
+  if (cleanUrl) {
+    return cleanUrl;
+  }
+
+  const protocol = globalThis.location?.protocol === "https:" ? "wss:" : "ws:";
+  const hostname = globalThis.location?.hostname || "localhost";
+  return `${protocol}//${hostname}:8765`;
 }
 
 function getConversationSleepTimeoutMs() {

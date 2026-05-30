@@ -3,6 +3,14 @@ import {
   IDLE_SCENARIO_ORDER,
   getIdleScenarioById
 } from "./idleScenarioCatalog.js";
+import {
+  HEAD_PITCH_DEFAULT_DURATION_MS,
+  HEAD_PITCH_DEFAULT_EASING,
+  HEAD_PITCH_DEFAULT_PULSE,
+  HEAD_PITCH_MAX_DURATION_MS,
+  HEAD_PITCH_MAX_PULSE,
+  HEAD_PITCH_MIN_PULSE
+} from "../robot/esp32Client.js";
 
 const DEFAULT_IDLE_GAP_MS = Object.freeze([1000, 4000]);
 const BALANCE_START_CHANCE = 0.2;
@@ -306,33 +314,97 @@ export class IdleScenarioScheduler {
   }
 
   async playScenario(scenario, token, { requireEnabled = true } = {}) {
-    for (let index = 0; index < scenario.steps.length; index += 1) {
+    const units = this.buildPlaybackUnits(scenario);
+
+    for (const unit of units) {
       if (token !== this.playToken || (requireEnabled && !this.enabled)) {
         return;
       }
 
-      const step = scenario.steps[index];
-      const command = this.buildCommand(step, scenario, index);
+      unit.parallelHeadCommands.forEach((command) => this.sendHeadPitch(command));
+      await this.executeCommand(unit.command);
+      await wait(getPlaybackUnitWaitMs(unit));
+    }
+  }
 
-      if (step.kind === "move") {
-        await this.commandQueue.sendRealtimeMotion({
-          linear: command.linear,
-          angular: command.angular,
-          durationMs: command.durationMs,
-          rampMs: command.rampMs,
-          label: `${scenario.id}:${index + 1}`,
-          source: IDLE_SOURCE,
-          log: true,
-          record: true
-        });
-      } else if (step.kind === "stop") {
-        await this.commandQueue.sendRealtimeStop?.(`${scenario.id}:step_${index + 1}`, {
-          log: true,
-          record: true
-        });
+  buildPlaybackUnits(scenario) {
+    const units = [];
+    const pendingParallelHeadCommands = [];
+    let index = 0;
+
+    while (index < scenario.steps.length) {
+      const command = this.buildCommand(scenario.steps[index], scenario, index);
+
+      if (isParallelHeadCommand(command)) {
+        pendingParallelHeadCommands.push(command);
+        index += 1;
+        continue;
       }
 
-      await wait(command.durationMs + command.decayMs + command.pauseMs);
+      if (command.kind === "head_pitch") {
+        pendingParallelHeadCommands.splice(0).forEach((pendingCommand) => {
+          units.push({
+            command: pendingCommand,
+            parallelHeadCommands: []
+          });
+        });
+        units.push({
+          command,
+          parallelHeadCommands: []
+        });
+        index += 1;
+        continue;
+      }
+
+      const parallelHeadCommands = pendingParallelHeadCommands.splice(0);
+      let nextIndex = index + 1;
+
+      while (nextIndex < scenario.steps.length) {
+        const nextCommand = this.buildCommand(scenario.steps[nextIndex], scenario, nextIndex);
+        if (!isParallelHeadCommand(nextCommand)) {
+          break;
+        }
+
+        parallelHeadCommands.push(nextCommand);
+        nextIndex += 1;
+      }
+
+      units.push({
+        command,
+        parallelHeadCommands
+      });
+      index = nextIndex;
+    }
+
+    pendingParallelHeadCommands.forEach((command) => {
+      units.push({
+        command,
+        parallelHeadCommands: []
+      });
+    });
+
+    return units;
+  }
+
+  async executeCommand(command) {
+    if (command.kind === "move") {
+      await this.commandQueue.sendRealtimeMotion({
+        linear: command.linear,
+        angular: command.angular,
+        durationMs: command.durationMs,
+        rampMs: command.rampMs,
+        label: `${command.scenario}:${command.step}`,
+        source: IDLE_SOURCE,
+        log: true,
+        record: true
+      });
+    } else if (command.kind === "stop") {
+      await this.commandQueue.sendRealtimeStop?.(`${command.scenario}:step_${command.step}`, {
+        log: true,
+        record: true
+      });
+    } else if (command.kind === "head_pitch") {
+      this.sendHeadPitch(command);
     }
   }
 
@@ -341,25 +413,60 @@ export class IdleScenarioScheduler {
     const speedScale = Number(globals.speedScale || 1);
     const durationScale = Number(globals.durationScale || 1);
     const angularSign = Number(globals.angularSign || 1);
-    const left = step.kind === "move" ? clamp(Number(step.left) * speedScale, -MAX_SPEED, MAX_SPEED) : 0;
-    const right = step.kind === "move" ? clamp(Number(step.right) * speedScale, -MAX_SPEED, MAX_SPEED) : 0;
+    const kind = normalizeStepKind(step.kind);
+    const left = kind === "move" ? clamp(Number(step.left) * speedScale, -MAX_SPEED, MAX_SPEED) : 0;
+    const right = kind === "move" ? clamp(Number(step.right) * speedScale, -MAX_SPEED, MAX_SPEED) : 0;
     const linear = clamp((left + right) / 2, -MAX_SPEED, MAX_SPEED);
     const angular = clamp(((right - left) / 2) * angularSign, -MAX_SPEED, MAX_SPEED);
-    const durationMs = Math.round(clamp(Number(step.durationMs) * durationScale, 0, 1200));
+    const maxDuration = kind === "head_pitch" ? HEAD_PITCH_MAX_DURATION_MS : 1200;
+    const fallbackDurationMs = kind === "head_pitch" ? HEAD_PITCH_DEFAULT_DURATION_MS : 0;
+    const rawDurationMs = step.durationMs ?? fallbackDurationMs;
+    const durationMs = Math.round(clamp(Number(rawDurationMs) * durationScale, 0, maxDuration));
     const pauseMs = Math.round(clamp(Number(step.pauseMs), 0, 2000));
     const requestedRampMs = Math.round(clamp(Number(globals.rampMs), 0, MAX_RAMP_MS));
-    const rampMs = step.kind === "move" ? Math.min(requestedRampMs, Math.floor(durationMs / 2)) : 0;
+    const rampMs = kind === "move" ? Math.min(requestedRampMs, Math.floor(durationMs / 2)) : 0;
+    const pulse = Math.round(clamp(Number(step.pulse ?? HEAD_PITCH_DEFAULT_PULSE), HEAD_PITCH_MIN_PULSE, HEAD_PITCH_MAX_PULSE));
+    const mode = step.mode === "parallel" ? "parallel" : "sequence";
+    const easing = step.easing === HEAD_PITCH_DEFAULT_EASING ? HEAD_PITCH_DEFAULT_EASING : HEAD_PITCH_DEFAULT_EASING;
 
     return {
       scenario: scenario.id,
       step: index + 1,
+      kind,
       linear,
       angular,
       durationMs,
       pauseMs,
       rampMs,
-      decayMs: rampMs
+      decayMs: rampMs,
+      pulse,
+      mode,
+      easing
     };
+  }
+
+  sendHeadPitch(command) {
+    const label = `${command.scenario}:${command.step}:head_pitch`;
+
+    if (typeof this.robotClient?.sendHeadPitch === "function") {
+      const messageId = this.robotClient.sendHeadPitch({
+        pulse: command.pulse,
+        durationMs: command.durationMs,
+        easing: command.easing,
+        label
+      });
+      this.log(`Idle head pitch sent pulse=${command.pulse} duration=${command.durationMs}ms mode=${command.mode} id=${messageId}`, "debug");
+      return;
+    }
+
+    const messageId = this.robotClient?.sendJson?.({
+      type: "head_pitch",
+      pulse: command.pulse,
+      duration_ms: command.durationMs,
+      easing: command.easing,
+      label
+    });
+    this.log(`Idle head pitch sent pulse=${command.pulse} duration=${command.durationMs}ms mode=${command.mode} id=${messageId ?? "--"}`, "debug");
   }
 
   selectScenario() {
@@ -502,6 +609,22 @@ function wait(ms) {
   return new Promise((resolve) => globalThis.setTimeout(resolve, Math.max(0, Number(ms) || 0)));
 }
 
+function getPlaybackUnitWaitMs(unit) {
+  const baseWaitMs = getCommandWaitMs(unit.command);
+  const parallelWaitMs = unit.parallelHeadCommands.reduce((maxMs, command) => {
+    return Math.max(maxMs, getCommandWaitMs(command));
+  }, 0);
+  return Math.max(baseWaitMs, parallelWaitMs);
+}
+
+function getCommandWaitMs(command) {
+  return Math.max(0, command.durationMs + command.decayMs + command.pauseMs);
+}
+
+function isParallelHeadCommand(command) {
+  return command.kind === "head_pitch" && command.mode === "parallel";
+}
+
 function randomBetween(min, max) {
   return min + Math.random() * Math.max(0, max - min);
 }
@@ -540,6 +663,10 @@ function normalizeNumber(value, min, max, fallback) {
     return fallback;
   }
   return Math.min(max, Math.max(min, numeric));
+}
+
+function normalizeStepKind(kind) {
+  return ["move", "stop", "pause", "head_pitch"].includes(kind) ? kind : "pause";
 }
 
 function clamp(value, min, max) {

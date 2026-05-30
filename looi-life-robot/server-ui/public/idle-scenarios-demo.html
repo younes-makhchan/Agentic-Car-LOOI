@@ -430,8 +430,8 @@
           <h1>Idle scenarios before we wire them in.</h1>
           <p>
             Tune small autonomous body motions for the moments when LOOI is silent or only talking.
-            This demo edits wheel-level steps, converts them to linear/angular commands, and can send
-            them to ESP32 when connected and armed.
+            This demo edits wheel-level and head-pitch steps, converts wheel steps to linear/angular
+            commands, and can send them to ESP32 when connected and armed.
           </p>
           <p class="note mobile-warning">
             Mobile note: keep the phone/robot lifted or wheels off the table for the first tests.
@@ -561,7 +561,15 @@
         IDLE_SCENARIO_GLOBAL_DEFAULTS,
         cloneIdleScenarios
       } from "./js/idle/idleScenarioCatalog.js";
-      import { ESP32Client } from "./js/robot/esp32Client.js";
+      import {
+        ESP32Client,
+        HEAD_PITCH_DEFAULT_DURATION_MS,
+        HEAD_PITCH_DEFAULT_EASING,
+        HEAD_PITCH_DEFAULT_PULSE,
+        HEAD_PITCH_MAX_DURATION_MS,
+        HEAD_PITCH_MAX_PULSE,
+        HEAD_PITCH_MIN_PULSE
+      } from "./js/robot/esp32Client.js";
       import { CommandQueue } from "./js/robot/commandQueue.js";
 
       const STORAGE_KEY = "looi.idleScenariosDemo.v1";
@@ -803,7 +811,11 @@
             }),
             button("Play", () => playScenarioById(scenario.id, { dryRun: false }), "primary"),
             button("Add Step", () => {
-              scenario.steps.push({ kind: "move", left: 0.5, right: 0.5, durationMs: 80, pauseMs: 120 });
+              scenario.steps.push(defaultStep("move"));
+              renderAll();
+            }),
+            button("Add Head", () => {
+              scenario.steps.push(defaultStep("head_pitch"));
               renderAll();
             }),
             button("Remove", () => removeScenario(scenario.id), "danger")
@@ -847,21 +859,24 @@
       }
 
       function renderStep(scenario, step, stepIndex) {
+        normalizeStepInPlace(step);
         const row = document.createElement("div");
         row.className = "step";
-        row.append(
-          selectInput("Kind", step.kind, [
-            { value: "move", label: "Move" },
-            { value: "stop", label: "Stop" },
-            { value: "pause", label: "Pause" }
-          ], (value) => {
-            step.kind = value;
-            if (value !== "move") {
-              step.left = 0;
-              step.right = 0;
-            }
-            renderAll();
-          }),
+
+        const kindInput = selectInput("Kind", step.kind, [
+          { value: "move", label: "Move" },
+          { value: "head_pitch", label: "Head pitch" },
+          { value: "stop", label: "Stop" },
+          { value: "pause", label: "Pause" }
+        ], (value) => {
+          Object.assign(step, defaultStep(value), { kind: value });
+          renderAll();
+        });
+
+        row.append(kindInput);
+
+        if (step.kind === "move") {
+          row.append(
           decimalInput("Left wheel", step.left, -MAX_SPEED, MAX_SPEED, 0.005, (value) => {
             step.left = value;
             updateExport();
@@ -879,7 +894,45 @@
             updateExport();
           }),
           stepButtons(scenario, stepIndex)
-        );
+          );
+        } else if (step.kind === "head_pitch") {
+          row.append(
+            numberInput("Pulse", step.pulse, HEAD_PITCH_MIN_PULSE, HEAD_PITCH_MAX_PULSE, 1, (value) => {
+              step.pulse = value;
+              updateExport();
+            }),
+            numberInput("Move ms", step.durationMs, 0, HEAD_PITCH_MAX_DURATION_MS, 10, (value) => {
+              step.durationMs = value;
+              updateExport();
+            }),
+            selectInput("Run mode", step.mode || "sequence", [
+              { value: "sequence", label: "Sequence" },
+              { value: "parallel", label: "Parallel with adjacent step" }
+            ], (value) => {
+              step.mode = value === "parallel" ? "parallel" : "sequence";
+              updateExport();
+            }),
+            numberInput("Pause ms", step.pauseMs, 0, 2000, 10, (value) => {
+              step.pauseMs = value;
+              updateExport();
+            }),
+            stepButtons(scenario, stepIndex)
+          );
+        } else {
+          row.append(
+            readOnlyField("Action", step.kind === "stop" ? "Stop wheels" : "Pause only"),
+            readOnlyField("Wheels", "none"),
+            numberInput("Duration ms", step.durationMs, 0, MAX_DURATION_MS, 10, (value) => {
+              step.durationMs = value;
+              updateExport();
+            }),
+            numberInput("Pause ms", step.pauseMs, 0, 2000, 10, (value) => {
+              step.pauseMs = value;
+              updateExport();
+            }),
+            stepButtons(scenario, stepIndex)
+          );
+        }
         return row;
       }
 
@@ -892,7 +945,7 @@
           button("Del", () => {
             scenario.steps.splice(stepIndex, 1);
             if (!scenario.steps.length) {
-              scenario.steps.push({ kind: "stop", left: 0, right: 0, durationMs: 0, pauseMs: 100 });
+              scenario.steps.push(defaultStep("stop"));
             }
             renderAll();
           }, "danger")
@@ -909,8 +962,8 @@
           description: "New idle animation. Tune the wheel values, duration, and pause.",
           pairWith: "",
           steps: [
-            { kind: "move", left: 0.5, right: 0.5, durationMs: 130, pauseMs: 90 },
-            { kind: "stop", left: 0, right: 0, durationMs: 0, pauseMs: 120 }
+            { ...defaultStep("move"), durationMs: 130, pauseMs: 90 },
+            { ...defaultStep("stop"), pauseMs: 120 }
           ]
         };
 
@@ -975,13 +1028,13 @@
         log(`${dryRun ? "Dry run" : "Playing"} ${scenario.title} (${scenario.id})`, dryRun ? "info" : "warn");
 
         try {
-          for (let index = 0; index < scenario.steps.length; index += 1) {
+          const units = buildPlaybackUnits(scenario);
+          for (const unit of units) {
             if (token !== playToken) {
               return false;
             }
 
-            const step = scenario.steps[index];
-            await playStep(scenario, step, index, { dryRun, token });
+            await playUnit(scenario, unit, { dryRun, token });
           }
 
           if (!dryRun) {
@@ -998,12 +1051,30 @@
         }
       }
 
-      async function playStep(scenario, step, index, { dryRun, token }) {
-        const command = buildCommand(step, scenario, index);
-        ui.stepState.textContent = `${scenario.title} step ${index + 1}: ${command.summary}`;
-        log(`step ${index + 1} ${scenario.id}: ${command.summary}`, "debug");
+      async function playUnit(scenario, unit, { dryRun, token }) {
+        const parallelSummary = unit.parallelHeadCommands.length
+          ? ` + parallel ${unit.parallelHeadCommands.map((command) => `step ${command.step}`).join(", ")}`
+          : "";
+        ui.stepState.textContent = `${scenario.title} step ${unit.command.step}: ${unit.command.summary}${parallelSummary}`;
+        log(`step ${unit.command.step} ${scenario.id}: ${unit.command.summary}${parallelSummary}`, "debug");
 
-        if (!dryRun && step.kind === "move") {
+        for (const command of unit.parallelHeadCommands) {
+          sendCommand(command, { dryRun });
+        }
+
+        await sendCommand(unit.command, { dryRun });
+        await wait(getPlaybackUnitWaitMs(unit));
+        if (token !== playToken) {
+          return;
+        }
+      }
+
+      async function sendCommand(command, { dryRun = false } = {}) {
+        if (dryRun) {
+          return;
+        }
+
+        if (command.kind === "move") {
           if (!ui.motionToggle.checked) {
             log("Movement is held. Enable Allow movement to send to ESP32.", "warn");
           } else if (!robotClient?.isConnected?.()) {
@@ -1016,7 +1087,7 @@
               angular: command.angular,
               durationMs: command.durationMs,
               rampMs: command.rampMs,
-              label: `${scenario.id}:${index + 1}`,
+              label: `${command.scenario}:${command.step}`,
               source: "idle_scenario_demo",
               log: true,
               record: true
@@ -1024,37 +1095,57 @@
               log(`Motion send failed: ${error.message}`, "warn");
             });
           }
-        } else if (!dryRun && step.kind === "stop") {
-          await sendStopCommand(`${scenario.id}:step_${index + 1}`);
-        }
-
-        await wait(command.durationMs + command.decayMs + command.pauseMs);
-        if (token !== playToken) {
-          return;
+        } else if (command.kind === "stop") {
+          await sendStopCommand(`${command.scenario}:step_${command.step}`);
+        } else if (command.kind === "head_pitch") {
+          if (!ui.motionToggle.checked) {
+            log("Movement is held. Enable Allow movement to send head pitch to ESP32.", "warn");
+          } else if (!robotClient?.isConnected?.()) {
+            log("ESP32 is not connected. Head pitch not sent.", "warn");
+          } else {
+            lastCommandText = command.summary;
+            syncRobotUi();
+            sendHeadPitchCommand(command);
+          }
         }
       }
 
       function buildCommand(step, scenario, index) {
+        normalizeStepInPlace(step);
         const speedScale = Number(ui.speedScale.value);
         const durationScale = Number(ui.durationScale.value);
         const angularSign = Number(ui.angularSign.value);
-        const left = step.kind === "move" ? clamp(Number(step.left) * speedScale, -MAX_SPEED, MAX_SPEED) : 0;
-        const right = step.kind === "move" ? clamp(Number(step.right) * speedScale, -MAX_SPEED, MAX_SPEED) : 0;
+        const kind = normalizeStepKind(step.kind);
+        const left = kind === "move" ? clamp(Number(step.left) * speedScale, -MAX_SPEED, MAX_SPEED) : 0;
+        const right = kind === "move" ? clamp(Number(step.right) * speedScale, -MAX_SPEED, MAX_SPEED) : 0;
         const linear = clamp((left + right) / 2, -MAX_SPEED, MAX_SPEED);
         const angular = clamp(((right - left) / 2) * angularSign, -MAX_SPEED, MAX_SPEED);
-        const durationMs = Math.round(clamp(Number(step.durationMs) * durationScale, 0, MAX_DURATION_MS));
+        const maxDuration = kind === "head_pitch" ? HEAD_PITCH_MAX_DURATION_MS : MAX_DURATION_MS;
+        const durationMs = Math.round(clamp(Number(step.durationMs) * durationScale, 0, maxDuration));
         const pauseMs = Math.round(clamp(Number(step.pauseMs), 0, 2000));
         const requestedRampMs = Math.round(clamp(Number(ui.rampMs.value), 0, MAX_RAMP_MS));
-        const rampMs = step.kind === "move" ? Math.min(requestedRampMs, Math.floor(durationMs / 2)) : 0;
-        const decayMs = step.kind === "move" ? rampMs : 0;
-        const summary = step.kind === "move"
-          ? `L=${signed(left, 3)} R=${signed(right, 3)} -> linear=${signed(linear, 3)} angular=${signed(angular, 3)} ${durationMs}ms + decay ${decayMs}ms + pause ${pauseMs}ms`
-          : `${step.kind} ${durationMs}ms + pause ${pauseMs}ms`;
+        const rampMs = kind === "move" ? Math.min(requestedRampMs, Math.floor(durationMs / 2)) : 0;
+        const decayMs = kind === "move" ? rampMs : 0;
+        const pulse = Math.round(clamp(Number(step.pulse), HEAD_PITCH_MIN_PULSE, HEAD_PITCH_MAX_PULSE));
+        const mode = step.mode === "parallel" ? "parallel" : "sequence";
+        const easing = step.easing === HEAD_PITCH_DEFAULT_EASING ? HEAD_PITCH_DEFAULT_EASING : HEAD_PITCH_DEFAULT_EASING;
+        const summary = summarizeCommand(kind, {
+          left,
+          right,
+          linear,
+          angular,
+          durationMs,
+          decayMs,
+          pauseMs,
+          pulse,
+          mode,
+          easing
+        });
 
         return {
           scenario: scenario.id,
           step: index + 1,
-          kind: step.kind,
+          kind,
           left,
           right,
           linear,
@@ -1063,8 +1154,33 @@
           decayMs,
           pauseMs,
           rampMs,
+          pulse,
+          mode,
+          easing,
           summary
         };
+      }
+
+      function sendHeadPitchCommand(command) {
+        try {
+          const messageId = typeof robotClient?.sendHeadPitch === "function"
+            ? robotClient.sendHeadPitch({
+                pulse: command.pulse,
+                durationMs: command.durationMs,
+                easing: command.easing,
+                label: `${command.scenario}:${command.step}:head_pitch`
+              })
+            : robotClient.sendJson({
+                type: "head_pitch",
+                pulse: command.pulse,
+                duration_ms: command.durationMs,
+                easing: command.easing,
+                label: `${command.scenario}:${command.step}:head_pitch`
+              });
+          log(`Head pitch sent pulse=${command.pulse} duration=${command.durationMs}ms mode=${command.mode} id=${messageId}`, "info");
+        } catch (error) {
+          log(`Head pitch send failed: ${error.message}`, "warn");
+        }
       }
 
       async function stopMotion(reason = "idle_demo_stop") {
@@ -1125,13 +1241,7 @@
             title: scenario.title,
             description: scenario.description,
             pairWith: scenario.pairWith || null,
-            steps: scenario.steps.map((step, index) => ({
-              ...buildCommand(step, scenario, index),
-              leftInput: Number(step.left),
-              rightInput: Number(step.right),
-              originalDurationMs: Number(step.durationMs),
-              originalPauseMs: Number(step.pauseMs)
-            }))
+            steps: scenario.steps.map((step, index) => exportStep(step, scenario, index))
           }))
         };
         ui.exportText.value = JSON.stringify(payload, null, 2);
@@ -1264,12 +1374,185 @@
         requestAnimationFrame(() => globalThis.scrollTo(scroll.x, scroll.y));
       }
 
+      function buildPlaybackUnits(scenario) {
+        const units = [];
+        const pendingParallelHeadCommands = [];
+        let index = 0;
+
+        while (index < scenario.steps.length) {
+          const command = buildCommand(scenario.steps[index], scenario, index);
+
+          if (isParallelHeadCommand(command)) {
+            pendingParallelHeadCommands.push(command);
+            index += 1;
+            continue;
+          }
+
+          if (command.kind === "head_pitch") {
+            pendingParallelHeadCommands.splice(0).forEach((pendingCommand) => {
+              units.push({
+                command: pendingCommand,
+                parallelHeadCommands: []
+              });
+            });
+            units.push({
+              command,
+              parallelHeadCommands: []
+            });
+            index += 1;
+            continue;
+          }
+
+          const parallelHeadCommands = pendingParallelHeadCommands.splice(0);
+          let nextIndex = index + 1;
+
+          while (nextIndex < scenario.steps.length) {
+            const nextCommand = buildCommand(scenario.steps[nextIndex], scenario, nextIndex);
+            if (!isParallelHeadCommand(nextCommand)) {
+              break;
+            }
+
+            parallelHeadCommands.push(nextCommand);
+            nextIndex += 1;
+          }
+
+          units.push({
+            command,
+            parallelHeadCommands
+          });
+          index = nextIndex;
+        }
+
+        pendingParallelHeadCommands.forEach((command) => {
+          units.push({
+            command,
+            parallelHeadCommands: []
+          });
+        });
+
+        return units;
+      }
+
       function summarizeScenario(scenario) {
-        const totalMs = scenario.steps.reduce((total, step) => {
-          return total + Number(step.durationMs || 0) + Number(step.pauseMs || 0);
+        const totalMs = buildPlaybackUnits(scenario).reduce((total, unit) => {
+          return total + getPlaybackUnitWaitMs(unit);
         }, 0);
         const pair = scenario.pairWith ? ` · pair ${scenario.pairWith}` : "";
         return `${scenario.steps.length} steps · ${Math.round(totalMs)}ms${pair}`;
+      }
+
+      function exportStep(step, scenario, index) {
+        const command = buildCommand(step, scenario, index);
+        const base = {
+          ...command,
+          originalDurationMs: Number(step.durationMs),
+          originalPauseMs: Number(step.pauseMs)
+        };
+
+        if (command.kind === "move") {
+          return {
+            ...base,
+            leftInput: Number(step.left),
+            rightInput: Number(step.right)
+          };
+        }
+
+        if (command.kind === "head_pitch") {
+          return {
+            ...base,
+            pulseInput: Number(step.pulse),
+            mode: command.mode,
+            easing: command.easing
+          };
+        }
+
+        return base;
+      }
+
+      function getPlaybackUnitWaitMs(unit) {
+        const baseWaitMs = getCommandWaitMs(unit.command);
+        const parallelWaitMs = unit.parallelHeadCommands.reduce((maxMs, command) => {
+          return Math.max(maxMs, getCommandWaitMs(command));
+        }, 0);
+        return Math.max(baseWaitMs, parallelWaitMs);
+      }
+
+      function getCommandWaitMs(command) {
+        return Math.max(0, command.durationMs + command.decayMs + command.pauseMs);
+      }
+
+      function isParallelHeadCommand(command) {
+        return command.kind === "head_pitch" && command.mode === "parallel";
+      }
+
+      function summarizeCommand(kind, command) {
+        if (kind === "move") {
+          return `L=${signed(command.left, 3)} R=${signed(command.right, 3)} -> linear=${signed(command.linear, 3)} angular=${signed(command.angular, 3)} ${command.durationMs}ms + decay ${command.decayMs}ms + pause ${command.pauseMs}ms`;
+        }
+
+        if (kind === "head_pitch") {
+          const modeLabel = command.mode === "parallel" ? "parallel with adjacent step" : "sequence";
+          return `head pitch pulse=${command.pulse} ${command.durationMs}ms ${modeLabel} + pause ${command.pauseMs}ms`;
+        }
+
+        return `${kind} ${command.durationMs}ms + pause ${command.pauseMs}ms`;
+      }
+
+      function defaultStep(kind = "move") {
+        if (kind === "head_pitch") {
+          return {
+            kind: "head_pitch",
+            pulse: HEAD_PITCH_DEFAULT_PULSE,
+            durationMs: HEAD_PITCH_DEFAULT_DURATION_MS,
+            pauseMs: 120,
+            mode: "sequence",
+            easing: HEAD_PITCH_DEFAULT_EASING
+          };
+        }
+
+        if (kind === "stop") {
+          return { kind: "stop", left: 0, right: 0, durationMs: 0, pauseMs: 100 };
+        }
+
+        if (kind === "pause") {
+          return { kind: "pause", left: 0, right: 0, durationMs: 100, pauseMs: 0 };
+        }
+
+        return { kind: "move", left: 0.5, right: 0.5, durationMs: 80, pauseMs: 120 };
+      }
+
+      function normalizeStepInPlace(step) {
+        const kind = normalizeStepKind(step.kind);
+        step.kind = kind;
+
+        if (kind === "move") {
+          step.left = clamp(Number(step.left), -MAX_SPEED, MAX_SPEED);
+          step.right = clamp(Number(step.right), -MAX_SPEED, MAX_SPEED);
+          step.durationMs = Math.round(clamp(Number(step.durationMs), 0, MAX_DURATION_MS));
+          step.pauseMs = Math.round(clamp(Number(step.pauseMs), 0, 2000));
+          return step;
+        }
+
+        if (kind === "head_pitch") {
+          step.left = 0;
+          step.right = 0;
+          step.pulse = Math.round(clamp(Number(step.pulse ?? HEAD_PITCH_DEFAULT_PULSE), HEAD_PITCH_MIN_PULSE, HEAD_PITCH_MAX_PULSE));
+          step.durationMs = Math.round(clamp(Number(step.durationMs ?? HEAD_PITCH_DEFAULT_DURATION_MS), 0, HEAD_PITCH_MAX_DURATION_MS));
+          step.pauseMs = Math.round(clamp(Number(step.pauseMs), 0, 2000));
+          step.mode = step.mode === "parallel" ? "parallel" : "sequence";
+          step.easing = step.easing === HEAD_PITCH_DEFAULT_EASING ? HEAD_PITCH_DEFAULT_EASING : HEAD_PITCH_DEFAULT_EASING;
+          return step;
+        }
+
+        step.left = 0;
+        step.right = 0;
+        step.durationMs = Math.round(clamp(Number(step.durationMs), 0, MAX_DURATION_MS));
+        step.pauseMs = Math.round(clamp(Number(step.pauseMs), 0, 2000));
+        return step;
+      }
+
+      function normalizeStepKind(kind) {
+        return ["move", "stop", "pause", "head_pitch"].includes(kind) ? kind : "pause";
       }
 
       function numberInput(labelText, value, min, max, step, onInput) {
@@ -1283,6 +1566,16 @@
         input.value = String(value);
         input.addEventListener("input", () => onInput(Math.round(clamp(Number(input.value), min, max))));
         label.append(input);
+        return label;
+      }
+
+      function readOnlyField(labelText, value) {
+        const label = document.createElement("label");
+        label.innerHTML = `<span>${escapeHtml(labelText)}</span>`;
+        const output = document.createElement("input");
+        output.value = value;
+        output.disabled = true;
+        label.append(output);
         return label;
       }
 

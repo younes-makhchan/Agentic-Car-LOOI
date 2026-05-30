@@ -1,0 +1,3 @@
+numpy>=1.24
+openwakeword>=0.6.0
+websockets>=12.0

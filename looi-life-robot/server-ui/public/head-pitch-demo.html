@@ -1,0 +1,703 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LOOI Head Pitch Demo</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #07090b;
+      --panel: rgba(13, 18, 22, 0.88);
+      --panel-strong: rgba(20, 28, 34, 0.94);
+      --line: rgba(184, 237, 255, 0.18);
+      --text: #effbff;
+      --muted: #9ab6c0;
+      --blue: #63d8ff;
+      --good: #8cffbf;
+      --warn: #ffd166;
+      --bad: #ff708f;
+    }
+
+    * { box-sizing: border-box; }
+
+    html,
+    body {
+      width: 100%;
+      min-height: 100%;
+      margin: 0;
+      background:
+        radial-gradient(circle at 16% 12%, rgba(99, 216, 255, 0.18), transparent 30%),
+        radial-gradient(circle at 88% 4%, rgba(140, 255, 191, 0.12), transparent 32%),
+        linear-gradient(145deg, #050607, var(--bg));
+      color: var(--text);
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    body {
+      padding: clamp(14px, 3vw, 28px);
+    }
+
+    main {
+      width: min(1180px, 100%);
+      margin: 0 auto;
+      display: grid;
+      gap: 16px;
+    }
+
+    h1,
+    p {
+      margin: 0;
+    }
+
+    h1 {
+      font-size: clamp(2rem, 7vw, 4.4rem);
+      line-height: 0.9;
+      letter-spacing: -0.07em;
+    }
+
+    .hero p {
+      max-width: 72ch;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1.35fr) minmax(310px, 0.65fr);
+      gap: 16px;
+      align-items: start;
+    }
+
+    .stage,
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      background: var(--panel);
+      box-shadow: 0 26px 80px rgba(0, 0, 0, 0.34);
+      overflow: hidden;
+    }
+
+    .video-shell {
+      position: relative;
+      aspect-ratio: 4 / 3;
+      min-height: 300px;
+      background:
+        linear-gradient(135deg, rgba(99, 216, 255, 0.08), transparent 42%),
+        #020304;
+    }
+
+    video {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+
+    .video-empty {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      color: var(--muted);
+      text-align: center;
+      padding: 24px;
+    }
+
+    .stage-footer {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 1px;
+      background: var(--line);
+    }
+
+    .metric {
+      display: grid;
+      gap: 5px;
+      padding: 13px;
+      background: rgba(6, 9, 12, 0.92);
+    }
+
+    .metric span,
+    label span {
+      color: var(--muted);
+      font-size: 0.82rem;
+    }
+
+    .metric strong {
+      font-size: clamp(1.1rem, 4vw, 1.65rem);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .panel {
+      padding: 14px;
+      display: grid;
+      gap: 14px;
+    }
+
+    .card {
+      display: grid;
+      gap: 10px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: var(--panel-strong);
+    }
+
+    .grid-2,
+    .grid-3 {
+      display: grid;
+      gap: 10px;
+    }
+
+    .grid-2 {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .grid-3 {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    label {
+      display: grid;
+      gap: 7px;
+    }
+
+    input,
+    select,
+    button {
+      min-width: 0;
+      min-height: 42px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: rgba(3, 6, 8, 0.92);
+      color: var(--text);
+      font: inherit;
+    }
+
+    input,
+    select {
+      padding: 0 11px;
+    }
+
+    button {
+      padding: 9px 11px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    button.primary {
+      border-color: rgba(99, 216, 255, 0.55);
+      background: linear-gradient(135deg, rgba(99, 216, 255, 0.26), rgba(140, 255, 191, 0.14));
+    }
+
+    button.warn {
+      border-color: rgba(255, 209, 102, 0.48);
+      color: #ffe4a0;
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .status-good { color: var(--good); }
+    .status-warn { color: var(--warn); }
+    .status-bad { color: var(--bad); }
+
+    .log {
+      min-height: 170px;
+      max-height: 260px;
+      overflow: auto;
+      padding: 10px;
+      border-radius: 16px;
+      background: rgba(0, 0, 0, 0.28);
+      font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      color: #cdebf6;
+      white-space: pre-wrap;
+    }
+
+    @media (max-width: 860px) {
+      .layout,
+      .stage-footer,
+      .grid-3 {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="hero">
+      <h1>Head Pitch Demo</h1>
+      <p>
+        Tune LOOI face up/down movement with the live camera visible. Firmware clamps every pulse to
+        <strong>500..620</strong>, even if this page sends a bad value.
+      </p>
+    </section>
+
+    <section class="layout">
+      <div class="stage">
+        <div class="video-shell">
+          <video id="cameraPreview" autoplay playsinline muted></video>
+          <div id="videoEmpty" class="video-empty">Start camera to see the face angle while tuning.</div>
+        </div>
+        <div class="stage-footer">
+          <div class="metric">
+            <span>Current pulse</span>
+            <strong id="currentPulse">--</strong>
+          </div>
+          <div class="metric">
+            <span>ESP32</span>
+            <strong id="esp32Status" class="status-bad">disconnected</strong>
+          </div>
+          <div class="metric">
+            <span>Camera</span>
+            <strong id="cameraStatus" class="status-warn">off</strong>
+          </div>
+        </div>
+      </div>
+
+      <aside class="panel">
+        <section class="card">
+          <label>
+            <span>ESP32 WebSocket URL</span>
+            <input id="esp32Url" type="text" autocomplete="off" />
+          </label>
+          <div class="grid-2">
+            <button id="connectButton" class="primary">Connect</button>
+            <button id="disconnectButton">Disconnect</button>
+          </div>
+        </section>
+
+        <section class="card">
+          <label>
+            <span>Camera</span>
+            <select id="cameraSelect"></select>
+          </label>
+          <div class="grid-2">
+            <button id="startCameraButton" class="primary">Start Camera</button>
+            <button id="stopCameraButton">Stop Camera</button>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="grid-3">
+            <label>
+              <span>Top max</span>
+              <input id="topPulse" type="number" min="500" max="620" step="1" />
+            </label>
+            <label>
+              <span>Default</span>
+              <input id="defaultPulse" type="number" min="500" max="620" step="1" />
+            </label>
+            <label>
+              <span>Bottom max</span>
+              <input id="bottomPulse" type="number" min="500" max="620" step="1" />
+            </label>
+          </div>
+          <div class="grid-3">
+            <button id="sendTopButton">Go Top</button>
+            <button id="sendDefaultButton" class="primary">Go Default</button>
+            <button id="sendBottomButton">Go Bottom</button>
+          </div>
+          <div class="grid-2">
+            <button id="saveButton">Save Values</button>
+            <button id="resetButton" class="warn">Reset 530/570/600</button>
+          </div>
+        </section>
+
+        <section class="card">
+          <label>
+            <span>Custom pulse</span>
+            <input id="customPulse" type="number" min="500" max="620" step="1" value="570" />
+          </label>
+          <div class="grid-3">
+            <button id="nudgeUpButton">-5 Up</button>
+            <button id="sendCustomButton" class="primary">Send</button>
+            <button id="nudgeDownButton">+5 Down</button>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="grid-2">
+            <label>
+              <span>Transition duration ms</span>
+              <input id="transitionDuration" type="number" min="0" max="2000" step="10" value="350" />
+            </label>
+            <label>
+              <span>Easing</span>
+              <select id="easingSelect">
+                <option value="ease_in_out_cubic">ease_in_out_cubic</option>
+              </select>
+            </label>
+          </div>
+          <button id="previewMotionButton" class="primary">Preview default/top/default/bottom/default</button>
+        </section>
+
+        <section class="card">
+          <div id="log" class="log"></div>
+        </section>
+      </aside>
+    </section>
+  </main>
+
+  <script type="module">
+    import { PUBLIC_CONFIG } from "./js/config.js";
+    import { ESP32Client } from "./js/robot/esp32Client.js";
+
+    const SAFE_MIN = 500;
+    const SAFE_MAX = 620;
+    const DURATION_MIN = 0;
+    const DURATION_MAX = 2000;
+    const DEFAULT_DURATION_MS = 350;
+    const DEFAULT_EASING = "ease_in_out_cubic";
+    const DEFAULT_SETTINGS = Object.freeze({
+      topPulse: 530,
+      defaultPulse: 570,
+      bottomPulse: 600,
+      transitionDurationMs: DEFAULT_DURATION_MS,
+      easing: DEFAULT_EASING
+    });
+    const STORAGE_KEY = "looi.headPitchDemo.v1";
+
+    const ui = {
+      cameraPreview: document.getElementById("cameraPreview"),
+      videoEmpty: document.getElementById("videoEmpty"),
+      currentPulse: document.getElementById("currentPulse"),
+      esp32Status: document.getElementById("esp32Status"),
+      cameraStatus: document.getElementById("cameraStatus"),
+      esp32Url: document.getElementById("esp32Url"),
+      connectButton: document.getElementById("connectButton"),
+      disconnectButton: document.getElementById("disconnectButton"),
+      cameraSelect: document.getElementById("cameraSelect"),
+      startCameraButton: document.getElementById("startCameraButton"),
+      stopCameraButton: document.getElementById("stopCameraButton"),
+      topPulse: document.getElementById("topPulse"),
+      defaultPulse: document.getElementById("defaultPulse"),
+      bottomPulse: document.getElementById("bottomPulse"),
+      sendTopButton: document.getElementById("sendTopButton"),
+      sendDefaultButton: document.getElementById("sendDefaultButton"),
+      sendBottomButton: document.getElementById("sendBottomButton"),
+      saveButton: document.getElementById("saveButton"),
+      resetButton: document.getElementById("resetButton"),
+      customPulse: document.getElementById("customPulse"),
+      nudgeUpButton: document.getElementById("nudgeUpButton"),
+      sendCustomButton: document.getElementById("sendCustomButton"),
+      nudgeDownButton: document.getElementById("nudgeDownButton"),
+      transitionDuration: document.getElementById("transitionDuration"),
+      easingSelect: document.getElementById("easingSelect"),
+      previewMotionButton: document.getElementById("previewMotionButton"),
+      log: document.getElementById("log")
+    };
+
+    let cameraStream = null;
+    let currentPulse = DEFAULT_SETTINGS.defaultPulse;
+    let previewRunning = false;
+
+    const robotClient = new ESP32Client({
+      url: PUBLIC_CONFIG.defaultEsp32WsUrl,
+      logger: (message, level = "info") => log(message, level)
+    });
+
+    init();
+
+    function init() {
+      const settings = loadSettings();
+      ui.esp32Url.value = settings.esp32Url || PUBLIC_CONFIG.defaultEsp32WsUrl || "ws://192.168.4.1:81";
+      ui.topPulse.value = settings.topPulse;
+      ui.defaultPulse.value = settings.defaultPulse;
+      ui.bottomPulse.value = settings.bottomPulse;
+      ui.customPulse.value = settings.defaultPulse;
+      ui.transitionDuration.value = settings.transitionDurationMs;
+      ui.easingSelect.value = settings.easing;
+      ui.currentPulse.textContent = "--";
+
+      robotClient.onStatus(updateEsp32Status);
+      robotClient.onAck(handleAck);
+      robotClient.onError((error) => log(error.message || JSON.stringify(error), "error"));
+      robotClient.onConfig((config) => {
+        const head = config?.head_pitch;
+        if (head?.pulse != null) {
+          setCurrentPulse(head.pulse);
+        }
+      });
+
+      ui.connectButton.addEventListener("click", () => {
+        connectEsp32().catch((error) => log(`ESP32 connect failed: ${error.message}`, "error"));
+      });
+      ui.disconnectButton.addEventListener("click", () => robotClient.disconnect());
+      ui.startCameraButton.addEventListener("click", () => {
+        startCamera().catch((error) => log(`Camera failed: ${error.message}`, "error"));
+      });
+      ui.stopCameraButton.addEventListener("click", stopCamera);
+      ui.saveButton.addEventListener("click", saveSettings);
+      ui.resetButton.addEventListener("click", resetSettings);
+      ui.sendTopButton.addEventListener("click", () => sendNamedPulse("top", ui.topPulse.value));
+      ui.sendDefaultButton.addEventListener("click", () => sendNamedPulse("default", ui.defaultPulse.value));
+      ui.sendBottomButton.addEventListener("click", () => sendNamedPulse("bottom", ui.bottomPulse.value));
+      ui.sendCustomButton.addEventListener("click", () => sendNamedPulse("custom", ui.customPulse.value));
+      ui.nudgeUpButton.addEventListener("click", () => nudge(-5));
+      ui.nudgeDownButton.addEventListener("click", () => nudge(5));
+      ui.previewMotionButton.addEventListener("click", () => {
+        previewMotion().catch((error) => log(`Preview failed: ${error.message}`, "error"));
+      });
+
+      enumerateCameras();
+      updateEsp32Status(robotClient.getStatus());
+      updateCameraStatus(false);
+      log("Ready. Connect ESP32, start camera, then test head pitch.");
+    }
+
+    async function connectEsp32() {
+      const url = ui.esp32Url.value.trim() || PUBLIC_CONFIG.defaultEsp32WsUrl || "ws://192.168.4.1:81";
+      ui.esp32Url.value = url;
+      saveSettings({ quiet: true });
+      log(`Connecting ESP32 gateway to ${url}`);
+      await robotClient.connect(url);
+      robotClient.requestConfig();
+    }
+
+    function sendNamedPulse(name, value) {
+      const pulse = clampPulse(value);
+      const durationMs = getTransitionDurationMs();
+      const easing = getEasing();
+      ui.customPulse.value = pulse;
+      currentPulse = pulse;
+
+      if (!robotClient.isConnected()) {
+        log("ESP32 is not connected.", "warn");
+        return false;
+      }
+
+      const id = robotClient.sendJson({
+        type: "head_pitch",
+        pulse,
+        duration_ms: durationMs,
+        easing,
+        label: `head_pitch_${name}`
+      });
+      log(`Sent ${name} pulse=${pulse} duration=${durationMs} easing=${easing} id=${id}`);
+      return true;
+    }
+
+    function nudge(delta) {
+      const nextPulse = clampPulse(Number(ui.customPulse.value || currentPulse) + delta);
+      ui.customPulse.value = nextPulse;
+      sendNamedPulse(delta < 0 ? "nudge_up" : "nudge_down", nextPulse);
+    }
+
+    async function previewMotion() {
+      if (previewRunning) {
+        log("Preview already running.", "warn");
+        return;
+      }
+
+      if (!robotClient.isConnected()) {
+        log("ESP32 is not connected.", "warn");
+        return;
+      }
+
+      previewRunning = true;
+      ui.previewMotionButton.disabled = true;
+
+      try {
+        const durationMs = getTransitionDurationMs();
+        const waitMs = Math.max(220, durationMs + 140);
+        const sequence = [
+          ["preview_default_1", ui.defaultPulse.value],
+          ["preview_top", ui.topPulse.value],
+          ["preview_default_2", ui.defaultPulse.value],
+          ["preview_bottom", ui.bottomPulse.value],
+          ["preview_default_3", ui.defaultPulse.value]
+        ];
+
+        for (const [name, pulse] of sequence) {
+          if (!sendNamedPulse(name, pulse)) {
+            break;
+          }
+
+          await sleep(waitMs);
+        }
+      } finally {
+        previewRunning = false;
+        ui.previewMotionButton.disabled = false;
+      }
+    }
+
+    async function startCamera() {
+      stopCamera();
+
+      const selectedDeviceId = ui.cameraSelect.value;
+      const video = selectedDeviceId
+        ? { deviceId: { exact: selectedDeviceId } }
+        : { facingMode: "user" };
+
+      cameraStream = await navigator.mediaDevices.getUserMedia({
+        video,
+        audio: false
+      });
+      ui.cameraPreview.srcObject = cameraStream;
+      ui.videoEmpty.hidden = true;
+      updateCameraStatus(true);
+      await enumerateCameras();
+      log("Camera started.");
+    }
+
+    function stopCamera() {
+      if (cameraStream) {
+        cameraStream.getTracks().forEach((track) => track.stop());
+      }
+      cameraStream = null;
+      ui.cameraPreview.srcObject = null;
+      ui.videoEmpty.hidden = false;
+      updateCameraStatus(false);
+    }
+
+    async function enumerateCameras() {
+      if (!navigator.mediaDevices?.enumerateDevices) {
+        ui.cameraSelect.innerHTML = "<option>Camera API unavailable</option>";
+        return;
+      }
+
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const cameras = devices.filter((device) => device.kind === "videoinput");
+      const currentValue = ui.cameraSelect.value;
+      ui.cameraSelect.innerHTML = "";
+
+      cameras.forEach((camera, index) => {
+        const option = document.createElement("option");
+        option.value = camera.deviceId;
+        option.textContent = camera.label || `Camera ${index}`;
+        ui.cameraSelect.append(option);
+      });
+
+      if (currentValue && cameras.some((camera) => camera.deviceId === currentValue)) {
+        ui.cameraSelect.value = currentValue;
+      }
+    }
+
+    function handleAck(message) {
+      if (message.cmd !== "head_pitch") {
+        log(`ESP32 ack cmd=${message.cmd ?? "unknown"}`);
+        return;
+      }
+
+      setCurrentPulse(message.pulse);
+      const clamped = message.clamped ? " clamped" : "";
+      log(`Head pitch accepted pulse=${message.pulse}${clamped} duration=${message.duration_ms ?? "--"} easing=${message.easing ?? "--"} safe=${message.safe_min}..${message.safe_max}`);
+    }
+
+    function updateEsp32Status(status) {
+      ui.esp32Status.textContent = status.state;
+      ui.esp32Status.className = status.connected ? "status-good" : "status-bad";
+    }
+
+    function updateCameraStatus(active) {
+      ui.cameraStatus.textContent = active ? "on" : "off";
+      ui.cameraStatus.className = active ? "status-good" : "status-warn";
+    }
+
+    function setCurrentPulse(value) {
+      currentPulse = clampPulse(value);
+      ui.currentPulse.textContent = String(currentPulse);
+      ui.customPulse.value = currentPulse;
+    }
+
+    function saveSettings({ quiet = false } = {}) {
+      const settings = {
+        esp32Url: ui.esp32Url.value.trim(),
+        topPulse: clampPulse(ui.topPulse.value),
+        defaultPulse: clampPulse(ui.defaultPulse.value),
+        bottomPulse: clampPulse(ui.bottomPulse.value),
+        transitionDurationMs: getTransitionDurationMs(),
+        easing: getEasing()
+      };
+
+      ui.topPulse.value = settings.topPulse;
+      ui.defaultPulse.value = settings.defaultPulse;
+      ui.bottomPulse.value = settings.bottomPulse;
+      ui.transitionDuration.value = settings.transitionDurationMs;
+      ui.easingSelect.value = settings.easing;
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+
+      if (!quiet) {
+        log(`Saved top=${settings.topPulse} default=${settings.defaultPulse} bottom=${settings.bottomPulse} duration=${settings.transitionDurationMs} easing=${settings.easing}`);
+      }
+    }
+
+    function resetSettings() {
+      ui.topPulse.value = DEFAULT_SETTINGS.topPulse;
+      ui.defaultPulse.value = DEFAULT_SETTINGS.defaultPulse;
+      ui.bottomPulse.value = DEFAULT_SETTINGS.bottomPulse;
+      ui.customPulse.value = DEFAULT_SETTINGS.defaultPulse;
+      ui.transitionDuration.value = DEFAULT_SETTINGS.transitionDurationMs;
+      ui.easingSelect.value = DEFAULT_SETTINGS.easing;
+      saveSettings();
+    }
+
+    function loadSettings() {
+      try {
+        const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
+        return {
+          esp32Url: typeof saved.esp32Url === "string" ? saved.esp32Url : "",
+          topPulse: clampPulse(saved.topPulse ?? DEFAULT_SETTINGS.topPulse),
+          defaultPulse: clampPulse(saved.defaultPulse ?? DEFAULT_SETTINGS.defaultPulse),
+          bottomPulse: clampPulse(saved.bottomPulse ?? DEFAULT_SETTINGS.bottomPulse),
+          transitionDurationMs: clampDuration(
+            saved.transitionDurationMs ?? DEFAULT_SETTINGS.transitionDurationMs
+          ),
+          easing: normalizeEasing(saved.easing)
+        };
+      } catch (_error) {
+        return {
+          esp32Url: "",
+          ...DEFAULT_SETTINGS
+        };
+      }
+    }
+
+    function clampPulse(value) {
+      const numericValue = Math.round(Number(value));
+
+      if (!Number.isFinite(numericValue)) {
+        return DEFAULT_SETTINGS.defaultPulse;
+      }
+
+      return Math.min(SAFE_MAX, Math.max(SAFE_MIN, numericValue));
+    }
+
+    function getTransitionDurationMs() {
+      return clampDuration(ui.transitionDuration.value);
+    }
+
+    function clampDuration(value) {
+      const numericValue = Math.round(Number(value));
+
+      if (!Number.isFinite(numericValue)) {
+        return DEFAULT_DURATION_MS;
+      }
+
+      return Math.min(DURATION_MAX, Math.max(DURATION_MIN, numericValue));
+    }
+
+    function getEasing() {
+      return normalizeEasing(ui.easingSelect.value);
+    }
+
+    function normalizeEasing(value) {
+      return value === DEFAULT_EASING ? DEFAULT_EASING : DEFAULT_EASING;
+    }
+
+    function sleep(ms) {
+      return new Promise((resolve) => globalThis.setTimeout(resolve, ms));
+    }
+
+    function log(message, level = "info") {
+      const line = `[${new Date().toLocaleTimeString()}] ${level.toUpperCase()} ${message}`;
+      ui.log.textContent = `${line}\n${ui.log.textContent}`.slice(0, 6000);
+    }
+  </script>
+</body>
+</html>
