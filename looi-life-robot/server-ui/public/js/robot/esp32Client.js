@@ -9,6 +9,14 @@ export const HEAD_PITCH_DEFAULT_PULSE = 570;
 export const HEAD_PITCH_DEFAULT_DURATION_MS = 350;
 export const HEAD_PITCH_MAX_DURATION_MS = 2000;
 export const HEAD_PITCH_DEFAULT_EASING = "ease_in_out_cubic";
+export const HEAD_PITCH_EASINGS = Object.freeze([
+  "ease_in_out_cubic",
+  "ease_out_cubic",
+  "ease_out_quart",
+  "exponential_smoothing",
+  "critically_damped_spring",
+  "minimum_jerk"
+]);
 const POLL_FALLBACK_INTERVAL_MS = 1000;
 const READY_STATE = {
   CONNECTING: 0,
@@ -203,7 +211,7 @@ export class ESP32Client {
       type: "head_pitch",
       pulse: Math.round(clamp(pulse, HEAD_PITCH_MIN_PULSE, HEAD_PITCH_MAX_PULSE)),
       duration_ms: Math.round(clamp(durationMs, 0, HEAD_PITCH_MAX_DURATION_MS)),
-      easing: easing === HEAD_PITCH_DEFAULT_EASING ? HEAD_PITCH_DEFAULT_EASING : HEAD_PITCH_DEFAULT_EASING
+      easing: normalizeHeadPitchEasing(easing)
     };
 
     if (typeof label === "string" && label.trim()) {
@@ -508,6 +516,10 @@ function clamp(value, min, max) {
   }
 
   return Math.min(max, Math.max(min, numericValue));
+}
+
+function normalizeHeadPitchEasing(value) {
+  return HEAD_PITCH_EASINGS.includes(value) ? value : HEAD_PITCH_DEFAULT_EASING;
 }
 
 function structuredCloneSafe(value) {

@@ -566,6 +566,7 @@
         HEAD_PITCH_DEFAULT_DURATION_MS,
         HEAD_PITCH_DEFAULT_EASING,
         HEAD_PITCH_DEFAULT_PULSE,
+        HEAD_PITCH_EASINGS,
         HEAD_PITCH_MAX_DURATION_MS,
         HEAD_PITCH_MAX_PULSE,
         HEAD_PITCH_MIN_PULSE
@@ -1128,7 +1129,7 @@
         const decayMs = kind === "move" ? rampMs : 0;
         const pulse = Math.round(clamp(Number(step.pulse), HEAD_PITCH_MIN_PULSE, HEAD_PITCH_MAX_PULSE));
         const mode = step.mode === "parallel" ? "parallel" : "sequence";
-        const easing = step.easing === HEAD_PITCH_DEFAULT_EASING ? HEAD_PITCH_DEFAULT_EASING : HEAD_PITCH_DEFAULT_EASING;
+        const easing = HEAD_PITCH_EASINGS.includes(step.easing) ? step.easing : HEAD_PITCH_DEFAULT_EASING;
         const summary = summarizeCommand(kind, {
           left,
           right,
@@ -1540,7 +1541,7 @@
           step.durationMs = Math.round(clamp(Number(step.durationMs ?? HEAD_PITCH_DEFAULT_DURATION_MS), 0, HEAD_PITCH_MAX_DURATION_MS));
           step.pauseMs = Math.round(clamp(Number(step.pauseMs), 0, 2000));
           step.mode = step.mode === "parallel" ? "parallel" : "sequence";
-          step.easing = step.easing === HEAD_PITCH_DEFAULT_EASING ? HEAD_PITCH_DEFAULT_EASING : HEAD_PITCH_DEFAULT_EASING;
+          step.easing = HEAD_PITCH_EASINGS.includes(step.easing) ? step.easing : HEAD_PITCH_DEFAULT_EASING;
           return step;
         }
 

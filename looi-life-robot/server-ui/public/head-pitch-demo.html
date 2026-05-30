@@ -218,6 +218,13 @@
       white-space: pre-wrap;
     }
 
+    .hint {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.84rem;
+      line-height: 1.4;
+    }
+
     @media (max-width: 860px) {
       .layout,
       .stage-footer,
@@ -329,10 +336,10 @@
             <label>
               <span>Easing</span>
               <select id="easingSelect">
-                <option value="ease_in_out_cubic">ease_in_out_cubic</option>
               </select>
             </label>
           </div>
+          <p id="easingHint" class="hint"></p>
           <button id="previewMotionButton" class="primary">Preview default/top/default/bottom/default</button>
         </section>
 
@@ -345,17 +352,26 @@
 
   <script type="module">
     import { PUBLIC_CONFIG } from "./js/config.js";
-    import { ESP32Client } from "./js/robot/esp32Client.js";
+    import {
+      ESP32Client,
+      HEAD_PITCH_DEFAULT_DURATION_MS,
+      HEAD_PITCH_DEFAULT_EASING,
+      HEAD_PITCH_DEFAULT_PULSE,
+      HEAD_PITCH_EASINGS,
+      HEAD_PITCH_MAX_DURATION_MS,
+      HEAD_PITCH_MAX_PULSE,
+      HEAD_PITCH_MIN_PULSE
+    } from "./js/robot/esp32Client.js";
 
-    const SAFE_MIN = 500;
-    const SAFE_MAX = 620;
+    const SAFE_MIN = HEAD_PITCH_MIN_PULSE;
+    const SAFE_MAX = HEAD_PITCH_MAX_PULSE;
     const DURATION_MIN = 0;
-    const DURATION_MAX = 2000;
-    const DEFAULT_DURATION_MS = 350;
-    const DEFAULT_EASING = "ease_in_out_cubic";
+    const DURATION_MAX = HEAD_PITCH_MAX_DURATION_MS;
+    const DEFAULT_DURATION_MS = HEAD_PITCH_DEFAULT_DURATION_MS;
+    const DEFAULT_EASING = HEAD_PITCH_DEFAULT_EASING;
     const DEFAULT_SETTINGS = Object.freeze({
       topPulse: 530,
-      defaultPulse: 570,
+      defaultPulse: HEAD_PITCH_DEFAULT_PULSE,
       bottomPulse: 600,
       transitionDurationMs: DEFAULT_DURATION_MS,
       easing: DEFAULT_EASING
@@ -388,6 +404,7 @@
       nudgeDownButton: document.getElementById("nudgeDownButton"),
       transitionDuration: document.getElementById("transitionDuration"),
       easingSelect: document.getElementById("easingSelect"),
+      easingHint: document.getElementById("easingHint"),
       previewMotionButton: document.getElementById("previewMotionButton"),
       log: document.getElementById("log")
     };
@@ -404,6 +421,7 @@
     init();
 
     function init() {
+      populateEasingOptions();
       const settings = loadSettings();
       ui.esp32Url.value = settings.esp32Url || PUBLIC_CONFIG.defaultEsp32WsUrl || "ws://192.168.4.1:81";
       ui.topPulse.value = settings.topPulse;
@@ -412,6 +430,7 @@
       ui.customPulse.value = settings.defaultPulse;
       ui.transitionDuration.value = settings.transitionDurationMs;
       ui.easingSelect.value = settings.easing;
+      updateEasingHint();
       ui.currentPulse.textContent = "--";
 
       robotClient.onStatus(updateEsp32Status);
@@ -443,6 +462,12 @@
       ui.previewMotionButton.addEventListener("click", () => {
         previewMotion().catch((error) => log(`Preview failed: ${error.message}`, "error"));
       });
+      ui.transitionDuration.addEventListener("change", () => saveSettings({ quiet: true }));
+      ui.easingSelect.addEventListener("change", () => {
+        saveSettings({ quiet: true });
+        updateEasingHint();
+        log(`Selected easing=${getEasing()} duration=${getTransitionDurationMs()}ms`);
+      });
 
       enumerateCameras();
       updateEsp32Status(robotClient.getStatus());
@@ -471,10 +496,9 @@
         return false;
       }
 
-      const id = robotClient.sendJson({
-        type: "head_pitch",
+      const id = robotClient.sendHeadPitch({
         pulse,
-        duration_ms: durationMs,
+        durationMs,
         easing,
         label: `head_pitch_${name}`
       });
@@ -620,6 +644,7 @@
       ui.bottomPulse.value = settings.bottomPulse;
       ui.transitionDuration.value = settings.transitionDurationMs;
       ui.easingSelect.value = settings.easing;
+      updateEasingHint();
       localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
 
       if (!quiet) {
@@ -634,6 +659,7 @@
       ui.customPulse.value = DEFAULT_SETTINGS.defaultPulse;
       ui.transitionDuration.value = DEFAULT_SETTINGS.transitionDurationMs;
       ui.easingSelect.value = DEFAULT_SETTINGS.easing;
+      updateEasingHint();
       saveSettings();
     }
 
@@ -687,7 +713,41 @@
     }
 
     function normalizeEasing(value) {
-      return value === DEFAULT_EASING ? DEFAULT_EASING : DEFAULT_EASING;
+      return HEAD_PITCH_EASINGS.includes(value) ? value : DEFAULT_EASING;
+    }
+
+    function populateEasingOptions() {
+      ui.easingSelect.replaceChildren();
+      HEAD_PITCH_EASINGS.forEach((easing) => {
+        const option = document.createElement("option");
+        option.value = easing;
+        option.textContent = getEasingLabel(easing);
+        ui.easingSelect.append(option);
+      });
+    }
+
+    function getEasingLabel(easing) {
+      const labels = {
+        ease_in_out_cubic: "Ease in/out cubic",
+        ease_out_cubic: "Ease out cubic",
+        ease_out_quart: "Ease out quart",
+        exponential_smoothing: "Exponential smoothing",
+        critically_damped_spring: "Critically damped spring",
+        minimum_jerk: "Minimum jerk"
+      };
+      return labels[easing] ?? easing;
+    }
+
+    function updateEasingHint() {
+      const hints = {
+        ease_in_out_cubic: "Balanced default: starts and stops softly.",
+        ease_out_cubic: "Fast start, soft landing. Good for quick attentive nods.",
+        ease_out_quart: "More aggressive start, very soft landing.",
+        exponential_smoothing: "Servo chases the target; feels damped and alive.",
+        critically_damped_spring: "Spring-like catch-up without intentional overshoot.",
+        minimum_jerk: "Human-like smooth profile; often good for neck motion."
+      };
+      ui.easingHint.textContent = hints[getEasing()] ?? "";
     }
 
     function sleep(ms) {

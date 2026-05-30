@@ -7,6 +7,7 @@ import {
   HEAD_PITCH_DEFAULT_DURATION_MS,
   HEAD_PITCH_DEFAULT_EASING,
   HEAD_PITCH_DEFAULT_PULSE,
+  HEAD_PITCH_EASINGS,
   HEAD_PITCH_MAX_DURATION_MS,
   HEAD_PITCH_MAX_PULSE,
   HEAD_PITCH_MIN_PULSE
@@ -427,7 +428,7 @@ export class IdleScenarioScheduler {
     const rampMs = kind === "move" ? Math.min(requestedRampMs, Math.floor(durationMs / 2)) : 0;
     const pulse = Math.round(clamp(Number(step.pulse ?? HEAD_PITCH_DEFAULT_PULSE), HEAD_PITCH_MIN_PULSE, HEAD_PITCH_MAX_PULSE));
     const mode = step.mode === "parallel" ? "parallel" : "sequence";
-    const easing = step.easing === HEAD_PITCH_DEFAULT_EASING ? HEAD_PITCH_DEFAULT_EASING : HEAD_PITCH_DEFAULT_EASING;
+    const easing = HEAD_PITCH_EASINGS.includes(step.easing) ? step.easing : HEAD_PITCH_DEFAULT_EASING;
 
     return {
       scenario: scenario.id,
