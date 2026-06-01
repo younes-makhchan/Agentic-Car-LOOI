@@ -11,6 +11,12 @@ export const IDLE_SCENARIO_TYPES = Object.freeze({
   BODY_HEAD: "body_head"
 });
 
+export const IDLE_SCENARIO_AVAILABILITY = Object.freeze({
+  ALWAYS: "always",
+  CONVERSATION_ACTIVE: "conversation_active",
+  CONVERSATION_INACTIVE: "conversation_inactive"
+});
+
 export const IDLE_SCENARIOS = Object.freeze([
   idleScenario({
     id: "idle_shift_right_back_left_front",
@@ -153,6 +159,7 @@ function idleScenario({
   description,
   pairWith = "",
   animationType = IDLE_SCENARIO_TYPES.BODY,
+  availability = IDLE_SCENARIO_AVAILABILITY.ALWAYS,
   steps = []
 }) {
   const channels = getIdleScenarioChannels({ animationType, steps });
@@ -161,6 +168,7 @@ function idleScenario({
     title,
     description,
     pairWith,
+    availability: normalizeIdleScenarioAvailability(availability),
     animationType: channels.animationType,
     effectiveAnimationType: channels.effectiveAnimationType,
     usesHead: channels.usesHead,
@@ -168,6 +176,12 @@ function idleScenario({
     allowOppositeMix: channels.allowOppositeMix,
     steps: Object.freeze(steps.map((step) => Object.freeze({ ...step })))
   });
+}
+
+export function normalizeIdleScenarioAvailability(availability = IDLE_SCENARIO_AVAILABILITY.ALWAYS) {
+  return Object.values(IDLE_SCENARIO_AVAILABILITY).includes(availability)
+    ? availability
+    : IDLE_SCENARIO_AVAILABILITY.ALWAYS;
 }
 
 function move(left, right, durationMs, pauseMs) {
