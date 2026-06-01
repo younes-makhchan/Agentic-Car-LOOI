@@ -336,26 +336,6 @@
         font-size: 0.76rem;
       }
 
-      .order-list {
-        display: grid;
-        gap: 8px;
-      }
-
-      .order-item {
-        display: grid;
-        grid-template-columns: 34px minmax(0, 1fr) auto auto;
-        gap: 8px;
-        align-items: center;
-        padding: 9px;
-        border-radius: 16px;
-        background: rgba(255, 255, 255, 0.06);
-        border: 1px solid rgba(255, 255, 255, 0.09);
-      }
-
-      .order-item button {
-        padding: 0.45rem 0.62rem;
-      }
-
       .log {
         max-height: 220px;
         overflow: auto;
@@ -410,10 +390,6 @@
 
         .step {
           grid-template-columns: 1fr;
-        }
-
-        .order-item {
-          grid-template-columns: 30px 1fr;
         }
 
         .mobile-warning {
@@ -510,15 +486,6 @@
           </section>
 
           <section class="panel">
-            <h2>Order</h2>
-            <p class="note">
-              Use this for the first sequencing rule. Example: put the opposite correction after a
-              one-sided motion before allowing that motion again.
-            </p>
-            <div id="orderList" class="order-list"></div>
-          </section>
-
-          <section class="panel">
             <h2>Status</h2>
             <div class="readout-grid">
               <div class="status-row">
@@ -558,6 +525,7 @@
     <script type="module">
       import { PUBLIC_CONFIG } from "./js/config.js";
       import {
+        IDLE_SCENARIO_AVAILABILITY,
         IDLE_SCENARIO_GLOBAL_DEFAULTS,
         IDLE_SCENARIO_TYPES,
         cloneIdleScenarios
@@ -603,7 +571,6 @@
         addScenarioButton: document.getElementById("addScenarioButton"),
         saveButton: document.getElementById("saveButton"),
         resetButton: document.getElementById("resetButton"),
-        orderList: document.getElementById("orderList"),
         scenarioGrid: document.getElementById("scenarioGrid"),
         robotState: document.getElementById("robotState"),
         commandState: document.getElementById("commandState"),
@@ -746,7 +713,6 @@
       function renderAll({ preserveScroll = true } = {}) {
         const scroll = preserveScroll ? { x: globalThis.scrollX, y: globalThis.scrollY } : null;
         renderScenarioSelect();
-        renderOrder();
         renderScenarios();
         updateGlobalLabels();
         updateExport();
@@ -765,26 +731,6 @@
         });
         selectedId = scenarios.some((scenario) => scenario.id === current) ? current : scenarios[0]?.id ?? "";
         ui.scenarioSelect.value = selectedId;
-      }
-
-      function renderOrder() {
-        ui.orderList.replaceChildren();
-        order.forEach((id, index) => {
-          const scenario = getScenario(id);
-          if (!scenario) {
-            return;
-          }
-          const item = document.createElement("div");
-          item.className = "order-item";
-          item.innerHTML = `
-            <strong>${index + 1}</strong>
-            <span>${escapeHtml(scenario.title)} <small style="color:var(--muted)">${escapeHtml(scenario.id)}</small></span>
-          `;
-          const up = button("Up", () => moveOrder(index, -1));
-          const down = button("Down", () => moveOrder(index, 1));
-          item.append(up, down);
-          ui.orderList.append(item);
-        });
       }
 
       function renderScenarios() {
@@ -822,6 +768,7 @@
               markScenarioUsesHead(scenario);
               renderAll();
             }),
+            button("Copy", () => copyScenario(scenario.id)),
             button("Remove", () => removeScenario(scenario.id), "danger")
           );
           head.append(actions);
@@ -846,6 +793,15 @@
               { value: IDLE_SCENARIO_TYPES.BODY_HEAD, label: "Body + head" }
             ], (value) => {
               scenario.animationType = normalizeScenarioType(value);
+              updateExport();
+              renderAll();
+            }),
+            selectInput("Availability", normalizeScenarioAvailability(scenario.availability), [
+              { value: IDLE_SCENARIO_AVAILABILITY.ALWAYS, label: "Always" },
+              { value: IDLE_SCENARIO_AVAILABILITY.CONVERSATION_ACTIVE, label: "Conversation active" },
+              { value: IDLE_SCENARIO_AVAILABILITY.CONVERSATION_INACTIVE, label: "Conversation inactive" }
+            ], (value) => {
+              scenario.availability = normalizeScenarioAvailability(value);
               updateExport();
               renderAll();
             }),
@@ -979,6 +935,7 @@
           title: `Custom Animation ${number}`,
           description: "New idle animation. Tune the wheel values, duration, and pause.",
           pairWith: "",
+          availability: IDLE_SCENARIO_AVAILABILITY.ALWAYS,
           animationType: IDLE_SCENARIO_TYPES.BODY,
           steps: [
             { ...defaultStep("move"), durationMs: 130, pauseMs: 90 },
@@ -986,11 +943,36 @@
           ]
         };
 
-        scenarios.push(scenario);
-        order.push(scenario.id);
+        insertScenarioAtTop(scenario);
         selectedId = scenario.id;
         renderAll();
         log(`Added ${scenario.title}. Click Save to keep it after reload.`);
+      }
+
+      function copyScenario(id) {
+        const source = getScenario(id);
+        if (!source) {
+          return;
+        }
+
+        const copyNumber = scenarios.filter((scenario) => scenario.id.startsWith(`${source.id}_copy`)).length + 1;
+        const scenario = {
+          ...source,
+          id: makeUniqueScenarioId(`${source.id}_copy`),
+          title: `${source.title} Copy ${copyNumber}`,
+          description: source.description,
+          steps: source.steps.map((step) => ({ ...step }))
+        };
+
+        insertScenarioAtTop(scenario);
+        selectedId = scenario.id;
+        renderAll();
+        log(`Copied ${source.title} to ${scenario.title}. Click Save to keep it after reload.`);
+      }
+
+      function insertScenarioAtTop(scenario) {
+        scenarios = [scenario, ...scenarios.filter((candidate) => candidate.id !== scenario.id)];
+        order = [scenario.id, ...order.filter((id) => id !== scenario.id)];
       }
 
       function removeScenario(id) {
@@ -1219,15 +1201,6 @@
         }
       }
 
-      function moveOrder(index, direction) {
-        const nextIndex = index + direction;
-        if (nextIndex < 0 || nextIndex >= order.length) {
-          return;
-        }
-        [order[index], order[nextIndex]] = [order[nextIndex], order[index]];
-        renderAll();
-      }
-
       function moveStep(scenario, index, direction) {
         const nextIndex = index + direction;
         if (nextIndex < 0 || nextIndex >= scenario.steps.length) {
@@ -1256,12 +1229,13 @@
             angularSign: Number(ui.angularSign.value)
           },
           scenarios: scenarios.map((scenario) => ({
-            id: scenario.id,
-            title: scenario.title,
-            description: scenario.description,
-            pairWith: scenario.pairWith || null,
-            ...getScenarioChannelMetadata(scenario),
-            steps: scenario.steps.map((step, index) => exportStep(step, scenario, index))
+              id: scenario.id,
+              title: scenario.title,
+              description: scenario.description,
+              pairWith: scenario.pairWith || null,
+              availability: normalizeScenarioAvailability(scenario.availability),
+              ...getScenarioChannelMetadata(scenario),
+              steps: scenario.steps.map((step, index) => exportStep(step, scenario, index))
           }))
         };
         ui.exportText.value = JSON.stringify(payload, null, 2);
@@ -1331,6 +1305,7 @@
         const merged = Array.isArray(savedScenarios)
           ? savedScenarios.map((scenario) => ({
               ...scenario,
+              availability: normalizeScenarioAvailability(scenario.availability),
               animationType: normalizeScenarioType(scenario.animationType),
               steps: Array.isArray(scenario.steps) ? scenario.steps.map((step) => ({ ...step })) : []
             }))
@@ -1342,6 +1317,7 @@
             existing.title = defaultScenario.title;
             existing.description = defaultScenario.description;
             existing.pairWith = defaultScenario.pairWith;
+            existing.availability = defaultScenario.availability;
             existing.animationType = defaultScenario.animationType;
             return;
           }
@@ -1470,6 +1446,7 @@
 
         return {
           animationType: explicitType,
+          availability: normalizeScenarioAvailability(scenario.availability),
           effectiveAnimationType: effectiveType,
           usesHead,
           usesMovement,
@@ -1499,6 +1476,12 @@
         return Object.values(IDLE_SCENARIO_TYPES).includes(type) ? type : IDLE_SCENARIO_TYPES.BODY;
       }
 
+      function normalizeScenarioAvailability(availability) {
+        return Object.values(IDLE_SCENARIO_AVAILABILITY).includes(availability)
+          ? availability
+          : IDLE_SCENARIO_AVAILABILITY.ALWAYS;
+      }
+
       function formatScenarioType(type) {
         switch (normalizeScenarioType(type)) {
           case IDLE_SCENARIO_TYPES.HEAD:
@@ -1517,7 +1500,18 @@
         const channels = getScenarioChannelMetadata(scenario);
         const pair = scenario.pairWith ? ` · pair ${scenario.pairWith}` : "";
         const mix = channels.allowOppositeMix ? "opposite mix ok" : "no extra mix";
-        return `${formatScenarioType(channels.effectiveAnimationType)} · ${scenario.steps.length} steps · ${Math.round(totalMs)}ms · ${mix}${pair}`;
+        return `${formatScenarioType(channels.effectiveAnimationType)} · ${formatScenarioAvailability(scenario.availability)} · ${scenario.steps.length} steps · ${Math.round(totalMs)}ms · ${mix}${pair}`;
+      }
+
+      function formatScenarioAvailability(availability) {
+        switch (normalizeScenarioAvailability(availability)) {
+          case IDLE_SCENARIO_AVAILABILITY.CONVERSATION_ACTIVE:
+            return "conversation active";
+          case IDLE_SCENARIO_AVAILABILITY.CONVERSATION_INACTIVE:
+            return "conversation inactive";
+          default:
+            return "always";
+        }
       }
 
       function exportStep(step, scenario, index) {
