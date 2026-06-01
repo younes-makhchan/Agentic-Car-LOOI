@@ -220,6 +220,7 @@ const ui = {
   idleSpeakingGapMaxInput: document.getElementById("idleSpeakingGapMaxInput"),
   idleBalanceStartInput: document.getElementById("idleBalanceStartInput"),
   idleBalanceIncrementInput: document.getElementById("idleBalanceIncrementInput"),
+  idleOppositeMixChanceInput: document.getElementById("idleOppositeMixChanceInput"),
   idleGeminiBodyContextGapMinInput: document.getElementById("idleGeminiBodyContextGapMinInput"),
   idleGeminiBodyContextGapMaxInput: document.getElementById("idleGeminiBodyContextGapMaxInput"),
   idleScenarioTestList: document.getElementById("idleScenarioTestList"),
@@ -530,6 +531,7 @@ ui.conversationSleepTimeoutInput?.addEventListener("change", () => {
   ui.idleSpeakingGapMaxInput,
   ui.idleBalanceStartInput,
   ui.idleBalanceIncrementInput,
+  ui.idleOppositeMixChanceInput,
   ui.idleGeminiBodyContextGapMinInput,
   ui.idleGeminiBodyContextGapMaxInput
 ].forEach((element) => {
@@ -2016,6 +2018,7 @@ async function startLocalBrainProductionMode() {
     }
     if (useGeminiLive) {
       startConversationWakeGate("looi_start");
+      deferIdleBodyContext("looi_start");
     }
     attentionSystem?.wake?.("live_start", activeConfig.conversationWindowMs ?? 30000);
 
@@ -2343,6 +2346,10 @@ function updateGeminiLiveUi(status = geminiLiveRuntime?.getStatus?.() ?? {}) {
       ? "streaming"
       : status.connecting
         ? "starting"
+        : status.connected && conversationGateState === "active"
+          ? conversationGateActivationInProgress
+            ? "mic starting"
+            : "mic inactive"
         : status.connected && isConversationWakeRequired()
           ? wakePhraseStatus?.supported === false
             ? "wake unavailable"
@@ -2404,22 +2411,54 @@ function updateLooiActivityIndicator(geminiStatus = geminiLiveRuntime?.getStatus
 
   const lifeState = lifeEngine?.getState?.() ?? {};
   const localBrainStatus = localBrainEngine?.getStatus?.() ?? {};
+  const geminiEnabled = Boolean(activeConfig.geminiLiveEnabled);
+  const geminiOffline = Boolean(
+    geminiEnabled &&
+    Number(geminiStatus.startedAt || 0) > 0 &&
+    !geminiStatus.connected &&
+    !geminiStatus.connecting &&
+    !geminiStatus.running
+  );
   const looiSpeaking = Boolean(geminiStatus.audioPlaying || lifeState.isSpeaking);
   const thinking = Boolean(
     !looiSpeaking &&
     (geminiStatus.thinking || localBrainStatus.processing)
   );
-  const hearingUser = Boolean(!looiSpeaking && !thinking && geminiStatus.inputActive);
+  const hearingUser = Boolean(
+    !looiSpeaking &&
+    !thinking &&
+    conversationGateState === "active" &&
+    geminiStatus.micStreaming &&
+    geminiStatus.inputActive
+  );
+  const micStarting = Boolean(
+    conversationGateActivationInProgress &&
+    conversationGateState === "active" &&
+    !geminiStatus.micStreaming
+  );
+  const wakeRequired = Boolean(
+    isConversationWakeRequired() ||
+    (
+      conversationGateState === "active" &&
+      !conversationGateActivationInProgress &&
+      !geminiStatus.micStreaming
+    )
+  );
   const state = thinking
     ? "thinking"
     : hearingUser
       ? "hearing"
       : "listening";
-  const label = thinking
-    ? "Thinking"
-    : isConversationWakeRequired()
-      ? "Say Hey LOOI"
-      : "Listening";
+  let label = "Listening";
+  if (thinking) {
+    label = "Thinking";
+  } else if (geminiOffline) {
+    label = "Gemini Offline";
+  } else if (!looiSpeaking && micStarting) {
+    label = "Mic Starting";
+  } else if (!looiSpeaking && wakeRequired) {
+    label = "Say Hey LOOI";
+  }
 
   setLooiActivityState(state, label);
 }
@@ -2945,8 +2984,8 @@ function startConversationWakeGate(reason = "wake_gate_start") {
   conversationGateActivationInProgress = false;
   conversationGateActivatedAt = 0;
   conversationGateLastInputTranscriptAt = Number(geminiLiveRuntime?.getStatus?.().lastInputTranscriptAt || 0);
-  geminiLiveRuntime?.stopAudioInput?.(`${reason}_reset`);
   setConversationGateState("wake_required", reason);
+  geminiLiveRuntime?.stopAudioInput?.(`${reason}_reset`);
 
   const started = wakePhraseDetector?.start?.(reason);
   if (started === false) {
@@ -2960,11 +2999,11 @@ function startConversationWakeGate(reason = "wake_gate_start") {
 function stopConversationWakeGate(reason = "wake_gate_stop") {
   clearConversationSilenceTimer();
   wakePhraseDetector?.stop?.(reason);
-  geminiLiveRuntime?.stopAudioInput?.(reason);
   conversationGateActivationInProgress = false;
   conversationGateActivatedAt = 0;
   conversationGateLastInputTranscriptAt = 0;
   setConversationGateState("inactive", reason);
+  geminiLiveRuntime?.stopAudioInput?.(reason);
   updateGeminiLiveUi();
 }
 
@@ -3038,6 +3077,20 @@ function updateConversationGateFromGeminiStatus(status = {}) {
     return;
   }
 
+  if (
+    status.connected &&
+    !status.micStreaming &&
+    !conversationGateActivationInProgress
+  ) {
+    clearConversationSilenceTimer();
+    conversationGateActivatedAt = 0;
+    conversationGateLastInputTranscriptAt = 0;
+    setConversationGateState("wake_required", "gemini_mic_inactive");
+    wakePhraseDetector?.start?.("gemini_mic_inactive");
+    log("Conversation gate reset because Gemini mic is not streaming.", "warn");
+    return;
+  }
+
   const transcriptAt = Number(status.lastInputTranscriptAt || 0);
   if (transcriptAt > 0 && transcriptAt !== conversationGateLastInputTranscriptAt) {
     conversationGateLastInputTranscriptAt = transcriptAt;
@@ -3085,11 +3138,11 @@ function handleConversationSilenceTimeout(reason = "conversation_silence_timeout
   }
 
   clearConversationSilenceTimer();
-  geminiLiveRuntime?.stopAudioInput?.("conversation_silence_timeout");
   conversationGateActivationInProgress = false;
   conversationGateActivatedAt = 0;
   conversationGateLastInputTranscriptAt = 0;
   setConversationGateState("wake_required", "conversation_silence_timeout");
+  geminiLiveRuntime?.stopAudioInput?.("conversation_silence_timeout");
   wakePhraseDetector?.start?.("conversation_silence_timeout");
   log("Conversation gate sleeping. Say Hey LOOI to talk again.");
   updateGeminiLiveUi();
@@ -3359,6 +3412,17 @@ function handleIdleScenarioCompleted(event = {}) {
   sendIdleBodyContextToGemini(event.payload ?? {}, "idle_scenario_completed");
 }
 
+function deferIdleBodyContext(reason = "idle_body_context_defer") {
+  const nextGapSec = pickIdleBodyContextGapSec();
+  nextIdleBodyContextAllowedAt = nextGapSec > 0
+    ? Date.now() + nextGapSec * 1000
+    : 0;
+
+  if (nextGapSec > 0) {
+    log(`Gemini idle body context deferred ${formatNumber(nextGapSec)}s (${reason}).`, "debug");
+  }
+}
+
 function isRecentUserTranscript(geminiStatus = {}, now = Date.now()) {
   const transcriptAt = Number(geminiStatus.lastInputTranscriptAt || 0);
   return transcriptAt > 0 && now - transcriptAt < IDLE_BODY_CONTEXT_USER_TRANSCRIPT_COOLDOWN_MS;
@@ -3402,11 +3466,18 @@ function sendIdleBodyContextToGemini(payload = {}, reason = "idle_body_context")
   }
 
   const scenarioId = String(payload.scenario ?? "").trim();
+  const mixedScenarioId = String(payload.mixedScenario ?? "").trim();
   const scenario = IDLE_SCENARIOS.find((entry) => entry.id === scenarioId) ?? null;
+  const mixedScenario = IDLE_SCENARIOS.find((entry) => entry.id === mixedScenarioId) ?? null;
+  const movementLabel = [scenario?.title ?? scenarioId, mixedScenario?.title ?? mixedScenarioId]
+    .filter(Boolean)
+    .join(" + ");
   const context = {
     event: reason,
-    movement: scenario?.title ?? scenarioId,
+    movement: movementLabel,
     movementId: scenarioId,
+    mixedMovement: mixedScenario?.title ?? mixedScenarioId,
+    mixedMovementId: mixedScenarioId,
     source: "local_idle_scheduler",
     note: "Local idle body micro-movement completed. This is body awareness only, not a user command.",
     instruction: "Do not call tools because of body_context. Usually respond with one short natural personality comment. Stay silent if it would interrupt the user or feel repetitive.",
@@ -4098,10 +4169,11 @@ function applyIdleScenarioSettingsFromUi() {
     speakingIdleMaxSec: ui.idleSpeakingGapMaxInput?.value,
     balanceStartPercent: ui.idleBalanceStartInput?.value,
     balanceIncrementPercent: ui.idleBalanceIncrementInput?.value,
+    oppositeMixPercent: ui.idleOppositeMixChanceInput?.value,
     geminiBodyContextGapMinSec: ui.idleGeminiBodyContextGapMinInput?.value,
     geminiBodyContextGapMaxSec: ui.idleGeminiBodyContextGapMaxInput?.value
   });
-  nextIdleBodyContextAllowedAt = 0;
+  deferIdleBodyContext("idle_settings_changed");
   saveIdleScenarioSettings(idleScenarioSettings);
   updateIdleScenarioSettingsUi();
   idleScenarioScheduler?.setSettings?.(toIdleSchedulerSettings(idleScenarioSettings));
@@ -4117,6 +4189,7 @@ function updateIdleScenarioSettingsUi() {
   setInputValue(ui.idleSpeakingGapMaxInput, idleScenarioSettings.speakingIdleMaxSec);
   setInputValue(ui.idleBalanceStartInput, idleScenarioSettings.balanceStartPercent);
   setInputValue(ui.idleBalanceIncrementInput, idleScenarioSettings.balanceIncrementPercent);
+  setInputValue(ui.idleOppositeMixChanceInput, idleScenarioSettings.oppositeMixPercent);
   setInputValue(ui.idleGeminiBodyContextGapMinInput, idleScenarioSettings.geminiBodyContextGapMinSec);
   setInputValue(ui.idleGeminiBodyContextGapMaxInput, idleScenarioSettings.geminiBodyContextGapMaxSec);
 }
@@ -4162,6 +4235,7 @@ function createDefaultIdleScenarioSettings() {
     speakingIdleMaxSec: msToSec(DEFAULT_IDLE_SCHEDULER_SETTINGS.speakingIdleGapMs[1]),
     balanceStartPercent: chanceToPercent(DEFAULT_IDLE_SCHEDULER_SETTINGS.balanceStartChance),
     balanceIncrementPercent: chanceToPercent(DEFAULT_IDLE_SCHEDULER_SETTINGS.balanceChanceIncrement),
+    oppositeMixPercent: chanceToPercent(DEFAULT_IDLE_SCHEDULER_SETTINGS.oppositeMixChance),
     geminiBodyContextGapMinSec: DEFAULT_IDLE_GEMINI_BODY_CONTEXT_GAP_RANGE_SEC[0],
     geminiBodyContextGapMaxSec: DEFAULT_IDLE_GEMINI_BODY_CONTEXT_GAP_RANGE_SEC[1]
   });
@@ -4224,6 +4298,12 @@ function normalizeIdleScenarioSettings(settings = {}) {
       0,
       100,
       DEFAULT_IDLE_SCENARIO_SETTINGS.balanceIncrementPercent
+    )),
+    oppositeMixPercent: Math.round(clampNumber(
+      source.oppositeMixPercent,
+      0,
+      100,
+      DEFAULT_IDLE_SCENARIO_SETTINGS.oppositeMixPercent
     )),
     geminiBodyContextGapMinSec: bodyContextMinSec,
     geminiBodyContextGapMaxSec: bodyContextMaxSec
@@ -4297,7 +4377,8 @@ function toIdleSchedulerSettings(settings = idleScenarioSettings) {
     silentIdleGapMs: [normalized.silentIdleMinSec * 1000, normalized.silentIdleMaxSec * 1000],
     speakingIdleGapMs: [normalized.speakingIdleMinSec * 1000, normalized.speakingIdleMaxSec * 1000],
     balanceStartChance: normalized.balanceStartPercent / 100,
-    balanceChanceIncrement: normalized.balanceIncrementPercent / 100
+    balanceChanceIncrement: normalized.balanceIncrementPercent / 100,
+    oppositeMixChance: normalized.oppositeMixPercent / 100
   };
 }
 

@@ -5,6 +5,12 @@ export const IDLE_SCENARIO_GLOBAL_DEFAULTS = Object.freeze({
   angularSign: 1
 });
 
+export const IDLE_SCENARIO_TYPES = Object.freeze({
+  BODY: "body",
+  HEAD: "head",
+  BODY_HEAD: "body_head"
+});
+
 export const IDLE_SCENARIOS = Object.freeze([
   idleScenario({
     id: "idle_shift_right_back_left_front",
@@ -115,12 +121,51 @@ export function getIdleScenarioById(id) {
   return IDLE_SCENARIOS.find((scenario) => scenario.id === id) ?? null;
 }
 
-function idleScenario({ id, title, description, pairWith = "", steps = [] }) {
+export function normalizeIdleScenarioType(type = IDLE_SCENARIO_TYPES.BODY) {
+  return Object.values(IDLE_SCENARIO_TYPES).includes(type) ? type : IDLE_SCENARIO_TYPES.BODY;
+}
+
+export function getIdleScenarioChannels(scenario = {}) {
+  const steps = Array.isArray(scenario.steps) ? scenario.steps : [];
+  const explicitType = normalizeIdleScenarioType(scenario.animationType);
+  const stepUsesHead = steps.some((step) => step?.kind === "head_pitch");
+  const stepUsesMovement = steps.some((step) => step?.kind === "move");
+  const usesHead = stepUsesHead || explicitType === IDLE_SCENARIO_TYPES.HEAD || explicitType === IDLE_SCENARIO_TYPES.BODY_HEAD;
+  const usesMovement = stepUsesMovement || explicitType === IDLE_SCENARIO_TYPES.BODY || explicitType === IDLE_SCENARIO_TYPES.BODY_HEAD;
+  const effectiveType = usesHead && usesMovement
+    ? IDLE_SCENARIO_TYPES.BODY_HEAD
+    : usesHead
+      ? IDLE_SCENARIO_TYPES.HEAD
+      : IDLE_SCENARIO_TYPES.BODY;
+
+  return {
+    animationType: explicitType,
+    effectiveAnimationType: effectiveType,
+    usesHead,
+    usesMovement,
+    allowOppositeMix: effectiveType !== IDLE_SCENARIO_TYPES.BODY_HEAD
+  };
+}
+
+function idleScenario({
+  id,
+  title,
+  description,
+  pairWith = "",
+  animationType = IDLE_SCENARIO_TYPES.BODY,
+  steps = []
+}) {
+  const channels = getIdleScenarioChannels({ animationType, steps });
   return Object.freeze({
     id,
     title,
     description,
     pairWith,
+    animationType: channels.animationType,
+    effectiveAnimationType: channels.effectiveAnimationType,
+    usesHead: channels.usesHead,
+    usesMovement: channels.usesMovement,
+    allowOppositeMix: channels.allowOppositeMix,
     steps: Object.freeze(steps.map((step) => Object.freeze({ ...step })))
   });
 }

@@ -1,6 +1,8 @@
 import {
   IDLE_SCENARIO_GLOBAL_DEFAULTS,
   IDLE_SCENARIO_ORDER,
+  IDLE_SCENARIO_TYPES,
+  getIdleScenarioChannels,
   getIdleScenarioById
 } from "./idleScenarioCatalog.js";
 import {
@@ -16,12 +18,14 @@ import {
 const DEFAULT_IDLE_GAP_MS = Object.freeze([1000, 4000]);
 const BALANCE_START_CHANCE = 0.2;
 const BALANCE_CHANCE_INCREMENT = 0.2;
+const OPPOSITE_MIX_CHANCE = 0.25;
 export const DEFAULT_IDLE_SCHEDULER_SETTINGS = Object.freeze({
   firstIdleGapMs: DEFAULT_IDLE_GAP_MS,
   silentIdleGapMs: DEFAULT_IDLE_GAP_MS,
   speakingIdleGapMs: DEFAULT_IDLE_GAP_MS,
   balanceStartChance: BALANCE_START_CHANCE,
-  balanceChanceIncrement: BALANCE_CHANCE_INCREMENT
+  balanceChanceIncrement: BALANCE_CHANCE_INCREMENT,
+  oppositeMixChance: OPPOSITE_MIX_CHANCE
 });
 const RECENT_HISTORY_LIMIT = 2;
 const IDLE_SOURCE = "idle_scenario_scheduler";
@@ -58,7 +62,10 @@ export class IdleScenarioScheduler {
     this.timer = null;
     this.playToken = 0;
     this.recentScenarioIds = [];
-    this.balanceDebt = null;
+    this.channelBalanceDebts = {
+      [IDLE_SCENARIO_TYPES.BODY]: null,
+      [IDLE_SCENARIO_TYPES.HEAD]: null
+    };
     this.blockedByScenario = false;
     this.blockedByScenarioAt = 0;
     this.lastReadinessReason = "";
@@ -72,12 +79,12 @@ export class IdleScenarioScheduler {
       ...settings
     });
 
-    if (this.balanceDebt) {
-      this.balanceDebt = {
-        ...this.balanceDebt,
-        chance: Math.min(1, this.balanceDebt.chance)
-      };
-    }
+    this.channelBalanceDebts = Object.fromEntries(
+      Object.entries(this.channelBalanceDebts).map(([type, debt]) => [
+        type,
+        debt ? { ...debt, chance: Math.min(1, Number(debt.chance || 0)) } : null
+      ])
+    );
 
     if (this.enabled && !this.running && !this.blockedByScenario) {
       this.scheduleNext("idle_settings_changed", { first: true });
@@ -115,7 +122,9 @@ export class IdleScenarioScheduler {
         silentIdleGapMs: [...this.settings.silentIdleGapMs],
         speakingIdleGapMs: [...this.settings.speakingIdleGapMs]
       },
-      balanceDebt: this.balanceDebt ? { ...this.balanceDebt } : null,
+      balanceDebt: this.getPrimaryBalanceDebtSnapshot(),
+      balanceDebts: this.getBalanceDebtSnapshots(),
+      channelBalanceDebts: this.getChannelBalanceDebtSnapshots(),
       recentScenarioIds: [...this.recentScenarioIds]
     };
   }
@@ -283,27 +292,37 @@ export class IdleScenarioScheduler {
     const token = ++this.playToken;
     this.running = true;
     const scenario = selection.scenario;
-    this.log(`Idle scenario started: ${scenario.id} (${selection.reason}).`);
+    const mixSelection = this.selectOppositeMixScenario(scenario);
+    const mixedScenario = mixSelection?.scenario ?? null;
+    const mixText = mixedScenario ? ` + ${mixedScenario.id}` : "";
+    const reasonText = [selection.reason, mixSelection?.reason].filter(Boolean).join(", ");
+    this.log(`Idle scenario started: ${scenario.id}${mixText} (${reasonText}).`);
     this.eventBus?.publish?.("idle_scenario_started", {
       scenario: scenario.id,
+      mixedScenario: mixedScenario?.id ?? "",
       reason,
       selectionReason: selection.reason,
-      balanceDebt: this.balanceDebt ? { ...this.balanceDebt } : null
+      mixReason: mixSelection?.reason ?? "",
+      balanceDebt: this.getPrimaryBalanceDebtSnapshot(),
+      balanceDebts: this.getBalanceDebtSnapshots(),
+      channelBalanceDebts: this.getChannelBalanceDebtSnapshots()
     }, { source: IDLE_SOURCE, priority: 1 });
 
     try {
-      await this.playScenario(scenario, token);
+      await this.playScenario(scenario, token, { mixedScenario });
       if (token !== this.playToken) {
         return;
       }
-      this.recordScenarioCompletion(scenario, selection);
+      this.recordScenarioCompletion(scenario, selection, mixedScenario);
       this.eventBus?.publish?.("idle_scenario_completed", {
-        scenario: scenario.id
+        scenario: scenario.id,
+        mixedScenario: mixedScenario?.id ?? ""
       }, { source: IDLE_SOURCE, priority: 1 });
     } catch (error) {
-      this.log(`Idle scenario failed (${scenario.id}): ${error.message}`, "warn");
+      this.log(`Idle scenario failed (${scenario.id}${mixText}): ${error.message}`, "warn");
       this.eventBus?.publish?.("idle_scenario_failed", {
         scenario: scenario.id,
+        mixedScenario: mixedScenario?.id ?? "",
         error: error.message
       }, { source: IDLE_SOURCE, priority: 3 });
     } finally {
@@ -314,8 +333,10 @@ export class IdleScenarioScheduler {
     }
   }
 
-  async playScenario(scenario, token, { requireEnabled = true } = {}) {
-    const units = this.buildPlaybackUnits(scenario);
+  async playScenario(scenario, token, { requireEnabled = true, mixedScenario = null } = {}) {
+    const units = mixedScenario
+      ? this.buildMixedPlaybackUnits(scenario, mixedScenario)
+      : this.buildPlaybackUnits(scenario);
 
     for (const unit of units) {
       if (token !== this.playToken || (requireEnabled && !this.enabled)) {
@@ -385,6 +406,82 @@ export class IdleScenarioScheduler {
     });
 
     return units;
+  }
+
+  buildMixedPlaybackUnits(primaryScenario, oppositeScenario) {
+    const primaryChannels = getIdleScenarioChannels(primaryScenario);
+    const oppositeChannels = getIdleScenarioChannels(oppositeScenario);
+    const bodyScenario = primaryChannels.effectiveAnimationType === IDLE_SCENARIO_TYPES.BODY
+      ? primaryScenario
+      : oppositeChannels.effectiveAnimationType === IDLE_SCENARIO_TYPES.BODY
+        ? oppositeScenario
+        : null;
+    const headScenario = primaryChannels.effectiveAnimationType === IDLE_SCENARIO_TYPES.HEAD
+      ? primaryScenario
+      : oppositeChannels.effectiveAnimationType === IDLE_SCENARIO_TYPES.HEAD
+        ? oppositeScenario
+        : null;
+
+    if (!bodyScenario || !headScenario) {
+      return this.buildPlaybackUnits(primaryScenario);
+    }
+
+    const units = this.clonePlaybackUnits(this.buildPlaybackUnits(bodyScenario));
+    const headCommands = this.extractHeadPitchCommands(headScenario);
+    if (!headCommands.length) {
+      return units;
+    }
+
+    const attachableUnits = units.filter((unit) => unit.command.kind !== "head_pitch");
+    headCommands.forEach((command, index) => {
+      const targetUnit = attachableUnits[index];
+      if (targetUnit) {
+        targetUnit.parallelHeadCommands.push(command);
+        return;
+      }
+
+      units.push({
+        command: this.buildPauseCommandForParallelHead(command),
+        parallelHeadCommands: [command]
+      });
+    });
+
+    return units;
+  }
+
+  clonePlaybackUnits(units = []) {
+    return units.map((unit) => ({
+      command: { ...unit.command },
+      parallelHeadCommands: unit.parallelHeadCommands.map((command) => ({ ...command }))
+    }));
+  }
+
+  extractHeadPitchCommands(scenario) {
+    return this.buildPlaybackUnits(scenario).flatMap((unit) => {
+      const commands = [];
+      if (unit.command.kind === "head_pitch") {
+        commands.push(unit.command);
+      }
+      commands.push(...unit.parallelHeadCommands);
+      return commands.map((command) => ({ ...command, mode: "parallel" }));
+    });
+  }
+
+  buildPauseCommandForParallelHead(command) {
+    return {
+      scenario: command.scenario,
+      step: command.step,
+      kind: "pause",
+      linear: 0,
+      angular: 0,
+      durationMs: 0,
+      pauseMs: 0,
+      rampMs: 0,
+      decayMs: 0,
+      pulse: HEAD_PITCH_DEFAULT_PULSE,
+      mode: "sequence",
+      easing: HEAD_PITCH_DEFAULT_EASING
+    };
   }
 
   async executeCommand(command) {
@@ -471,52 +568,254 @@ export class IdleScenarioScheduler {
   }
 
   selectScenario() {
-    const debt = this.balanceDebt;
-    const balanceScenario = debt?.targetId ? getIdleScenarioById(debt.targetId) : null;
-
-    if (balanceScenario && Math.random() < debt.chance) {
-      return { scenario: balanceScenario, reason: `balance:${Math.round(debt.chance * 100)}%` };
+    const balanceSelection = this.selectBalanceDebtScenario();
+    if (balanceSelection) {
+      return balanceSelection;
     }
 
-    if (debt) {
-      this.balanceDebt = {
-        ...debt,
-        chance: Math.min(1, Number(debt.chance || 0) + this.settings.balanceChanceIncrement)
-      };
-    }
-
+    this.incrementBalanceDebts();
+    const blockedSourceIds = this.getBalanceSourceIds();
     const candidates = IDLE_SCENARIO_ORDER
       .map((id) => getIdleScenarioById(id))
       .filter(Boolean)
-      .filter((scenario) => scenario.id !== debt?.sourceId)
+      .filter((scenario) => !blockedSourceIds.has(scenario.id))
       .filter((scenario) => !this.recentScenarioIds.includes(scenario.id));
 
     const fallbackCandidates = IDLE_SCENARIO_ORDER
       .map((id) => getIdleScenarioById(id))
       .filter(Boolean)
-      .filter((scenario) => scenario.id !== debt?.sourceId);
+      .filter((scenario) => !blockedSourceIds.has(scenario.id));
     const pool = candidates.length ? candidates : fallbackCandidates;
     const scenario = pool[Math.floor(Math.random() * pool.length)] ?? null;
 
     return { scenario, reason: "random" };
   }
 
-  recordScenarioCompletion(scenario, selection = {}) {
-    this.recentScenarioIds.unshift(scenario.id);
-    this.recentScenarioIds = this.recentScenarioIds.slice(0, RECENT_HISTORY_LIMIT);
+  selectOppositeMixScenario(primaryScenario) {
+    const channels = getIdleScenarioChannels(primaryScenario);
+    if (!channels.allowOppositeMix) {
+      return null;
+    }
 
-    if (this.balanceDebt?.targetId === scenario.id) {
-      this.balanceDebt = null;
+    const targetType = channels.effectiveAnimationType === IDLE_SCENARIO_TYPES.BODY
+      ? IDLE_SCENARIO_TYPES.HEAD
+      : channels.effectiveAnimationType === IDLE_SCENARIO_TYPES.HEAD
+        ? IDLE_SCENARIO_TYPES.BODY
+        : "";
+    if (!targetType) {
+      return null;
+    }
+
+    if (Math.random() >= this.settings.oppositeMixChance) {
+      return null;
+    }
+
+    const balanceDebt = this.getBalanceDebtForType(targetType);
+    const balanceScenario = balanceDebt?.targetId ? getIdleScenarioById(balanceDebt.targetId) : null;
+    if (balanceScenario && balanceScenario.id !== primaryScenario.id) {
+      return {
+        scenario: balanceScenario,
+        reason: `opposite_balance:${Math.round(balanceDebt.chance * 100)}%`
+      };
+    }
+
+    const candidates = this.getOppositeMixCandidates(targetType, primaryScenario.id, {
+      avoidRecent: true
+    });
+    const fallbackCandidates = candidates.length
+      ? candidates
+      : this.getOppositeMixCandidates(targetType, primaryScenario.id, { avoidRecent: false });
+    const scenario = fallbackCandidates[Math.floor(Math.random() * fallbackCandidates.length)] ?? null;
+    if (!scenario) {
+      return null;
+    }
+
+    return {
+      scenario,
+      reason: `opposite_mix:${Math.round(this.settings.oppositeMixChance * 100)}%`
+    };
+  }
+
+  getOppositeMixCandidates(targetType, primaryScenarioId, { avoidRecent = true } = {}) {
+    return IDLE_SCENARIO_ORDER
+      .map((id) => getIdleScenarioById(id))
+      .filter(Boolean)
+      .filter((scenario) => scenario.id !== primaryScenarioId)
+      .filter((scenario) => !this.getBalanceSourceIds().has(scenario.id))
+      .filter((scenario) => !avoidRecent || !this.recentScenarioIds.includes(scenario.id))
+      .filter((scenario) => {
+        const channels = getIdleScenarioChannels(scenario);
+        return channels.effectiveAnimationType === targetType && channels.allowOppositeMix;
+      });
+  }
+
+  recordScenarioCompletion(scenario, selection = {}, mixedScenario = null) {
+    const completedScenarios = [scenario, mixedScenario].filter(Boolean);
+    completedScenarios.forEach((entry) => {
+      this.recentScenarioIds = [
+        entry.id,
+        ...this.recentScenarioIds.filter((id) => id !== entry.id)
+      ].slice(0, RECENT_HISTORY_LIMIT);
+    });
+
+    const completedIds = new Set(completedScenarios.map((entry) => entry.id));
+    const balancedIds = this.clearCompletedBalanceDebts(completedIds);
+    completedScenarios.forEach((entry) => {
+      if (!balancedIds.has(entry.id)) {
+        this.addBalanceDebtForScenario(entry, completedIds);
+      }
+    });
+  }
+
+  selectBalanceDebtScenario({ targetType = "", excludeIds = new Set() } = {}) {
+    this.pruneInvalidBalanceDebts();
+    const candidates = this.getUniqueBalanceDebtEntries()
+      .filter(({ scenario }) => !excludeIds.has(scenario.id))
+      .filter(({ scenario }) => {
+        return !targetType || getIdleScenarioChannels(scenario).effectiveAnimationType === targetType;
+      })
+      .sort((a, b) => Number(b.debt.chance || 0) - Number(a.debt.chance || 0));
+
+    const selection = candidates.find((entry) => Math.random() < Number(entry.debt.chance || 0));
+    if (!selection) {
+      return null;
+    }
+
+    return {
+      scenario: selection.scenario,
+      reason: `balance:${Math.round(selection.debt.chance * 100)}%`,
+      balanceDebt: { ...selection.debt }
+    };
+  }
+
+  incrementBalanceDebts() {
+    Object.keys(this.channelBalanceDebts).forEach((type) => {
+      const debt = this.channelBalanceDebts[type];
+      if (!debt) {
+        return;
+      }
+
+      this.channelBalanceDebts[type] = {
+        ...debt,
+        chance: Math.min(1, Number(debt.chance || 0) + this.settings.balanceChanceIncrement)
+      };
+    });
+  }
+
+  addBalanceDebtForScenario(scenario, completedIds = new Set()) {
+    if (!scenario?.pairWith || completedIds.has(scenario.pairWith)) {
       return;
     }
 
-    if (scenario.pairWith && selection.reason !== "balance") {
-      this.balanceDebt = {
-        sourceId: scenario.id,
-        targetId: scenario.pairWith,
-        chance: this.settings.balanceStartChance
-      };
+    const targetScenario = getIdleScenarioById(scenario.pairWith);
+    if (!targetScenario || targetScenario.id === scenario.id) {
+      return;
     }
+
+    const targetType = getIdleScenarioChannels(targetScenario).effectiveAnimationType;
+    const balanceChannels = getBalanceChannelTypes(targetType);
+    if (!balanceChannels.length) {
+      return;
+    }
+
+    balanceChannels.forEach((channelType) => {
+      this.setChannelBalanceDebt(channelType, scenario, targetScenario, targetType);
+    });
+  }
+
+  setChannelBalanceDebt(channelType, scenario, targetScenario, targetType) {
+    const existingDebt = this.channelBalanceDebts[channelType];
+    const debt = {
+      balanceChannel: channelType,
+      sourceId: scenario.id,
+      targetId: targetScenario.id,
+      targetType,
+      chance: this.settings.balanceStartChance
+    };
+
+    if (existingDebt) {
+      this.channelBalanceDebts[channelType] = {
+        ...existingDebt,
+        balanceChannel: channelType,
+        sourceId: scenario.id,
+        targetId: targetScenario.id,
+        targetType,
+        chance: Math.max(
+          Number(existingDebt.chance || 0),
+          this.settings.balanceStartChance
+        )
+      };
+      return;
+    }
+
+    this.channelBalanceDebts[channelType] = debt;
+  }
+
+  clearCompletedBalanceDebts(completedIds = new Set()) {
+    const balancedIds = new Set();
+    Object.keys(this.channelBalanceDebts).forEach((type) => {
+      const debt = this.channelBalanceDebts[type];
+      if (debt && completedIds.has(debt.targetId)) {
+        balancedIds.add(debt.targetId);
+        this.channelBalanceDebts[type] = null;
+      }
+    });
+    return balancedIds;
+  }
+
+  pruneInvalidBalanceDebts() {
+    Object.keys(this.channelBalanceDebts).forEach((type) => {
+      const debt = this.channelBalanceDebts[type];
+      if (debt && !getIdleScenarioById(debt.targetId)) {
+        this.channelBalanceDebts[type] = null;
+      }
+    });
+  }
+
+  getBalanceSourceIds() {
+    return new Set(this.getBalanceDebtSnapshots().map((debt) => debt.sourceId).filter(Boolean));
+  }
+
+  getBalanceDebtForType(type) {
+    return isBalanceChannelType(type) && this.channelBalanceDebts[type]
+      ? { ...this.channelBalanceDebts[type] }
+      : null;
+  }
+
+  getUniqueBalanceDebtEntries() {
+    const entriesByTarget = new Map();
+    Object.values(this.channelBalanceDebts).filter(Boolean).forEach((debt) => {
+      const scenario = getIdleScenarioById(debt.targetId);
+      if (!scenario) {
+        return;
+      }
+
+      const existing = entriesByTarget.get(debt.targetId);
+      if (!existing || Number(debt.chance || 0) > Number(existing.debt.chance || 0)) {
+        entriesByTarget.set(debt.targetId, { debt, scenario });
+      }
+    });
+    return Array.from(entriesByTarget.values());
+  }
+
+  getPrimaryBalanceDebtSnapshot() {
+    return this.getBalanceDebtSnapshots()
+      .sort((a, b) => Number(b.chance || 0) - Number(a.chance || 0))[0] ?? null;
+  }
+
+  getBalanceDebtSnapshots() {
+    return Object.values(this.channelBalanceDebts)
+      .filter(Boolean)
+      .map((debt) => ({ ...debt }));
+  }
+
+  getChannelBalanceDebtSnapshots() {
+    return Object.fromEntries(
+      Object.entries(this.channelBalanceDebts).map(([type, debt]) => [
+        type,
+        debt ? { ...debt } : null
+      ])
+    );
   }
 
   pickDelayMs(first = false) {
@@ -626,6 +925,18 @@ function isParallelHeadCommand(command) {
   return command.kind === "head_pitch" && command.mode === "parallel";
 }
 
+function isBalanceChannelType(type) {
+  return type === IDLE_SCENARIO_TYPES.BODY || type === IDLE_SCENARIO_TYPES.HEAD;
+}
+
+function getBalanceChannelTypes(type) {
+  if (type === IDLE_SCENARIO_TYPES.BODY_HEAD) {
+    return [IDLE_SCENARIO_TYPES.BODY, IDLE_SCENARIO_TYPES.HEAD];
+  }
+
+  return isBalanceChannelType(type) ? [type] : [];
+}
+
 function randomBetween(min, max) {
   return min + Math.random() * Math.max(0, max - min);
 }
@@ -647,6 +958,12 @@ function normalizeSettings(settings = {}) {
       0,
       1,
       DEFAULT_IDLE_SCHEDULER_SETTINGS.balanceChanceIncrement
+    ),
+    oppositeMixChance: normalizeNumber(
+      source.oppositeMixChance,
+      0,
+      1,
+      DEFAULT_IDLE_SCHEDULER_SETTINGS.oppositeMixChance
     )
   };
 }

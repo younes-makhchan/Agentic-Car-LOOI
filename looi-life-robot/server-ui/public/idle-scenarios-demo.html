@@ -559,6 +559,7 @@
       import { PUBLIC_CONFIG } from "./js/config.js";
       import {
         IDLE_SCENARIO_GLOBAL_DEFAULTS,
+        IDLE_SCENARIO_TYPES,
         cloneIdleScenarios
       } from "./js/idle/idleScenarioCatalog.js";
       import {
@@ -813,10 +814,12 @@
             button("Play", () => playScenarioById(scenario.id, { dryRun: false }), "primary"),
             button("Add Step", () => {
               scenario.steps.push(defaultStep("move"));
+              markScenarioUsesMovement(scenario);
               renderAll();
             }),
             button("Add Head", () => {
               scenario.steps.push(defaultStep("head_pitch"));
+              markScenarioUsesHead(scenario);
               renderAll();
             }),
             button("Remove", () => removeScenario(scenario.id), "danger")
@@ -835,6 +838,15 @@
             }),
             textInput("Description", scenario.description, (value) => {
               scenario.description = value;
+              renderAll();
+            }),
+            selectInput("Animation type", normalizeScenarioType(scenario.animationType), [
+              { value: IDLE_SCENARIO_TYPES.BODY, label: "Body only" },
+              { value: IDLE_SCENARIO_TYPES.HEAD, label: "Head only" },
+              { value: IDLE_SCENARIO_TYPES.BODY_HEAD, label: "Body + head" }
+            ], (value) => {
+              scenario.animationType = normalizeScenarioType(value);
+              updateExport();
               renderAll();
             }),
             selectInput("Must balance with", scenario.pairWith || "", [
@@ -871,6 +883,11 @@
           { value: "pause", label: "Pause" }
         ], (value) => {
           Object.assign(step, defaultStep(value), { kind: value });
+          if (value === "head_pitch") {
+            markScenarioUsesHead(scenario);
+          } else if (value === "move") {
+            markScenarioUsesMovement(scenario);
+          }
           renderAll();
         });
 
@@ -962,6 +979,7 @@
           title: `Custom Animation ${number}`,
           description: "New idle animation. Tune the wheel values, duration, and pause.",
           pairWith: "",
+          animationType: IDLE_SCENARIO_TYPES.BODY,
           steps: [
             { ...defaultStep("move"), durationMs: 130, pauseMs: 90 },
             { ...defaultStep("stop"), pauseMs: 120 }
@@ -1242,6 +1260,7 @@
             title: scenario.title,
             description: scenario.description,
             pairWith: scenario.pairWith || null,
+            ...getScenarioChannelMetadata(scenario),
             steps: scenario.steps.map((step, index) => exportStep(step, scenario, index))
           }))
         };
@@ -1312,6 +1331,7 @@
         const merged = Array.isArray(savedScenarios)
           ? savedScenarios.map((scenario) => ({
               ...scenario,
+              animationType: normalizeScenarioType(scenario.animationType),
               steps: Array.isArray(scenario.steps) ? scenario.steps.map((step) => ({ ...step })) : []
             }))
           : [];
@@ -1322,6 +1342,7 @@
             existing.title = defaultScenario.title;
             existing.description = defaultScenario.description;
             existing.pairWith = defaultScenario.pairWith;
+            existing.animationType = defaultScenario.animationType;
             return;
           }
           merged.push({
@@ -1434,12 +1455,69 @@
         return units;
       }
 
+      function getScenarioChannelMetadata(scenario) {
+        const explicitType = normalizeScenarioType(scenario.animationType);
+        const steps = Array.isArray(scenario.steps) ? scenario.steps : [];
+        const stepUsesHead = steps.some((step) => step?.kind === "head_pitch");
+        const stepUsesMovement = steps.some((step) => step?.kind === "move");
+        const usesHead = stepUsesHead || explicitType === IDLE_SCENARIO_TYPES.HEAD || explicitType === IDLE_SCENARIO_TYPES.BODY_HEAD;
+        const usesMovement = stepUsesMovement || explicitType === IDLE_SCENARIO_TYPES.BODY || explicitType === IDLE_SCENARIO_TYPES.BODY_HEAD;
+        const effectiveType = usesHead && usesMovement
+          ? IDLE_SCENARIO_TYPES.BODY_HEAD
+          : usesHead
+            ? IDLE_SCENARIO_TYPES.HEAD
+            : IDLE_SCENARIO_TYPES.BODY;
+
+        return {
+          animationType: explicitType,
+          effectiveAnimationType: effectiveType,
+          usesHead,
+          usesMovement,
+          allowOppositeMix: effectiveType !== IDLE_SCENARIO_TYPES.BODY_HEAD
+        };
+      }
+
+      function markScenarioUsesHead(scenario) {
+        const currentType = normalizeScenarioType(scenario.animationType);
+        if (currentType === IDLE_SCENARIO_TYPES.BODY) {
+          scenario.animationType = IDLE_SCENARIO_TYPES.BODY_HEAD;
+        } else {
+          scenario.animationType = currentType;
+        }
+      }
+
+      function markScenarioUsesMovement(scenario) {
+        const currentType = normalizeScenarioType(scenario.animationType);
+        if (currentType === IDLE_SCENARIO_TYPES.HEAD) {
+          scenario.animationType = IDLE_SCENARIO_TYPES.BODY_HEAD;
+        } else {
+          scenario.animationType = currentType;
+        }
+      }
+
+      function normalizeScenarioType(type) {
+        return Object.values(IDLE_SCENARIO_TYPES).includes(type) ? type : IDLE_SCENARIO_TYPES.BODY;
+      }
+
+      function formatScenarioType(type) {
+        switch (normalizeScenarioType(type)) {
+          case IDLE_SCENARIO_TYPES.HEAD:
+            return "head only";
+          case IDLE_SCENARIO_TYPES.BODY_HEAD:
+            return "body + head";
+          default:
+            return "body only";
+        }
+      }
+
       function summarizeScenario(scenario) {
         const totalMs = buildPlaybackUnits(scenario).reduce((total, unit) => {
           return total + getPlaybackUnitWaitMs(unit);
         }, 0);
+        const channels = getScenarioChannelMetadata(scenario);
         const pair = scenario.pairWith ? ` · pair ${scenario.pairWith}` : "";
-        return `${scenario.steps.length} steps · ${Math.round(totalMs)}ms${pair}`;
+        const mix = channels.allowOppositeMix ? "opposite mix ok" : "no extra mix";
+        return `${formatScenarioType(channels.effectiveAnimationType)} · ${scenario.steps.length} steps · ${Math.round(totalMs)}ms · ${mix}${pair}`;
       }
 
       function exportStep(step, scenario, index) {
