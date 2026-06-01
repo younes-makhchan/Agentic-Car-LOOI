@@ -1053,7 +1053,7 @@
           steps: source.steps.map((step) => ({ ...step }))
         };
 
-        insertScenarioAtTop(scenario);
+        insertScenarioAfter(source.id, scenario);
         selectedId = scenario.id;
         renderAll();
         log(`Copied ${source.title} to ${scenario.title}. Click Save to keep it after reload.`);
@@ -1062,6 +1062,25 @@
       function insertScenarioAtTop(scenario) {
         scenarios = [scenario, ...scenarios.filter((candidate) => candidate.id !== scenario.id)];
         order = [scenario.id, ...order.filter((id) => id !== scenario.id)];
+      }
+
+      function insertScenarioAfter(sourceId, scenario) {
+        scenarios = insertAfterId(scenarios, sourceId, scenario);
+        order = insertAfterId(order, sourceId, scenario.id);
+      }
+
+      function insertAfterId(list, sourceId, item) {
+        const withoutItem = list.filter((candidate) => candidate !== item && candidate?.id !== item?.id);
+        const sourceIndex = withoutItem.findIndex((candidate) => candidate === sourceId || candidate?.id === sourceId);
+        if (sourceIndex === -1) {
+          return [...withoutItem, item];
+        }
+
+        return [
+          ...withoutItem.slice(0, sourceIndex + 1),
+          item,
+          ...withoutItem.slice(sourceIndex + 1)
+        ];
       }
 
       function removeScenario(id) {
