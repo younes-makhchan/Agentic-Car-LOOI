@@ -549,6 +549,7 @@
 
       const DEFAULT_SCENARIOS = cloneIdleScenarios();
       const DEFAULT_GLOBALS = IDLE_SCENARIO_GLOBAL_DEFAULTS;
+      let activeConfig = { ...PUBLIC_CONFIG };
 
       const ui = {
         esp32Url: document.getElementById("esp32Url"),
@@ -591,8 +592,8 @@
       init();
 
       async function init() {
-        const config = await loadConfig();
-        ui.esp32Url.value = config.defaultEsp32WsUrl || PUBLIC_CONFIG.defaultEsp32WsUrl || "ws://192.168.4.1:81";
+        activeConfig = await loadConfig();
+        ui.esp32Url.value = getDefaultEsp32Url();
         loadSaved();
         initRobotClient();
         bindEvents();
@@ -682,7 +683,7 @@
         ui.connectToggle.disabled = true;
         try {
           if (connected) {
-            await robotClient.connect(ui.esp32Url.value.trim() || PUBLIC_CONFIG.defaultEsp32WsUrl);
+            await robotClient.connect(ui.esp32Url.value.trim() || getDefaultEsp32Url());
             log("ESP32 connected.", "info");
             return;
           }
@@ -1274,12 +1275,7 @@
             scenarios = mergeDefaultScenarios(saved.scenarios);
           }
           if (Array.isArray(saved.order) && saved.order.length) {
-            order = saved.order.filter((id) => scenarios.some((scenario) => scenario.id === id));
-            scenarios.forEach((scenario) => {
-              if (!order.includes(scenario.id)) {
-                order.push(scenario.id);
-              }
-            });
+            order = normalizeScenarioOrder(saved.order);
           }
           selectedId = saved.selectedId || scenarios[0]?.id || "";
           if (saved.globals) {
@@ -1289,9 +1285,14 @@
             ui.angularSign.value = saved.globals.angularSign ?? ui.angularSign.value;
           }
           mergeDefaultScenariosIntoOrder();
+          syncScenariosToOrder();
         } catch (error) {
           log(`Saved settings ignored: ${error.message}`, "warn");
         }
+      }
+
+      function getDefaultEsp32Url() {
+        return activeConfig.defaultEsp32WsUrl || PUBLIC_CONFIG.defaultEsp32WsUrl || "ws://192.168.4.1:81";
       }
 
       function applyGlobalDefaults() {
@@ -1331,11 +1332,27 @@
       }
 
       function mergeDefaultScenariosIntoOrder() {
+        order = normalizeScenarioOrder(order);
         scenarios.forEach((scenario) => {
           if (!order.includes(scenario.id)) {
             order.push(scenario.id);
           }
         });
+      }
+
+      function normalizeScenarioOrder(sourceOrder = []) {
+        const availableIds = new Set(scenarios.map((scenario) => scenario.id));
+        return [...new Set(sourceOrder)].filter((id) => availableIds.has(id));
+      }
+
+      function syncScenariosToOrder() {
+        const byId = new Map(scenarios.map((scenario) => [scenario.id, scenario]));
+        const ordered = order.map((id) => byId.get(id)).filter(Boolean);
+        const orderedIds = new Set(ordered.map((scenario) => scenario.id));
+        scenarios = [
+          ...ordered,
+          ...scenarios.filter((scenario) => !orderedIds.has(scenario.id))
+        ];
       }
 
       function getScenario(id) {
