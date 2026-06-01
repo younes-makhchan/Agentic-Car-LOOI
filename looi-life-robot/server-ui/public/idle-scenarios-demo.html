@@ -304,13 +304,41 @@
 
       .step {
         display: grid;
-        grid-template-columns: 92px minmax(0, 1fr) minmax(0, 1fr) 118px 118px 80px;
+        grid-template-columns: 64px 92px minmax(0, 1fr) minmax(0, 1fr) 118px 118px minmax(130px, auto);
         gap: 10px;
         align-items: end;
         padding: 10px;
         border-radius: 18px;
         background: rgba(255, 255, 255, 0.055);
         border: 1px solid rgba(255, 255, 255, 0.09);
+      }
+
+      .step.drag-over {
+        border-color: rgba(216, 255, 119, 0.7);
+        background: rgba(216, 255, 119, 0.1);
+      }
+
+      .step.drag-source {
+        opacity: 0.55;
+      }
+
+      .drag-handle {
+        align-self: stretch;
+        display: grid;
+        place-items: center;
+        min-height: 42px;
+        padding: 0.55rem;
+        border-radius: 12px;
+        color: var(--muted);
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px dashed rgba(255, 255, 255, 0.18);
+        cursor: grab;
+        user-select: none;
+        touch-action: none;
+      }
+
+      .drag-handle:active {
+        cursor: grabbing;
       }
 
       .step label {
@@ -588,6 +616,7 @@
       let running = false;
       let playToken = 0;
       let lastCommandText = "held";
+      let draggedStep = null;
 
       init();
 
@@ -832,6 +861,11 @@
         normalizeStepInPlace(step);
         const row = document.createElement("div");
         row.className = "step";
+        row.dataset.scenarioId = scenario.id;
+        row.dataset.stepIndex = String(stepIndex);
+        row.addEventListener("dragover", (event) => handleStepDragOver(event, scenario, stepIndex));
+        row.addEventListener("dragleave", () => row.classList.remove("drag-over"));
+        row.addEventListener("drop", (event) => handleStepDrop(event, scenario, stepIndex));
 
         const kindInput = selectInput("Kind", step.kind, [
           { value: "move", label: "Move" },
@@ -848,7 +882,7 @@
           renderAll();
         });
 
-        row.append(kindInput);
+        row.append(stepDragHandle(row, scenario, stepIndex), kindInput);
 
         if (step.kind === "move") {
           row.append(
@@ -917,6 +951,7 @@
         wrap.append(
           button("Up", () => moveStep(scenario, stepIndex, -1)),
           button("Down", () => moveStep(scenario, stepIndex, 1)),
+          button("Copy", () => copyStep(scenario, stepIndex)),
           button("Del", () => {
             scenario.steps.splice(stepIndex, 1);
             if (!scenario.steps.length) {
@@ -926,6 +961,59 @@
           }, "danger")
         );
         return wrap;
+      }
+
+      function stepDragHandle(row, scenario, stepIndex) {
+        const handle = document.createElement("button");
+        handle.type = "button";
+        handle.className = "drag-handle";
+        handle.draggable = true;
+        handle.textContent = "Drag";
+        handle.title = "Drag this step up or down";
+        handle.addEventListener("dragstart", (event) => {
+          draggedStep = { scenarioId: scenario.id, stepIndex };
+          row.classList.add("drag-source");
+          event.dataTransfer.effectAllowed = "move";
+          event.dataTransfer.setData("text/plain", `${scenario.id}:${stepIndex}`);
+        });
+        handle.addEventListener("dragend", () => {
+          draggedStep = null;
+          document.querySelectorAll(".step.drag-source, .step.drag-over").forEach((element) => {
+            element.classList.remove("drag-source", "drag-over");
+          });
+        });
+        return handle;
+      }
+
+      function handleStepDragOver(event, scenario, stepIndex) {
+        if (!draggedStep || draggedStep.scenarioId !== scenario.id || draggedStep.stepIndex === stepIndex) {
+          return;
+        }
+
+        event.preventDefault();
+        event.currentTarget.classList.add("drag-over");
+        event.dataTransfer.dropEffect = "move";
+      }
+
+      function handleStepDrop(event, scenario, toIndex) {
+        if (!draggedStep || draggedStep.scenarioId !== scenario.id) {
+          return;
+        }
+
+        event.preventDefault();
+        event.currentTarget.classList.remove("drag-over");
+        moveStepToIndex(scenario, draggedStep.stepIndex, toIndex);
+        draggedStep = null;
+      }
+
+      function copyStep(scenario, stepIndex) {
+        const source = scenario.steps[stepIndex];
+        if (!source) {
+          return;
+        }
+
+        scenario.steps.splice(stepIndex + 1, 0, { ...source });
+        renderAll();
       }
 
       function addScenario() {
@@ -1208,6 +1296,22 @@
           return;
         }
         [scenario.steps[index], scenario.steps[nextIndex]] = [scenario.steps[nextIndex], scenario.steps[index]];
+        renderAll();
+      }
+
+      function moveStepToIndex(scenario, fromIndex, toIndex) {
+        if (
+          fromIndex === toIndex ||
+          fromIndex < 0 ||
+          toIndex < 0 ||
+          fromIndex >= scenario.steps.length ||
+          toIndex >= scenario.steps.length
+        ) {
+          return;
+        }
+
+        const [step] = scenario.steps.splice(fromIndex, 1);
+        scenario.steps.splice(toIndex, 0, step);
         renderAll();
       }
 
