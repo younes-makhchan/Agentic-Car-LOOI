@@ -4546,6 +4546,7 @@ body {
 
 .looi-activity-indicator[data-state="listening"] .looi-activity-label,
 .looi-activity-indicator[data-state="hearing"] .looi-activity-label,
+.looi-activity-indicator[data-state="speaking"] .looi-activity-label,
 .looi-activity-indicator[data-state="starting"] .looi-activity-label {
   opacity: 1;
 }

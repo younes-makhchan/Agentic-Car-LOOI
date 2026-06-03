@@ -2444,16 +2444,18 @@ function updateLooiActivityIndicator(geminiStatus = geminiLiveRuntime?.getStatus
       !geminiStatus.micStreaming
     )
   );
-  const state = thinking
-    ? "thinking"
-    : hearingUser
-      ? "hearing"
-      : "listening";
+  let state = "listening";
   let label = "Listening";
   if (thinking) {
+    state = "thinking";
     label = "Thinking";
   } else if (geminiOffline) {
     label = "Gemini Offline";
+  } else if (looiSpeaking) {
+    state = "speaking";
+    label = "Speaking";
+  } else if (hearingUser) {
+    state = "hearing";
   } else if (!looiSpeaking && micStarting) {
     label = "Mic Starting";
   } else if (!looiSpeaking && wakeRequired) {
