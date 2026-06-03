@@ -3889,7 +3889,8 @@ function getIdleRuntimeStatus() {
       scenarioFrameSequencer?.getCurrentSequence?.()
     ),
     followRunning: Boolean(followTargetController?.isRunning?.()),
-    idleMotionEnabled: bodyCalibration?.getSettings?.().idleMotionEnabled !== false
+    idleMotionEnabled: bodyCalibration?.getSettings?.().idleMotionEnabled !== false,
+    conversationActive: isConversationGateActive()
   };
 }
 

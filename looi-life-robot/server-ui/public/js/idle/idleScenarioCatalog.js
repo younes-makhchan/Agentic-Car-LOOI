@@ -19,9 +19,105 @@ export const IDLE_SCENARIO_AVAILABILITY = Object.freeze({
 
 export const IDLE_SCENARIOS = Object.freeze([
   idleScenario({
+    id: "idle_custom_15",
+    title: "Head down and default",
+    description: "Head dips down, then returns to default.",
+    animationType: IDLE_SCENARIO_TYPES.HEAD,
+    steps: [
+      headPitch(600, 350, 120),
+      headPitch(570, 350, 120)
+    ]
+  }),
+  idleScenario({
+    id: "idle_custom_13_copy",
+    title: "Head multi up down last ToP",
+    description: "Head moves between bottom/default and finishes at top.",
+    pairWith: "idle_custom_11",
+    animationType: IDLE_SCENARIO_TYPES.HEAD,
+    steps: [
+      headPitch(590, 350, 0),
+      headPitch(570, 350, 0),
+      headPitch(590, 350, 0),
+      headPitch(570, 350, 0),
+      headPitch(530, 350, 120)
+    ]
+  }),
+  idleScenario({
+    id: "idle_custom_13",
+    title: "Head single up and down",
+    description: "Head moves down/default twice.",
+    animationType: IDLE_SCENARIO_TYPES.HEAD,
+    steps: [
+      headPitch(590, 350, 0),
+      headPitch(570, 350, 0),
+      headPitch(590, 350, 0),
+      headPitch(570, 350, 0)
+    ]
+  }),
+  idleScenario({
+    id: "idle_custom_12",
+    title: "Head Top",
+    description: "Head moves to the top position.",
+    pairWith: "idle_custom_11",
+    animationType: IDLE_SCENARIO_TYPES.HEAD,
+    steps: [
+      headPitch(540, 600, 120),
+      stop(120)
+    ]
+  }),
+  idleScenario({
+    id: "idle_custom_11",
+    title: "Head Default",
+    description: "Head returns to the default position.",
+    animationType: IDLE_SCENARIO_TYPES.HEAD,
+    steps: [
+      headPitch(570, 600, 120),
+      stop(120)
+    ]
+  }),
+  idleScenario({
+    id: "idle_custom_10",
+    title: "Head Down",
+    description: "Move the head down.",
+    pairWith: "idle_custom_11",
+    animationType: IDLE_SCENARIO_TYPES.HEAD,
+    steps: [
+      headPitch(600, 600, 120),
+      stop(120)
+    ]
+  }),
+  idleScenario({
+    id: "idle_shift_right_back_left_front_copy",
+    title: "Soft Left Forward Twist With Head tilt",
+    description: "Soft left-forward twist with a parallel head tilt.",
+    pairWith: "idle_shift_right_back_left_front_copy_copy",
+    availability: IDLE_SCENARIO_AVAILABILITY.CONVERSATION_INACTIVE,
+    animationType: IDLE_SCENARIO_TYPES.BODY_HEAD,
+    steps: [
+      headPitch(535, 350, 250, "parallel"),
+      move(0.3, -0.5, 300, 350),
+      move(-0.3, 0.5, 300, 120),
+      headPitch(570, 350, 120, "parallel")
+    ]
+  }),
+  idleScenario({
+    id: "idle_shift_right_back_left_front_copy_copy",
+    title: "Soft Right Forward Twist with Head tilt",
+    description: "Soft right-forward twist with a parallel head tilt.",
+    pairWith: "idle_shift_right_back_left_front_copy",
+    availability: IDLE_SCENARIO_AVAILABILITY.CONVERSATION_INACTIVE,
+    animationType: IDLE_SCENARIO_TYPES.BODY_HEAD,
+    steps: [
+      headPitch(535, 350, 250, "parallel"),
+      move(-0.5, 0.3, 300, 350),
+      move(0.5, -0.3, 300, 120),
+      headPitch(570, 350, 120, "parallel")
+    ]
+  }),
+  idleScenario({
     id: "idle_shift_right_back_left_front",
-    title: "Soft Left-Forward Twist",
-    description: "Left wheel forward, right wheel backward stronger. Balanced by Soft Right-Forward Twist.",
+    title: "Soft Left Forward Twist",
+    description: "Left wheel forward, right wheel backward stronger. Balanced by Soft Right Forward Twist.",
     pairWith: "idle_shift_right_front_left_back",
     steps: [
       move(0.3, -0.5, 125, 70),
@@ -30,8 +126,8 @@ export const IDLE_SCENARIOS = Object.freeze([
   }),
   idleScenario({
     id: "idle_shift_right_front_left_back",
-    title: "Soft Right-Forward Twist",
-    description: "Left wheel backward stronger, right wheel forward. Balanced by Soft Left-Forward Twist.",
+    title: "Soft Right Forward Twist",
+    description: "Left wheel backward stronger, right wheel forward. Balanced by Soft Left Forward Twist.",
     pairWith: "idle_shift_right_back_left_front",
     steps: [
       move(-0.5, 0.3, 125, 70),
@@ -40,7 +136,7 @@ export const IDLE_SCENARIOS = Object.freeze([
   }),
   idleScenario({
     id: "idle_both_front_left_soft",
-    title: "Quick Left-Forward Pivot",
+    title: "Tiny Left Forward Pivot",
     description: "Left wheel forward and right wheel backward with equal strength.",
     pairWith: "idle_custom_6",
     steps: [
@@ -49,28 +145,8 @@ export const IDLE_SCENARIOS = Object.freeze([
     ]
   }),
   idleScenario({
-    id: "idle_both_front_tiny",
-    title: "Quick Forward Pulse",
-    description: "Both wheels forward for a short alive nudge.",
-    pairWith: "idle_custom_7",
-    steps: [
-      move(0.5, 0.5, 80, 110),
-      stop(120)
-    ]
-  }),
-  idleScenario({
-    id: "idle_forward_then_backward",
-    title: "Forward Back",
-    description: "Forward pulse, then backward pulse.",
-    pairWith: "",
-    steps: [
-      move(0.5, 0.5, 80, 175),
-      move(-0.5, -0.5, 80, 175)
-    ]
-  }),
-  idleScenario({
     id: "idle_custom_6",
-    title: "Quick Right-Forward Pivot",
+    title: "Tiny Right Forward Pivot",
     description: "Left wheel backward and right wheel forward with equal strength.",
     pairWith: "idle_both_front_left_soft",
     steps: [
@@ -79,8 +155,18 @@ export const IDLE_SCENARIOS = Object.freeze([
     ]
   }),
   idleScenario({
+    id: "idle_both_front_tiny",
+    title: "Tiny Forward Pulse",
+    description: "Both wheels forward for a short alive nudge.",
+    pairWith: "idle_custom_7",
+    steps: [
+      move(0.5, 0.5, 80, 90),
+      stop(120)
+    ]
+  }),
+  idleScenario({
     id: "idle_custom_7",
-    title: "Quick Backward Pulse",
+    title: "Tiny Backward Pulse",
     description: "Both wheels backward for a short balancing nudge.",
     pairWith: "idle_both_front_tiny",
     steps: [
@@ -89,8 +175,18 @@ export const IDLE_SCENARIOS = Object.freeze([
     ]
   }),
   idleScenario({
+    id: "idle_forward_then_backward",
+    title: "Tiny Forward Back",
+    description: "Forward pulse, then backward pulse.",
+    pairWith: "",
+    steps: [
+      move(0.5, 0.5, 80, 175),
+      move(-0.5, -0.5, 80, 175)
+    ]
+  }),
+  idleScenario({
     id: "idle_custom_8",
-    title: "Forward Back Slow",
+    title: "Tiny Forward Back Slow",
     description: "Forward/backward pulse with a longer forward pause.",
     pairWith: "",
     steps: [
@@ -201,5 +297,16 @@ function stop(pauseMs) {
     right: 0,
     durationMs: 0,
     pauseMs
+  };
+}
+
+function headPitch(pulse, durationMs, pauseMs, mode = "sequence", easing = "ease_in_out_cubic") {
+  return {
+    kind: "head_pitch",
+    pulse,
+    durationMs,
+    pauseMs,
+    mode,
+    easing
   };
 }

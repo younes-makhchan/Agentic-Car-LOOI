@@ -1,9 +1,11 @@
 import {
+  IDLE_SCENARIO_AVAILABILITY,
   IDLE_SCENARIO_GLOBAL_DEFAULTS,
   IDLE_SCENARIO_ORDER,
   IDLE_SCENARIO_TYPES,
   getIdleScenarioChannels,
-  getIdleScenarioById
+  getIdleScenarioById,
+  normalizeIdleScenarioAvailability
 } from "./idleScenarioCatalog.js";
 import {
   HEAD_PITCH_DEFAULT_DURATION_MS,
@@ -578,12 +580,14 @@ export class IdleScenarioScheduler {
     const candidates = IDLE_SCENARIO_ORDER
       .map((id) => getIdleScenarioById(id))
       .filter(Boolean)
+      .filter((scenario) => this.isScenarioAvailable(scenario))
       .filter((scenario) => !blockedSourceIds.has(scenario.id))
       .filter((scenario) => !this.recentScenarioIds.includes(scenario.id));
 
     const fallbackCandidates = IDLE_SCENARIO_ORDER
       .map((id) => getIdleScenarioById(id))
       .filter(Boolean)
+      .filter((scenario) => this.isScenarioAvailable(scenario))
       .filter((scenario) => !blockedSourceIds.has(scenario.id));
     const pool = candidates.length ? candidates : fallbackCandidates;
     const scenario = pool[Math.floor(Math.random() * pool.length)] ?? null;
@@ -612,7 +616,11 @@ export class IdleScenarioScheduler {
 
     const balanceDebt = this.getBalanceDebtForType(targetType);
     const balanceScenario = balanceDebt?.targetId ? getIdleScenarioById(balanceDebt.targetId) : null;
-    if (balanceScenario && balanceScenario.id !== primaryScenario.id) {
+    if (
+      balanceScenario &&
+      balanceScenario.id !== primaryScenario.id &&
+      this.isScenarioAvailable(balanceScenario)
+    ) {
       return {
         scenario: balanceScenario,
         reason: `opposite_balance:${Math.round(balanceDebt.chance * 100)}%`
@@ -641,6 +649,7 @@ export class IdleScenarioScheduler {
       .map((id) => getIdleScenarioById(id))
       .filter(Boolean)
       .filter((scenario) => scenario.id !== primaryScenarioId)
+      .filter((scenario) => this.isScenarioAvailable(scenario))
       .filter((scenario) => !this.getBalanceSourceIds().has(scenario.id))
       .filter((scenario) => !avoidRecent || !this.recentScenarioIds.includes(scenario.id))
       .filter((scenario) => {
@@ -671,6 +680,7 @@ export class IdleScenarioScheduler {
     this.pruneInvalidBalanceDebts();
     const candidates = this.getUniqueBalanceDebtEntries()
       .filter(({ scenario }) => !excludeIds.has(scenario.id))
+      .filter(({ scenario }) => this.isScenarioAvailable(scenario))
       .filter(({ scenario }) => {
         return !targetType || getIdleScenarioChannels(scenario).effectiveAnimationType === targetType;
       })
@@ -816,6 +826,19 @@ export class IdleScenarioScheduler {
         debt ? { ...debt } : null
       ])
     );
+  }
+
+  isScenarioAvailable(scenario) {
+    const availability = normalizeIdleScenarioAvailability(scenario?.availability);
+    if (availability === IDLE_SCENARIO_AVAILABILITY.ALWAYS) {
+      return true;
+    }
+
+    const status = this.getRuntimeStatus?.() ?? {};
+    const conversationActive = Boolean(status.conversationActive);
+    return availability === IDLE_SCENARIO_AVAILABILITY.CONVERSATION_ACTIVE
+      ? conversationActive
+      : !conversationActive;
   }
 
   pickDelayMs(first = false) {
