@@ -275,6 +275,17 @@
           var(--panel-strong);
       }
 
+      .scenario-card.drag-over {
+        border-color: rgba(216, 255, 119, 0.82);
+        background:
+          linear-gradient(135deg, rgba(216, 255, 119, 0.16), transparent 38%),
+          var(--panel-strong);
+      }
+
+      .scenario-card.drag-source {
+        opacity: 0.58;
+      }
+
       .scenario-head {
         display: flex;
         align-items: flex-start;
@@ -292,11 +303,16 @@
         gap: 0.32rem;
       }
 
-      .scenario-title strong {
+      .scenario-title small {
         color: var(--accent);
         font-size: 0.78rem;
         letter-spacing: 0.09em;
         text-transform: uppercase;
+      }
+
+      .scenario-title h3 {
+        font-size: clamp(1.05rem, 1.8vw, 1.45rem);
+        letter-spacing: -0.02em;
       }
 
       .scenario-title p {
@@ -352,6 +368,11 @@
 
       .drag-handle:active {
         cursor: grabbing;
+      }
+
+      .scenario-drag-handle {
+        align-self: stretch;
+        min-width: 58px;
       }
 
       .step label {
@@ -632,6 +653,7 @@
       let playToken = 0;
       let lastCommandText = "held";
       let draggedStep = null;
+      let draggedScenarioId = "";
       let expandedScenarioIds = new Set();
 
       init();
@@ -812,10 +834,14 @@
           const card = document.createElement("article");
           card.className = `scenario-card ${isExpanded ? "expanded" : "collapsed"}${scenario.id === selectedId ? " active" : ""}`;
           card.dataset.id = scenario.id;
+          card.addEventListener("dragover", (event) => handleScenarioDragOver(event, scenario.id));
+          card.addEventListener("dragleave", () => card.classList.remove("drag-over"));
+          card.addEventListener("drop", (event) => handleScenarioDrop(event, scenario.id));
 
           const head = document.createElement("div");
           head.className = "scenario-head";
           head.innerHTML = renderScenarioHeader(scenario, isExpanded);
+          head.prepend(scenarioDragHandle(card, scenario.id));
           const actions = document.createElement("div");
           actions.className = "button-row";
           actions.append(
@@ -904,20 +930,64 @@
         });
       }
 
+      function scenarioDragHandle(card, scenarioId) {
+        const handle = document.createElement("button");
+        handle.type = "button";
+        handle.className = "drag-handle scenario-drag-handle";
+        handle.draggable = true;
+        handle.textContent = "Drag";
+        handle.title = "Drag this animation up or down";
+        handle.addEventListener("dragstart", (event) => {
+          draggedScenarioId = scenarioId;
+          draggedStep = null;
+          card.classList.add("drag-source");
+          event.dataTransfer.effectAllowed = "move";
+          event.dataTransfer.setData("text/plain", scenarioId);
+        });
+        handle.addEventListener("dragend", () => {
+          draggedScenarioId = "";
+          document.querySelectorAll(".scenario-card.drag-source, .scenario-card.drag-over").forEach((element) => {
+            element.classList.remove("drag-source", "drag-over");
+          });
+        });
+        return handle;
+      }
+
+      function handleScenarioDragOver(event, targetScenarioId) {
+        if (!draggedScenarioId || draggedStep || draggedScenarioId === targetScenarioId) {
+          return;
+        }
+
+        event.preventDefault();
+        event.currentTarget.classList.add("drag-over");
+        event.dataTransfer.dropEffect = "move";
+      }
+
+      function handleScenarioDrop(event, targetScenarioId) {
+        if (!draggedScenarioId || draggedStep || draggedScenarioId === targetScenarioId) {
+          return;
+        }
+
+        event.preventDefault();
+        event.currentTarget.classList.remove("drag-over");
+        moveScenarioToIndex(draggedScenarioId, scenarios.findIndex((scenario) => scenario.id === targetScenarioId));
+        draggedScenarioId = "";
+      }
+
       function renderScenarioHeader(scenario, isExpanded) {
         if (isExpanded) {
           return `
             <div class="scenario-title">
-              <strong>Editing</strong>
-              <h3>${escapeHtml(scenario.id)}</h3>
+              <small>Editing ${escapeHtml(scenario.id)}</small>
+              <h3>${escapeHtml(scenario.title)}</h3>
             </div>
           `;
         }
 
         return `
           <div class="scenario-title">
-            <strong>${escapeHtml(scenario.title)}</strong>
-            <h3>${escapeHtml(scenario.id)}</h3>
+            <small>${escapeHtml(scenario.id)}</small>
+            <h3>${escapeHtml(scenario.title)}</h3>
             <span class="summary-pill">${summarizeScenario(scenario)}</span>
           </div>
         `;
@@ -1038,6 +1108,7 @@
         handle.title = "Drag this step up or down";
         handle.addEventListener("dragstart", (event) => {
           draggedStep = { scenarioId: scenario.id, stepIndex };
+          draggedScenarioId = "";
           row.classList.add("drag-source");
           event.dataTransfer.effectAllowed = "move";
           event.dataTransfer.setData("text/plain", `${scenario.id}:${stepIndex}`);
@@ -1201,7 +1272,6 @@
         const token = ++playToken;
         running = true;
         selectedId = scenario.id;
-        openScenario(scenario.id);
         renderAll();
         log(`${dryRun ? "Dry run" : "Playing"} ${scenario.title} (${scenario.id})`, dryRun ? "info" : "warn");
 
@@ -1400,6 +1470,23 @@
 
         const [step] = scenario.steps.splice(fromIndex, 1);
         scenario.steps.splice(toIndex, 0, step);
+        renderAll();
+      }
+
+      function moveScenarioToIndex(id, toIndex) {
+        const fromIndex = scenarios.findIndex((scenario) => scenario.id === id);
+        if (
+          fromIndex === toIndex ||
+          fromIndex < 0 ||
+          toIndex < 0 ||
+          toIndex >= scenarios.length
+        ) {
+          return;
+        }
+
+        const [scenario] = scenarios.splice(fromIndex, 1);
+        scenarios.splice(toIndex, 0, scenario);
+        order = scenarios.map((entry) => entry.id);
         renderAll();
       }
 
