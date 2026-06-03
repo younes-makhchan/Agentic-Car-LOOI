@@ -264,6 +264,10 @@
         padding: 16px;
       }
 
+      .scenario-card.collapsed {
+        padding: 12px 16px;
+      }
+
       .scenario-card.active {
         border-color: rgba(216, 255, 119, 0.66);
         background:
@@ -277,6 +281,10 @@
         justify-content: space-between;
         gap: 12px;
         margin-bottom: 14px;
+      }
+
+      .scenario-card.collapsed .scenario-head {
+        margin-bottom: 0;
       }
 
       .scenario-title {
@@ -295,6 +303,11 @@
         margin: 0;
         color: var(--muted);
         font-size: 0.85rem;
+      }
+
+      .scenario-details {
+        display: grid;
+        gap: 12px;
       }
 
       .step-list {
@@ -507,6 +520,7 @@
                 <button id="playSelected" class="primary" type="button">Play Selected</button>
                 <button id="playOrder" type="button">Play Order</button>
                 <button id="addScenarioButton" type="button">Add Animation</button>
+                <button id="collapseAllButton" type="button">Close All</button>
                 <button id="saveButton" type="button">Save</button>
                 <button id="resetButton" type="button">Reset</button>
               </div>
@@ -598,6 +612,7 @@
         playSelected: document.getElementById("playSelected"),
         playOrder: document.getElementById("playOrder"),
         addScenarioButton: document.getElementById("addScenarioButton"),
+        collapseAllButton: document.getElementById("collapseAllButton"),
         saveButton: document.getElementById("saveButton"),
         resetButton: document.getElementById("resetButton"),
         scenarioGrid: document.getElementById("scenarioGrid"),
@@ -617,6 +632,7 @@
       let playToken = 0;
       let lastCommandText = "held";
       let draggedStep = null;
+      let expandedScenarioIds = new Set();
 
       init();
 
@@ -624,6 +640,7 @@
         activeConfig = await loadConfig();
         ui.esp32Url.value = getDefaultEsp32Url();
         loadSaved();
+        openScenario(selectedId);
         initRobotClient();
         bindEvents();
         renderAll();
@@ -681,11 +698,16 @@
         ui.dryRunButton.addEventListener("click", () => playScenarioById(selectedId, { dryRun: true }));
         ui.playOrder.addEventListener("click", () => playScenarioOrder());
         ui.addScenarioButton.addEventListener("click", () => addScenario());
+        ui.collapseAllButton.addEventListener("click", () => {
+          expandedScenarioIds.clear();
+          renderAll();
+        });
         ui.saveButton.addEventListener("click", () => saveState());
         ui.resetButton.addEventListener("click", () => {
           scenarios = cloneScenarios(DEFAULT_SCENARIOS);
           order = scenarios.map((scenario) => scenario.id);
           selectedId = scenarios[0]?.id ?? "";
+          expandedScenarioIds = new Set([selectedId]);
           applyGlobalDefaults();
           saveState();
           renderAll();
@@ -693,6 +715,7 @@
         });
         ui.scenarioSelect.addEventListener("change", () => {
           selectedId = ui.scenarioSelect.value;
+          openScenario(selectedId);
           renderAll();
         });
         [ui.speedScale, ui.durationScale, ui.rampMs, ui.angularSign].forEach((input) => {
@@ -763,51 +786,58 @@
         ui.scenarioSelect.value = selectedId;
       }
 
+      function openScenario(id) {
+        if (!id) {
+          return;
+        }
+
+        selectedId = id;
+        expandedScenarioIds.add(id);
+      }
+
+      function toggleScenario(id) {
+        selectedId = id;
+        if (expandedScenarioIds.has(id)) {
+          expandedScenarioIds.delete(id);
+        } else {
+          expandedScenarioIds.add(id);
+        }
+        renderAll();
+      }
+
       function renderScenarios() {
         ui.scenarioGrid.replaceChildren();
         scenarios.forEach((scenario) => {
+          const isExpanded = expandedScenarioIds.has(scenario.id);
           const card = document.createElement("article");
-          card.className = `scenario-card${scenario.id === selectedId ? " active" : ""}`;
+          card.className = `scenario-card ${isExpanded ? "expanded" : "collapsed"}${scenario.id === selectedId ? " active" : ""}`;
           card.dataset.id = scenario.id;
 
           const head = document.createElement("div");
           head.className = "scenario-head";
-          head.innerHTML = `
-            <div class="scenario-title">
-              <strong>${escapeHtml(scenario.title)}</strong>
-              <h3>${escapeHtml(scenario.id)}</h3>
-              <p>${escapeHtml(scenario.description)}</p>
-              <span class="summary-pill">${summarizeScenario(scenario)}</span>
-            </div>
-          `;
+          head.innerHTML = renderScenarioHeader(scenario, isExpanded);
           const actions = document.createElement("div");
           actions.className = "button-row";
           actions.append(
-            button("Select", () => {
-              selectedId = scenario.id;
-              renderAll();
-            }),
+            button(isExpanded ? "Close" : "Open", () => toggleScenario(scenario.id), isExpanded ? "ghost" : "primary"),
             button("Play", () => playScenarioById(scenario.id, { dryRun: false }), "primary"),
-            button("Add Step", () => {
-              scenario.steps.push(defaultStep("move"));
-              markScenarioUsesMovement(scenario);
-              renderAll();
-            }),
-            button("Add Head", () => {
-              scenario.steps.push(defaultStep("head_pitch"));
-              markScenarioUsesHead(scenario);
-              renderAll();
-            }),
             button("Copy", () => copyScenario(scenario.id)),
             button("Remove", () => removeScenario(scenario.id), "danger")
           );
           head.append(actions);
           card.append(head);
 
+          if (!isExpanded) {
+            ui.scenarioGrid.append(card);
+            return;
+          }
+
+          const details = document.createElement("div");
+          details.className = "scenario-details";
+
           const meta = document.createElement("div");
           meta.className = "settings-grid";
           meta.style.gridTemplateColumns = "repeat(auto-fit, minmax(220px, 1fr))";
-          meta.style.marginBottom = "12px";
           meta.append(
             textInput("Animation name", scenario.title, (value) => {
               scenario.title = value || scenario.title;
@@ -845,16 +875,52 @@
               updateExport();
             })
           );
-          card.append(meta);
+          details.append(meta);
+
+          const editorActions = document.createElement("div");
+          editorActions.className = "button-row";
+          editorActions.append(
+            button("Add Step", () => {
+              scenario.steps.push(defaultStep("move"));
+              markScenarioUsesMovement(scenario);
+              renderAll();
+            }),
+            button("Add Head", () => {
+              scenario.steps.push(defaultStep("head_pitch"));
+              markScenarioUsesHead(scenario);
+              renderAll();
+            })
+          );
+          details.append(editorActions);
 
           const steps = document.createElement("div");
           steps.className = "step-list";
           scenario.steps.forEach((step, stepIndex) => {
             steps.append(renderStep(scenario, step, stepIndex));
           });
-          card.append(steps);
+          details.append(steps);
+          card.append(details);
           ui.scenarioGrid.append(card);
         });
+      }
+
+      function renderScenarioHeader(scenario, isExpanded) {
+        if (isExpanded) {
+          return `
+            <div class="scenario-title">
+              <strong>Editing</strong>
+              <h3>${escapeHtml(scenario.id)}</h3>
+            </div>
+          `;
+        }
+
+        return `
+          <div class="scenario-title">
+            <strong>${escapeHtml(scenario.title)}</strong>
+            <h3>${escapeHtml(scenario.id)}</h3>
+            <span class="summary-pill">${summarizeScenario(scenario)}</span>
+          </div>
+        `;
       }
 
       function renderStep(scenario, step, stepIndex) {
@@ -1033,7 +1099,7 @@
         };
 
         insertScenarioAtTop(scenario);
-        selectedId = scenario.id;
+        openScenario(scenario.id);
         renderAll();
         log(`Added ${scenario.title}. Click Save to keep it after reload.`);
       }
@@ -1054,7 +1120,7 @@
         };
 
         insertScenarioAfter(source.id, scenario);
-        selectedId = scenario.id;
+        openScenario(scenario.id);
         renderAll();
         log(`Copied ${source.title} to ${scenario.title}. Click Save to keep it after reload.`);
       }
@@ -1098,6 +1164,7 @@
 
         scenarios = scenarios.filter((candidate) => candidate.id !== id);
         order = order.filter((scenarioId) => scenarioId !== id);
+        expandedScenarioIds.delete(id);
         scenarios.forEach((candidate) => {
           if (candidate.pairWith === id) {
             candidate.pairWith = "";
@@ -1105,6 +1172,7 @@
         });
         if (selectedId === id) {
           selectedId = order[0] || scenarios[0]?.id || "";
+          openScenario(selectedId);
         }
         renderAll();
         log(`Removed ${scenario.title}. Click Save to keep this change after reload.`, "warn");
@@ -1133,6 +1201,7 @@
         const token = ++playToken;
         running = true;
         selectedId = scenario.id;
+        openScenario(scenario.id);
         renderAll();
         log(`${dryRun ? "Dry run" : "Playing"} ${scenario.title} (${scenario.id})`, dryRun ? "info" : "warn");
 
