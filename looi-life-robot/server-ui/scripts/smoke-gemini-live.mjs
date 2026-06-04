@@ -260,7 +260,7 @@ runtime.configure({
 await runtime.start({ captureAudio: false });
 assert.equal(runtime.getStatus().connected, true);
 assert.equal(sentMessages[0].setup.model, "models/gemini-3.1-flash-live-preview");
-const sentVideoFrame = await runtime.sendVideoFrame({
+const sentVideoFrame = await runtime.sendVisionFrame({
   data: "data:image/jpeg;base64,aGVsbG8=",
   mimeType: "image/jpeg",
   width: 2,
@@ -278,6 +278,68 @@ fakeTransport.emit({
 });
 await wait(5);
 assert.equal(runtime.getStatus().thinking, true);
+assert.equal(runtime.getStatus().turnActive, true);
+assert.equal(runtime.getStatus().lastInputKind, "audio_transcript");
+
+const droppedBodyContext = await runtime.sendQuietContext("body_context", {
+  scene: { summary: "desk" },
+  source: "smoke"
+}, {
+  wrapper: "body_context",
+  reason: "smoke_body_context"
+});
+assert.equal(droppedBodyContext, false);
+assert.equal(runtime.getStatus().lastInputGateReason, "turn_active");
+
+const busyVisionContextCount = sentMessages.filter((message) =>
+  message.realtimeInput?.text?.startsWith("<vision_context>")
+).length;
+assert.equal(await runtime.sendVisionContext({ force: true, reason: "vision_target_lost" }), false);
+assert.equal(await runtime.sendVisionContext({ force: true, reason: "vision_target_reacquired" }), false);
+assert.equal(
+  sentMessages.filter((message) => message.realtimeInput?.text?.startsWith("<vision_context>")).length,
+  busyVisionContextCount
+);
+
+fakeTransport.emit({
+  serverContent: {
+    generationComplete: true,
+    turnComplete: true
+  }
+});
+await wait(20);
+assert.equal(runtime.getStatus().turnActive, false);
+assert.equal(runtime.getStatus().generationActive, false);
+await wait(520);
+assert.ok(sentMessages.at(-1).realtimeInput.text.includes("vision_target_reacquired"));
+fakeTransport.emit({
+  serverContent: {
+    generationComplete: true,
+    turnComplete: true
+  }
+});
+await wait(520);
+
+fakeTransport.emit({
+  serverContent: {
+    inputTranscription: { text: "second busy turn" }
+  }
+});
+await wait(5);
+assert.equal(runtime.getStatus().turnActive, true);
+const busyUserSent = await runtime.sendUserText("wake command", {
+  source: "smoke",
+  reason: "wake_phrase_command"
+});
+assert.equal(busyUserSent, true);
+assert.equal(sentMessages.at(-1).realtimeInput.text, "wake command");
+fakeTransport.emit({
+  serverContent: {
+    generationComplete: true,
+    turnComplete: true
+  }
+});
+await wait(520);
 
 const pcm = float32ToPcm16(new Float32Array([0, 0.2, -0.2, 0.1]));
 const audioData = arrayBufferToBase64(pcm.buffer);

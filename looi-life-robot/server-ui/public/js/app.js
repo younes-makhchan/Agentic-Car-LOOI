@@ -351,7 +351,6 @@ let roboflowDetectorWanted = false;
 let pendingFollowVisionContextReason = "";
 let geminiAudioWasPlaying = false;
 let geminiVisionResumeTimer = null;
-let geminiAudioEndedAt = 0;
 let nextIdleBodyContextAllowedAt = 0;
 let conversationSleepTimeoutSec = loadConversationSleepTimeoutSec();
 let looiStartupActive = false;
@@ -2623,17 +2622,16 @@ function updateGeminiVisionAudioGate(status = geminiLiveRuntime?.getStatus?.() ?
   }
 
   geminiAudioWasPlaying = false;
-  geminiAudioEndedAt = Date.now();
   scheduleGeminiVisionResumeAfterSpeech("gemini_audio_finished");
 }
 
-function scheduleGeminiVisionResumeAfterSpeech(reason = "gemini_audio_finished") {
+function scheduleGeminiVisionResumeAfterSpeech(reason = "gemini_audio_finished", delayMs = GEMINI_VISION_RESUME_AFTER_SPEECH_MS) {
   clearGeminiVisionResumeTimer();
   geminiVisionResumeTimer = globalThis.setTimeout?.(() => {
     geminiVisionResumeTimer = null;
     flushPendingFollowVisionContext(reason);
     syncGeminiVisionAssist(reason);
-  }, GEMINI_VISION_RESUME_AFTER_SPEECH_MS) ?? null;
+  }, Math.max(20, Number(delayMs) || GEMINI_VISION_RESUME_AFTER_SPEECH_MS)) ?? null;
 }
 
 function clearGeminiVisionResumeTimer() {
@@ -2649,18 +2647,14 @@ function clearPendingGeminiVisionAfterSpeech() {
   clearGeminiVisionResumeTimer();
   pendingFollowVisionContextReason = "";
   geminiAudioWasPlaying = false;
-  geminiAudioEndedAt = 0;
 }
 
 function isGeminiAudioPlaying(status = geminiLiveRuntime?.getStatus?.() ?? {}) {
   return Boolean(status.audioPlaying || geminiLiveRuntime?.hasOutputAudioInFlight?.());
 }
 
-function isGeminiVisionSpeechCooldownActive() {
-  return Boolean(
-    geminiAudioEndedAt &&
-    Date.now() - geminiAudioEndedAt < GEMINI_VISION_RESUME_AFTER_SPEECH_MS
-  );
+function getGeminiQuietInputGate(kind = "quiet_context") {
+  return geminiLiveRuntime?.getQuietInputGate?.(kind) ?? { ok: false, reason: "not_connected", kind };
 }
 
 function syncGeminiVisionAssist(reason = "sync") {
@@ -2668,6 +2662,9 @@ function syncGeminiVisionAssist(reason = "sync") {
   updateGeminiVisionAssistUi(state);
 
   if (!state.shouldRun) {
+    if (state.reason === "quiet_cooldown" && Number(state.quietRetryAfterMs || 0) > 0) {
+      scheduleGeminiVisionResumeAfterSpeech(reason, state.quietRetryAfterMs);
+    }
     stopGeminiVisionAssist(state.reason);
     return;
   }
@@ -2701,6 +2698,12 @@ async function sendGeminiVisionAssistFrame(reason = "frame") {
     return false;
   }
 
+  const quietGate = getGeminiQuietInputGate("vision_frame");
+  if (!quietGate.ok) {
+    updateGeminiVisionAssistUi(getGeminiVisionAssistState(quietGate.reason));
+    return false;
+  }
+
   geminiVisionAssistSending = true;
   try {
     const result = await cameraInput?.captureSnapshot?.({
@@ -2720,12 +2723,7 @@ async function sendGeminiVisionAssistFrame(reason = "frame") {
       return false;
     }
 
-    if (shouldHoldGeminiVisionInput()) {
-      updateGeminiVisionAssistUi(getGeminiVisionAssistState("gemini_audio_playing"));
-      return false;
-    }
-
-    const sent = await geminiLiveRuntime?.sendVideoFrame?.({
+    const sent = await geminiLiveRuntime?.sendVisionFrame?.({
       data: result.snapshot.dataUrl,
       mimeType: "image/jpeg",
       width: result.snapshot.width,
@@ -2746,25 +2744,21 @@ async function sendGeminiVisionAssistFrame(reason = "frame") {
 function getGeminiVisionAssistState(reason = "") {
   const geminiStatus = geminiLiveRuntime?.getStatus?.() ?? {};
   const cameraStatus = cameraInput?.getCameraStatus?.() ?? {};
-  const audioPlaying = isGeminiAudioPlaying(geminiStatus);
-  const speechCooldownActive = isGeminiVisionSpeechCooldownActive();
+  const quietGate = getGeminiQuietInputGate("vision_frame");
   const blockedReason = !geminiVisionAssistEnabled
     ? "disabled"
     : !geminiStatus.connected
       ? "gemini_not_connected"
-      : audioPlaying
-        ? "gemini_audio_playing"
-        : speechCooldownActive
-          ? "gemini_audio_cooldown"
-          : !cameraStatus.running
-            ? "camera_off"
-            : "running";
+      : !cameraStatus.running
+        ? "camera_off"
+        : !quietGate.ok
+          ? quietGate.reason
+          : "running";
   const shouldRun = Boolean(
     geminiVisionAssistEnabled &&
     geminiStatus.connected &&
-    !audioPlaying &&
-    !speechCooldownActive &&
-    cameraStatus.running
+    cameraStatus.running &&
+    quietGate.ok
   );
 
   return {
@@ -2772,8 +2766,9 @@ function getGeminiVisionAssistState(reason = "") {
     enabled: geminiVisionAssistEnabled,
     connected: Boolean(geminiStatus.connected),
     cameraRunning: Boolean(cameraStatus.running),
-    audioPlaying,
-    speechCooldownActive,
+    audioPlaying: isGeminiAudioPlaying(geminiStatus),
+    quietGateReason: quietGate.reason,
+    quietRetryAfterMs: Number(quietGate.retryAfterMs || 0),
     followActive: isFollowVisionModeActive(),
     reason: shouldRun ? reason || "running" : blockedReason
   };
@@ -2953,6 +2948,7 @@ function updateOutputAudioUi() {
 
 function handleGeminiLiveStatus(status = geminiLiveRuntime?.getStatus?.() ?? {}) {
   updateConversationGateFromGeminiStatus(status);
+  flushPendingFollowVisionContext("gemini_status");
   updateGeminiLiveUi(status);
 }
 
@@ -3054,7 +3050,10 @@ async function activateConversationFromWake({
 
     const cleanCommandText = String(commandText ?? "").trim();
     if (cleanCommandText) {
-      const sent = await geminiLiveRuntime.sendText(cleanCommandText);
+      const sent = await geminiLiveRuntime.sendUserText(cleanCommandText, {
+        source: "wake_phrase",
+        reason: "wake_phrase_command"
+      });
       if (sent) {
         log(`Wake command forwarded to Gemini: "${cleanCommandText}"`, "debug");
       }
@@ -3435,7 +3434,7 @@ function isRecentUserTranscript(geminiStatus = {}, now = Date.now()) {
 }
 
 function sendIdleBodyContextToGemini(payload = {}, reason = "idle_body_context") {
-  if (!geminiLiveRuntime?.sendText) {
+  if (!geminiLiveRuntime?.sendQuietContext) {
     return false;
   }
 
@@ -3458,11 +3457,13 @@ function sendIdleBodyContextToGemini(payload = {}, reason = "idle_body_context")
     return false;
   }
 
-  if (shouldHoldGeminiVisionInput()) {
+  const quietGate = getGeminiQuietInputGate("body_context");
+  if (!quietGate.ok) {
+    deferIdleBodyContext(quietGate.reason);
     return false;
   }
 
-  if (geminiStatus.thinking || geminiStatus.toolCallActive || isRecentUserTranscript(geminiStatus, now)) {
+  if (isRecentUserTranscript(geminiStatus, now)) {
     return false;
   }
 
@@ -3493,7 +3494,11 @@ function sendIdleBodyContextToGemini(payload = {}, reason = "idle_body_context")
     timestamp: new Date().toISOString()
   };
 
-  const sent = geminiLiveRuntime.sendText(`<body_context>${safeStringify(context)}</body_context>`);
+  const sent = geminiLiveRuntime.sendQuietContext("body_context", context, {
+    wrapper: "body_context",
+    reason,
+    coalesce: false
+  });
   sent?.then?.((ok) => {
     if (ok) {
       const nextGapSec = pickIdleBodyContextGapSec();
@@ -3542,17 +3547,14 @@ function sendFollowStateContext(reason = "follow_context") {
     return false;
   }
 
-  if (shouldHoldGeminiVisionInput()) {
+  const quietGate = getGeminiQuietInputGate("vision_context");
+  if (!quietGate.ok) {
     pendingFollowVisionContextReason = reason;
-    log(`Gemini follow context queued until speech ends reason=${reason}`, "debug");
+    log(`Gemini follow context queued reason=${reason} gate=${quietGate.reason}`, "debug");
     return false;
   }
 
   return sendFollowStateContextNow(reason);
-}
-
-function shouldHoldGeminiVisionInput() {
-  return isGeminiAudioPlaying() || isGeminiVisionSpeechCooldownActive();
 }
 
 function flushPendingFollowVisionContext(trigger = "gemini_audio_finished") {
@@ -3560,8 +3562,11 @@ function flushPendingFollowVisionContext(trigger = "gemini_audio_finished") {
     return false;
   }
 
-  if (shouldHoldGeminiVisionInput()) {
-    scheduleGeminiVisionResumeAfterSpeech(trigger);
+  const quietGate = getGeminiQuietInputGate("vision_context");
+  if (!quietGate.ok) {
+    if (quietGate.reason === "quiet_cooldown" && Number(quietGate.retryAfterMs || 0) > 0) {
+      scheduleGeminiVisionResumeAfterSpeech(trigger, quietGate.retryAfterMs);
+    }
     return false;
   }
 

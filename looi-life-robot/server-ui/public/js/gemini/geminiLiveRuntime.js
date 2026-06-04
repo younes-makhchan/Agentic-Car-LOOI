@@ -12,6 +12,7 @@ const DEFAULT_WS_BASE =
 const INPUT_BUFFER_SIZE = 2048;
 const INPUT_ACTIVE_LEVEL = 0.018;
 const INPUT_ACTIVE_HOLD_MS = 260;
+const QUIET_INPUT_COOLDOWN_MS = 450;
 
 export class GeminiLiveRuntime {
   constructor({
@@ -48,7 +49,12 @@ export class GeminiLiveRuntime {
     this.activeOutputSources = new Set();
     this.nextOutputTime = 0;
     this.audioStatusTimer = 0;
+    this.lastAudioPlaybackEndedAt = 0;
     this.pendingToolCalls = new Map();
+    this.inputCoordinator = new GeminiInputCoordinator({
+      runtime: this,
+      now: this.now
+    });
     this.lastVisionContextSignature = "";
     this.lastVisionContextSentAt = 0;
     this.lastSpeechStartScenarioSignature = "";
@@ -102,7 +108,14 @@ export class GeminiLiveRuntime {
       inputLevel: 0,
       inputActive: false,
       lastInputAudioAt: 0,
-      lastVoiceAt: 0
+      lastVoiceAt: 0,
+      generationActive: false,
+      turnActive: false,
+      lastGenerationCompleteAt: 0,
+      lastTurnCompleteAt: 0,
+      lastInterruptedAt: 0,
+      lastInputKind: "",
+      lastInputGateReason: ""
     };
   }
 
@@ -127,8 +140,10 @@ export class GeminiLiveRuntime {
 
   getStatus() {
     const pendingToolCallCount = this.pendingToolCalls?.size ?? 0;
+    const pendingQuietInputCount = this.inputCoordinator?.pendingQuietInputs?.size ?? 0;
     return {
       ...this.status,
+      pendingQuietInputCount,
       pendingToolCallCount,
       toolCallActive: pendingToolCallCount > 0 || Boolean(this.deferredSpeechStartScenario)
     };
@@ -233,9 +248,10 @@ export class GeminiLiveRuntime {
   async stop(reason = "gemini_live_stop") {
     this.runToken += 1;
     this.interruptAudio(reason);
-    this.stopMic();
+    this.stopMic({ notifyGemini: true, reason });
     this.cleanupTransport();
     this.pendingToolCalls.clear();
+    this.inputCoordinator?.reset?.(reason);
     this.lifeEngine?.setListening?.(false);
     this.patchStatus({
       running: false,
@@ -244,7 +260,9 @@ export class GeminiLiveRuntime {
       micStreaming: false,
       audioPlaying: false,
       thinking: false,
-      setupComplete: false
+      setupComplete: false,
+      generationActive: false,
+      turnActive: false
     });
     this.log(`Gemini Live stopped: ${reason}`);
     return this.getStatus();
@@ -253,9 +271,13 @@ export class GeminiLiveRuntime {
   interrupt(reason = "gemini_live_interrupt") {
     this.interruptAudio(reason);
     this.pendingToolCalls.clear();
+    this.inputCoordinator?.clearPendingQuiet?.(reason);
     this.patchStatus({
       audioPlaying: false,
       thinking: false,
+      generationActive: false,
+      turnActive: false,
+      lastInterruptedAt: this.now(),
       lastToolResult: `interrupted:${reason}`
     });
   }
@@ -280,24 +302,22 @@ export class GeminiLiveRuntime {
       return this.getStatus();
     }
 
-    this.stopMic();
+    this.stopMic({ notifyGemini: true, reason });
     this.lifeEngine?.setListening?.(false);
     this.log(`Gemini Live mic disabled: ${reason}`);
     return this.getStatus();
   }
 
-  async sendText(text) {
-    const cleanText = String(text ?? "").trim();
-    if (!cleanText || !this.status.connected) {
-      return false;
-    }
+  async sendUserText(text, metadata = {}) {
+    return this.inputCoordinator.sendUserText(text, metadata);
+  }
 
-    this.sendJson({
-      realtimeInput: {
-        text: cleanText
-      }
-    });
-    return true;
+  async sendQuietContext(kind, payload, metadata = {}) {
+    return this.inputCoordinator.sendQuietContext(kind, payload, metadata);
+  }
+
+  getQuietInputGate(kind = "quiet_context") {
+    return this.inputCoordinator.getQuietInputGate(kind);
   }
 
   async sendVisionContext({ force = false, reason = "" } = {}) {
@@ -318,44 +338,42 @@ export class GeminiLiveRuntime {
       return false;
     }
 
-    this.lastVisionContextSignature = signature;
-    this.lastVisionContextSentAt = this.now();
-    this.log(
-      `GEMINI vision context sent reason=${reason || "none"} force=${Boolean(force)} bytes=${text.length}`,
-      "debug"
-    );
-    return this.sendText(`<vision_context>${text}</vision_context>`);
+    return this.sendQuietContext("vision_context", payload, {
+      wrapper: "vision_context",
+      reason,
+      force,
+      coalesce: true,
+      onSent: () => {
+        this.lastVisionContextSignature = signature;
+        this.lastVisionContextSentAt = this.now();
+        this.log(
+          `GEMINI vision context sent reason=${reason || "none"} force=${Boolean(force)} bytes=${text.length}`,
+          "debug"
+        );
+      },
+      onQueued: () => {
+        this.log(
+          `GEMINI vision context queued reason=${reason || "none"} force=${Boolean(force)} bytes=${text.length}`,
+          "debug"
+        );
+      }
+    });
   }
 
-  async sendVideoFrame({
+  async sendVisionFrame({
     data,
     mimeType = "image/jpeg",
     width = null,
     height = null,
     reason = "gemini_vision"
   } = {}) {
-    const cleanData = stripDataUrlPrefix(data);
-
-    if (!cleanData || !this.status.connected) {
-      return false;
-    }
-
-    this.sendJson({
-      realtimeInput: {
-        video: {
-          data: cleanData,
-          mimeType
-        }
-      }
+    return this.inputCoordinator.sendVisionFrame({
+      data,
+      mimeType,
+      width,
+      height,
+      reason
     });
-
-    const sentVideoFrames = Number(this.status.sentVideoFrames || 0) + 1;
-    this.patchStatus({
-      lastVideoFrameAt: this.now(),
-      sentVideoFrames,
-      lastVideoFrameDebug: `${reason}: ${mimeType} ${width ?? "?"}x${height ?? "?"} bytes~${estimateBase64Bytes(cleanData)}`
-    });
-    return true;
   }
 
   async openTransport(url, runToken) {
@@ -400,12 +418,15 @@ export class GeminiLiveRuntime {
           }
         },
         onClose: () => {
+          this.inputCoordinator?.clearPendingQuiet?.("transport_closed");
           this.patchStatus({
             connected: false,
             running: false,
             micStreaming: false,
             audioPlaying: false,
-            thinking: false
+            thinking: false,
+            generationActive: false,
+            turnActive: false
           });
           this.lifeEngine?.setListening?.(false);
         }
@@ -485,7 +506,11 @@ export class GeminiLiveRuntime {
     this.log("GEMINI STEP 4 mic streaming started");
   }
 
-  stopMic() {
+  stopMic({ notifyGemini = false, reason = "stop_mic" } = {}) {
+    if (notifyGemini) {
+      this.sendAudioStreamEnd(reason);
+    }
+
     try {
       this.processor?.disconnect?.();
       this.inputSource?.disconnect?.();
@@ -500,6 +525,29 @@ export class GeminiLiveRuntime {
     this.inputAudioContext?.close?.().catch?.(() => {});
     this.inputAudioContext = null;
     this.patchStatus({ micStreaming: false, inputActive: false, inputLevel: 0 });
+  }
+
+  sendAudioStreamEnd(reason = "audio_stream_end") {
+    if (!this.status.connected || !this.transport?.send) {
+      return false;
+    }
+
+    try {
+      this.sendJson({
+        realtimeInput: {
+          audioStreamEnd: true
+        }
+      });
+      this.patchStatus({
+        lastInputKind: "audio_stream_end",
+        lastInputGateReason: reason
+      });
+      this.log(`Gemini Live audioStreamEnd sent: ${reason}`, "debug");
+      return true;
+    } catch (error) {
+      this.log(`Gemini Live audioStreamEnd failed: ${error.message}`, "debug");
+      return false;
+    }
   }
 
   async handleTransportMessage(rawMessage) {
@@ -531,12 +579,15 @@ export class GeminiLiveRuntime {
 
     const transcriptions = this.handleTranscriptions(message);
 
-    if (message.serverContent?.interrupted) {
+    const lifecycle = readServerLifecycle(message);
+    if (lifecycle.interrupted) {
+      this.inputCoordinator.handleInterrupted("gemini_server_interrupted");
       this.interruptAudio("gemini_server_interrupted");
     }
 
     const audioChunks = extractAudioChunks(message);
     if (audioChunks.length) {
+      this.inputCoordinator.markModelOutputStarted("audio");
       const bytes = audioChunks.reduce((total, chunk) => total + estimateBase64Bytes(chunk.data), 0);
       this.audioDebug.receivedAudioChunks += audioChunks.length;
       this.audioDebug.receivedAudioBytes += bytes;
@@ -545,6 +596,9 @@ export class GeminiLiveRuntime {
 
     const functionCalls = readFunctionCalls(message);
     const cancelledToolCallIds = readToolCallCancellationIds(message);
+    if (functionCalls.length) {
+      this.inputCoordinator.markToolTurnStarted();
+    }
     this.log(`Gemini tool requests: ${summarizeToolRequests(functionCalls, cancelledToolCallIds)}`);
 
     if (functionCalls.length) {
@@ -559,6 +613,20 @@ export class GeminiLiveRuntime {
         this.patchStatus({ lastError: error.message });
         this.log(`Gemini Live tool cancellation failed: ${error.message}`, "warn");
       });
+    }
+
+    this.handleServerLifecycle(message);
+  }
+
+  handleServerLifecycle(message = {}) {
+    const lifecycle = readServerLifecycle(message);
+
+    if (lifecycle.generationComplete) {
+      this.inputCoordinator.handleGenerationComplete();
+    }
+
+    if (lifecycle.turnComplete) {
+      this.inputCoordinator.handleTurnComplete();
     }
   }
 
@@ -591,11 +659,15 @@ export class GeminiLiveRuntime {
       this.patchStatus({
         lastInputTranscript: inputText,
         lastInputTranscriptAt: this.now(),
-        thinking: true
+        thinking: true,
+        turnActive: true,
+        lastInputKind: "audio_transcript",
+        lastInputGateReason: "received_input_transcription"
       });
     }
 
     if (outputText) {
+      this.inputCoordinator.markModelOutputStarted("output_transcription");
       this.patchStatus({ lastOutputTranscript: outputText });
 
       if (this.status.audioPlaying || this.activeOutputSources.size > 0) {
@@ -902,6 +974,7 @@ export class GeminiLiveRuntime {
   }
 
   interruptAudio(reason = "gemini_live_audio_interrupt") {
+    this.inputCoordinator?.clearPendingQuiet?.(reason);
     this.activeOutputSources.forEach((source) => {
       try {
         source.stop();
@@ -915,7 +988,13 @@ export class GeminiLiveRuntime {
     this.nextOutputTime = this.outputAudioContext?.currentTime ?? 0;
     this.face?.setSpeaking?.(false);
     this.lifeEngine?.setSpeaking?.(false);
-    this.patchStatus({ audioPlaying: false, thinking: false });
+    this.patchStatus({
+      audioPlaying: false,
+      thinking: false,
+      generationActive: false,
+      turnActive: false,
+      lastInterruptedAt: this.now()
+    });
     this.log(`Gemini Live audio interrupted: ${reason}`);
   }
 
@@ -997,9 +1076,11 @@ export class GeminiLiveRuntime {
       outputAudioState: this.outputAudioContext?.state ?? this.status.outputAudioState
     });
     if (!playing) {
+      this.lastAudioPlaybackEndedAt = this.now();
       this.face?.setSpeaking?.(false);
       this.lifeEngine?.setSpeaking?.(false);
       this.scheduleSpeechStartScenarioFinish();
+      this.inputCoordinator.handlePlaybackComplete();
     }
   }
 
@@ -1307,6 +1388,327 @@ export class GeminiLiveRuntime {
       this.logger(message, level);
     }
   }
+}
+
+export class GeminiInputCoordinator {
+  constructor({ runtime, now } = {}) {
+    this.runtime = runtime;
+    this.now = now ?? (() => Date.now());
+    this.pendingQuietInputs = new Map();
+    this.flushTimer = 0;
+  }
+
+  reset(reason = "reset") {
+    this.clearPendingQuiet(reason);
+    this.clearFlushTimer();
+  }
+
+  getQuietInputGate(kind = "quiet_context") {
+    const status = this.runtime?.status ?? {};
+    const now = this.now();
+
+    if (!status.connected) {
+      return buildInputGate(false, "not_connected", kind);
+    }
+
+    if ((this.runtime?.pendingToolCalls?.size ?? 0) > 0 || this.runtime?.deferredSpeechStartScenario) {
+      return buildInputGate(false, "tool_call_active", kind);
+    }
+
+    if (status.audioPlaying || this.runtime?.hasOutputAudioInFlight?.()) {
+      return buildInputGate(false, "audio_playing", kind);
+    }
+
+    if (status.generationActive) {
+      return buildInputGate(false, "generation_active", kind);
+    }
+
+    if (status.turnActive) {
+      return buildInputGate(false, "turn_active", kind);
+    }
+
+    if (status.thinking) {
+      return buildInputGate(false, "thinking", kind);
+    }
+
+    const cooldownAnchor = Math.max(
+      Number(status.lastTurnCompleteAt || 0),
+      Number(this.runtime?.lastAudioPlaybackEndedAt || 0),
+      Number(status.lastInterruptedAt || 0)
+    );
+    const cooldownRemainingMs = cooldownAnchor
+      ? QUIET_INPUT_COOLDOWN_MS - (now - cooldownAnchor)
+      : 0;
+
+    if (cooldownRemainingMs > 0) {
+      return buildInputGate(false, "quiet_cooldown", kind, cooldownRemainingMs);
+    }
+
+    return buildInputGate(true, "ready", kind);
+  }
+
+  async sendUserText(text, metadata = {}) {
+    const cleanText = String(text ?? "").trim();
+    const kind = String(metadata.kind ?? "user_text").trim() || "user_text";
+
+    if (!cleanText || !this.runtime?.status?.connected) {
+      this.patchGateStatus(kind, "not_connected_or_empty");
+      return false;
+    }
+
+    this.clearPendingQuiet("user_text");
+    this.runtime.sendJson({
+      realtimeInput: {
+        text: cleanText
+      }
+    });
+    this.runtime.patchStatus({
+      thinking: true,
+      turnActive: true,
+      lastInputKind: kind,
+      lastInputGateReason: metadata.reason || metadata.source || "sent"
+    });
+    return true;
+  }
+
+  async sendQuietContext(kind = "quiet_context", payload = {}, metadata = {}) {
+    const cleanKind = String(kind || "quiet_context").trim() || "quiet_context";
+    const entry = this.buildQuietTextEntry(cleanKind, payload, metadata);
+
+    if (!entry.text) {
+      this.patchGateStatus(cleanKind, "empty");
+      return false;
+    }
+
+    const gate = this.getQuietInputGate(cleanKind);
+    if (!gate.ok) {
+      this.patchGateStatus(cleanKind, gate.reason);
+
+      if (metadata.coalesce === true && gate.reason !== "not_connected") {
+        this.pendingQuietInputs.set(cleanKind, entry);
+        metadata.onQueued?.(gate);
+        this.schedulePendingQuietFlush(`queued:${gate.reason}`);
+      } else {
+        metadata.onDropped?.(gate);
+      }
+
+      return false;
+    }
+
+    this.sendQuietTextEntry(entry, gate.reason);
+    return true;
+  }
+
+  async sendVisionFrame({
+    data,
+    mimeType = "image/jpeg",
+    width = null,
+    height = null,
+    reason = "gemini_vision"
+  } = {}) {
+    const cleanData = stripDataUrlPrefix(data);
+
+    if (!cleanData || !this.runtime?.status?.connected) {
+      this.patchGateStatus("vision_frame", "not_connected_or_empty");
+      return false;
+    }
+
+    const gate = this.getQuietInputGate("vision_frame");
+    if (!gate.ok) {
+      this.patchGateStatus("vision_frame", gate.reason);
+      return false;
+    }
+
+    this.runtime.sendJson({
+      realtimeInput: {
+        video: {
+          data: cleanData,
+          mimeType
+        }
+      }
+    });
+
+    const sentVideoFrames = Number(this.runtime.status.sentVideoFrames || 0) + 1;
+    this.runtime.patchStatus({
+      lastVideoFrameAt: this.now(),
+      sentVideoFrames,
+      lastVideoFrameDebug: `${reason}: ${mimeType} ${width ?? "?"}x${height ?? "?"} bytes~${estimateBase64Bytes(cleanData)}`,
+      lastInputKind: "vision_frame",
+      lastInputGateReason: gate.reason
+    });
+    return true;
+  }
+
+  markModelOutputStarted(source = "model_output") {
+    this.runtime?.patchStatus?.({
+      generationActive: true,
+      turnActive: true,
+      lastInputGateReason: source
+    });
+  }
+
+  markToolTurnStarted() {
+    this.runtime?.patchStatus?.({
+      turnActive: true,
+      lastInputGateReason: "tool_call_received"
+    });
+  }
+
+  handleGenerationComplete() {
+    this.runtime?.patchStatus?.({
+      generationActive: false,
+      lastGenerationCompleteAt: this.now()
+    });
+    this.schedulePendingQuietFlush("generation_complete");
+  }
+
+  handleTurnComplete() {
+    this.runtime?.patchStatus?.({
+      generationActive: false,
+      turnActive: false,
+      thinking: false,
+      lastTurnCompleteAt: this.now()
+    });
+    this.schedulePendingQuietFlush("turn_complete");
+  }
+
+  handlePlaybackComplete() {
+    const status = this.runtime?.status ?? {};
+
+    if (!status.generationActive && status.turnActive) {
+      this.runtime.patchStatus({
+        turnActive: false,
+        thinking: false,
+        lastTurnCompleteAt: this.now()
+      });
+    }
+
+    this.schedulePendingQuietFlush("playback_complete");
+  }
+
+  handleInterrupted(reason = "interrupted") {
+    this.clearPendingQuiet(reason);
+    this.clearFlushTimer();
+    this.runtime?.patchStatus?.({
+      generationActive: false,
+      turnActive: false,
+      thinking: false,
+      lastInterruptedAt: this.now(),
+      lastInputGateReason: reason
+    });
+  }
+
+  clearPendingQuiet(reason = "clear_pending_quiet") {
+    if (!this.pendingQuietInputs.size) {
+      return;
+    }
+
+    this.pendingQuietInputs.clear();
+    this.runtime?.log?.(`GEMINI quiet input pending cleared (${reason})`, "debug");
+  }
+
+  buildQuietTextEntry(kind, payload, metadata = {}) {
+    const wrapper = String(metadata.wrapper ?? kind).trim();
+    const payloadText = typeof payload === "string"
+      ? payload.trim()
+      : safeStringify(payload);
+    const text = metadata.rawText === true
+      ? payloadText
+      : wrapper
+        ? `<${wrapper}>${payloadText}</${wrapper}>`
+        : payloadText;
+
+    return {
+      kind,
+      text,
+      metadata
+    };
+  }
+
+  sendQuietTextEntry(entry, gateReason = "ready") {
+    this.runtime.sendJson({
+      realtimeInput: {
+        text: entry.text
+      }
+    });
+    this.runtime.patchStatus({
+      thinking: true,
+      turnActive: true,
+      lastInputKind: entry.kind,
+      lastInputGateReason: entry.metadata.reason || gateReason || "sent"
+    });
+    entry.metadata.onSent?.();
+  }
+
+  schedulePendingQuietFlush(trigger = "pending_quiet") {
+    if (!this.pendingQuietInputs.size || this.flushTimer) {
+      return;
+    }
+
+    const firstEntry = this.pendingQuietInputs.values().next().value;
+    const gate = this.getQuietInputGate(firstEntry?.kind);
+    const delayMs = gate.ok
+      ? 0
+      : gate.reason === "quiet_cooldown"
+        ? Math.max(20, Number(gate.retryAfterMs || QUIET_INPUT_COOLDOWN_MS))
+        : 0;
+
+    if (!gate.ok && delayMs <= 0) {
+      return;
+    }
+
+    this.flushTimer = globalThis.setTimeout?.(() => {
+      this.flushTimer = 0;
+      this.flushPendingQuiet(trigger);
+    }, delayMs) ?? 0;
+  }
+
+  flushPendingQuiet(trigger = "pending_quiet") {
+    if (!this.pendingQuietInputs.size) {
+      return false;
+    }
+
+    const [kind, entry] = this.pendingQuietInputs.entries().next().value ?? [];
+    if (!entry) {
+      return false;
+    }
+
+    const gate = this.getQuietInputGate(kind);
+    if (!gate.ok) {
+      this.schedulePendingQuietFlush(`still_blocked:${gate.reason}`);
+      return false;
+    }
+
+    this.pendingQuietInputs.delete(kind);
+    this.runtime?.log?.(`GEMINI quiet input flushed kind=${kind} trigger=${trigger}`, "debug");
+    this.sendQuietTextEntry(entry, `flushed:${trigger}`);
+    return true;
+  }
+
+  clearFlushTimer() {
+    if (!this.flushTimer) {
+      return;
+    }
+
+    globalThis.clearTimeout?.(this.flushTimer);
+    this.flushTimer = 0;
+  }
+
+  patchGateStatus(kind, reason) {
+    this.runtime?.patchStatus?.({
+      lastInputKind: kind,
+      lastInputGateReason: reason
+    });
+  }
+}
+
+function buildInputGate(ok, reason, kind, retryAfterMs = 0) {
+  return {
+    ok: Boolean(ok),
+    reason,
+    kind,
+    retryAfterMs: Math.max(0, Math.ceil(Number(retryAfterMs) || 0))
+  };
 }
 
 function downsampleFloat32(input, inputRate, outputRate) {
@@ -1672,6 +2074,7 @@ function summarizeServerMessage(message = {}) {
     ...(message.serverContent?.modelTurn?.parts ?? []),
     ...(message.modelTurn?.parts ?? [])
   ];
+  const lifecycle = readServerLifecycle(message);
   const audioCount = parts.filter((part) => {
     const inlineData = part.inlineData ?? part.inline_data;
     const mimeType = inlineData?.mimeType ?? inlineData?.mime_type ?? "";
@@ -1689,10 +2092,32 @@ function summarizeServerMessage(message = {}) {
   if (textCount) labels.push(`text:${textCount}`);
   if (toolCount) labels.push(`tool:${toolCount}`);
   if (cancelCount) labels.push(`cancel:${cancelCount}`);
-  if (message.serverContent?.interrupted) labels.push("interrupted");
+  if (lifecycle.interrupted) labels.push("interrupted");
+  if (lifecycle.generationComplete) labels.push("generationComplete");
+  if (lifecycle.turnComplete) labels.push("turnComplete");
   if (!labels.length) labels.push(Object.keys(message).slice(0, 4).join(",") || "unknown");
 
   return labels.join(" | ");
+}
+
+function readServerLifecycle(message = {}) {
+  const serverContent = message.serverContent ?? message.server_content ?? {};
+
+  return {
+    interrupted: Boolean(serverContent.interrupted),
+    generationComplete: Boolean(
+      serverContent.generationComplete ??
+      serverContent.generation_complete ??
+      message.generationComplete ??
+      message.generation_complete
+    ),
+    turnComplete: Boolean(
+      serverContent.turnComplete ??
+      serverContent.turn_complete ??
+      message.turnComplete ??
+      message.turn_complete
+    )
+  };
 }
 
 function readFunctionCalls(message = {}) {
