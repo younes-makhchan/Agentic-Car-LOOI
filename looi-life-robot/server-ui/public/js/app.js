@@ -38,7 +38,11 @@ import {
 } from "./vision/objectDetectorEngine.js";
 import { ObjectTracker } from "./vision/objectTracker.js";
 import { VisionState } from "./vision/visionState.js";
-import { buildVisionContext, findMentionedObjectLabels } from "./vision/visionMetadataBuilder.js";
+import {
+  buildVisionContext,
+  findMentionedObjectLabels,
+  summarizeVisibleObjects
+} from "./vision/visionMetadataBuilder.js";
 import { FollowTargetController } from "./vision/followTargetController.js";
 import { VisionScenarioManager } from "./vision/visionScenarioManager.js";
 
@@ -49,8 +53,8 @@ const FRONT_CAMERA_DEVICE_STORAGE_KEY = "looi.frontCameraDeviceId.v1";
 const IDLE_SCENARIO_SETTINGS_STORAGE_KEY = "looi.idleScenarioSettings.v2";
 const CONVERSATION_SLEEP_TIMEOUT_STORAGE_KEY = "looi.conversationSleepTimeoutSec.v1";
 const DEFAULT_FRONT_CAMERA_INDEX = 1;
-const IDLE_GAP_MIN_SEC = msToSec(DEFAULT_IDLE_SCHEDULER_SETTINGS.firstIdleGapMs[0]);
-const IDLE_GAP_MAX_SEC = msToSec(DEFAULT_IDLE_SCHEDULER_SETTINGS.firstIdleGapMs[1]);
+const IDLE_GAP_MIN_SEC = 1;
+const IDLE_GAP_MAX_SEC = 120;
 const DEFAULT_IDLE_GEMINI_BODY_CONTEXT_GAP_RANGE_SEC = Object.freeze([4, 10]);
 const PREVIOUS_DEFAULT_IDLE_GEMINI_BODY_CONTEXT_GAP_RANGE_SEC = Object.freeze([4, 7]);
 const LEGACY_IDLE_GEMINI_BODY_CONTEXT_GAP_SEC = 5;
@@ -3474,15 +3478,18 @@ function sendIdleBodyContextToGemini(payload = {}, reason = "idle_body_context")
   const movementLabel = [scenario?.title ?? scenarioId, mixedScenario?.title ?? mixedScenarioId]
     .filter(Boolean)
     .join(" + ");
+  const scene = buildIdleBodyContextScene();
   const context = {
     event: reason,
-    movement: movementLabel,
-    movementId: scenarioId,
-    mixedMovement: mixedScenario?.title ?? mixedScenarioId,
-    mixedMovementId: mixedScenarioId,
+    scene,
+    bodyMotion: {
+      movement: movementLabel,
+      movementId: scenarioId,
+      mixedMovement: mixedScenario?.title ?? mixedScenarioId,
+      mixedMovementId: mixedScenarioId,
+      commentPriority: "secondary"
+    },
     source: "local_idle_scheduler",
-    note: "Local idle body micro-movement completed. This is body awareness only, not a user command.",
-    instruction: "Do not call tools because of body_context. Usually respond with one short natural personality comment. Stay silent if it would interrupt the user or feel repetitive.",
     timestamp: new Date().toISOString()
   };
 
@@ -3500,6 +3507,30 @@ function sendIdleBodyContextToGemini(payload = {}, reason = "idle_body_context")
     log(`Gemini idle body context failed: ${error.message}`, "warn");
   });
   return sent;
+}
+
+function buildIdleBodyContextScene() {
+  const vision = getVisionContext();
+  const objects = Array.isArray(vision.objects)
+    ? vision.objects
+      .filter((object) => object?.visible !== false && object?.label)
+      .slice(0, 6)
+      .map((object) => ({
+        label: object.label,
+        position: object.position ?? "unknown"
+      }))
+    : [];
+  const userVisible = objects.some((object) => object.label === "person");
+
+  return {
+    cameraRunning: Boolean(vision.cameraRunning),
+    detectorRunning: Boolean(vision.detectorRunning),
+    summary: summarizeVisibleObjects(objects),
+    visibleLabels: vision.visibleLabels || objects.map((object) => object.label).filter(Boolean).join(", "),
+    userVisible,
+    lastDetectionAgeMs: vision.lastDetectionAgeMs ?? null,
+    objects
+  };
 }
 
 function sendFollowStateContext(reason = "follow_context") {

@@ -18,6 +18,8 @@ import {
 } from "../robot/esp32Client.js";
 
 const DEFAULT_IDLE_GAP_MS = Object.freeze([1000, 4000]);
+const IDLE_GAP_MIN_MS = 1000;
+const IDLE_GAP_MAX_MS = 120000;
 const BALANCE_START_CHANCE = 0.2;
 const BALANCE_CHANCE_INCREMENT = 0.2;
 const OPPOSITE_MIX_CHANCE = 0.25;
@@ -993,8 +995,8 @@ function normalizeSettings(settings = {}) {
 
 function normalizeMsRange(value, fallback) {
   const values = Array.isArray(value) ? value : fallback;
-  const min = normalizeNumber(values?.[0], DEFAULT_IDLE_GAP_MS[0], DEFAULT_IDLE_GAP_MS[1], fallback[0]);
-  const max = normalizeNumber(values?.[1], DEFAULT_IDLE_GAP_MS[0], DEFAULT_IDLE_GAP_MS[1], fallback[1]);
+  const min = normalizeNumber(values?.[0], IDLE_GAP_MIN_MS, IDLE_GAP_MAX_MS, fallback[0]);
+  const max = normalizeNumber(values?.[1], IDLE_GAP_MIN_MS, IDLE_GAP_MAX_MS, fallback[1]);
   return max >= min ? [min, max] : [max, min];
 }
 
