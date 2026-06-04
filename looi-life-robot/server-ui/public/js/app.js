@@ -3489,9 +3489,7 @@ function sendIdleBodyContextToGemini(payload = {}, reason = "idle_body_context")
       mixedMovement: mixedScenario?.title ?? mixedScenarioId,
       mixedMovementId: mixedScenarioId,
       commentPriority: "secondary"
-    },
-    source: "local_idle_scheduler",
-    timestamp: new Date().toISOString()
+    }
   };
 
   const sent = geminiLiveRuntime.sendQuietContext("body_context", context, {
@@ -3528,12 +3526,8 @@ function buildIdleBodyContextScene() {
   const userVisible = objects.some((object) => object.label === "person");
 
   return {
-    cameraRunning: Boolean(vision.cameraRunning),
-    detectorRunning: Boolean(vision.detectorRunning),
     summary: summarizeVisibleObjects(objects),
-    visibleLabels: vision.visibleLabels || objects.map((object) => object.label).filter(Boolean).join(", "),
     userVisible,
-    lastDetectionAgeMs: vision.lastDetectionAgeMs ?? null,
     objects
   };
 }
