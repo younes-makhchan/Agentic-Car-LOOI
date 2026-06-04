@@ -195,6 +195,8 @@ assert.ok(systemPrompt.includes("Roboflow controls continuous tracking locally")
 assert.ok(systemPrompt.includes("<body_context_rules>"));
 assert.ok(systemPrompt.includes("fresh video frame"));
 assert.ok(systemPrompt.includes("most recent live video frame"));
+assert.ok(systemPrompt.includes("not a conversation opener"));
+assert.ok(systemPrompt.includes("Do not ask questions from body_context"));
 
 const runtime = new GeminiLiveRuntime({
   toolExecutor,
