@@ -523,20 +523,20 @@ ui.conversationSleepTimeoutInput?.addEventListener("change", () => {
 });
 
 [
-  ui.idleFirstGapMinInput,
-  ui.idleFirstGapMaxInput,
-  ui.idleSilentGapMinInput,
-  ui.idleSilentGapMaxInput,
-  ui.idleSpeakingGapMinInput,
-  ui.idleSpeakingGapMaxInput,
-  ui.idleBalanceStartInput,
-  ui.idleBalanceIncrementInput,
-  ui.idleOppositeMixChanceInput,
-  ui.idleGeminiBodyContextGapMinInput,
-  ui.idleGeminiBodyContextGapMaxInput
-].forEach((element) => {
+  [ui.idleFirstGapMinInput, "firstIdleMinSec"],
+  [ui.idleFirstGapMaxInput, "firstIdleMaxSec"],
+  [ui.idleSilentGapMinInput, "silentIdleMinSec"],
+  [ui.idleSilentGapMaxInput, "silentIdleMaxSec"],
+  [ui.idleSpeakingGapMinInput, "speakingIdleMinSec"],
+  [ui.idleSpeakingGapMaxInput, "speakingIdleMaxSec"],
+  [ui.idleBalanceStartInput, "balanceStartPercent"],
+  [ui.idleBalanceIncrementInput, "balanceIncrementPercent"],
+  [ui.idleOppositeMixChanceInput, "oppositeMixPercent"],
+  [ui.idleGeminiBodyContextGapMinInput, "geminiBodyContextGapMinSec"],
+  [ui.idleGeminiBodyContextGapMaxInput, "geminiBodyContextGapMaxSec"]
+].forEach(([element, settingKey]) => {
   element?.addEventListener("change", () => {
-    applyIdleScenarioSettingsFromUi();
+    applyIdleScenarioSettingsFromUi({ [settingKey]: element.value });
   });
 });
 
@@ -4162,20 +4162,27 @@ function updateConversationSleepTimeoutUi() {
   setInputValue(ui.conversationSleepTimeoutInput, conversationSleepTimeoutSec);
 }
 
-function applyIdleScenarioSettingsFromUi() {
-  idleScenarioSettings = normalizeIdleScenarioSettings({
-    firstIdleMinSec: ui.idleFirstGapMinInput?.value,
-    firstIdleMaxSec: ui.idleFirstGapMaxInput?.value,
-    silentIdleMinSec: ui.idleSilentGapMinInput?.value,
-    silentIdleMaxSec: ui.idleSilentGapMaxInput?.value,
-    speakingIdleMinSec: ui.idleSpeakingGapMinInput?.value,
-    speakingIdleMaxSec: ui.idleSpeakingGapMaxInput?.value,
-    balanceStartPercent: ui.idleBalanceStartInput?.value,
-    balanceIncrementPercent: ui.idleBalanceIncrementInput?.value,
-    oppositeMixPercent: ui.idleOppositeMixChanceInput?.value,
-    geminiBodyContextGapMinSec: ui.idleGeminiBodyContextGapMinInput?.value,
-    geminiBodyContextGapMaxSec: ui.idleGeminiBodyContextGapMaxInput?.value
-  });
+function applyIdleScenarioSettingsFromUi(patch = null) {
+  const source = patch && typeof patch === "object"
+    ? {
+        ...idleScenarioSettings,
+        ...patch
+      }
+    : {
+        firstIdleMinSec: ui.idleFirstGapMinInput?.value,
+        firstIdleMaxSec: ui.idleFirstGapMaxInput?.value,
+        silentIdleMinSec: ui.idleSilentGapMinInput?.value,
+        silentIdleMaxSec: ui.idleSilentGapMaxInput?.value,
+        speakingIdleMinSec: ui.idleSpeakingGapMinInput?.value,
+        speakingIdleMaxSec: ui.idleSpeakingGapMaxInput?.value,
+        balanceStartPercent: ui.idleBalanceStartInput?.value,
+        balanceIncrementPercent: ui.idleBalanceIncrementInput?.value,
+        oppositeMixPercent: ui.idleOppositeMixChanceInput?.value,
+        geminiBodyContextGapMinSec: ui.idleGeminiBodyContextGapMinInput?.value,
+        geminiBodyContextGapMaxSec: ui.idleGeminiBodyContextGapMaxInput?.value
+      };
+
+  idleScenarioSettings = normalizeIdleScenarioSettings(source);
   deferIdleBodyContext("idle_settings_changed");
   saveIdleScenarioSettings(idleScenarioSettings);
   updateIdleScenarioSettingsUi();
