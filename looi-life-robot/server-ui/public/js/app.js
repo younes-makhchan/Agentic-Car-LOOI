@@ -40,8 +40,7 @@ import { ObjectTracker } from "./vision/objectTracker.js";
 import { VisionState } from "./vision/visionState.js";
 import {
   buildVisionContext,
-  findMentionedObjectLabels,
-  summarizeVisibleObjects
+  findMentionedObjectLabels
 } from "./vision/visionMetadataBuilder.js";
 import { FollowTargetController } from "./vision/followTargetController.js";
 import { VisionScenarioManager } from "./vision/visionScenarioManager.js";
@@ -3414,7 +3413,9 @@ function handleVisionFollowEvent(event = {}) {
 }
 
 function handleIdleScenarioCompleted(event = {}) {
-  sendIdleBodyContextToGemini(event.payload ?? {}, "idle_scenario_completed");
+  sendIdleBodyContextToGemini(event.payload ?? {}, "idle_scenario_completed")?.catch?.((error) => {
+    log(`Gemini idle body context failed: ${error.message}`, "warn");
+  });
 }
 
 function deferIdleBodyContext(reason = "idle_body_context_defer") {
@@ -3433,7 +3434,7 @@ function isRecentUserTranscript(geminiStatus = {}, now = Date.now()) {
   return transcriptAt > 0 && now - transcriptAt < IDLE_BODY_CONTEXT_USER_TRANSCRIPT_COOLDOWN_MS;
 }
 
-function sendIdleBodyContextToGemini(payload = {}, reason = "idle_body_context") {
+async function sendIdleBodyContextToGemini(payload = {}, reason = "idle_body_context") {
   if (!geminiLiveRuntime?.sendQuietContext) {
     return false;
   }
@@ -3479,10 +3480,14 @@ function sendIdleBodyContextToGemini(payload = {}, reason = "idle_body_context")
   const movementLabel = [scenario?.title ?? scenarioId, mixedScenario?.title ?? mixedScenarioId]
     .filter(Boolean)
     .join(" + ");
-  const scene = buildIdleBodyContextScene();
+  const visionFrameSent = await sendIdleGeminiVisionFrame(reason);
+  if (!visionFrameSent) {
+    deferIdleBodyContext("idle_vision_frame_unavailable");
+    return false;
+  }
+
   const context = {
     event: reason,
-    scene,
     bodyMotion: {
       movement: movementLabel,
       movementId: scenarioId,
@@ -3492,44 +3497,57 @@ function sendIdleBodyContextToGemini(payload = {}, reason = "idle_body_context")
     }
   };
 
-  const sent = geminiLiveRuntime.sendQuietContext("body_context", context, {
+  const ok = await geminiLiveRuntime.sendQuietContext("body_context", context, {
     wrapper: "body_context",
     reason,
     coalesce: false
   });
-  sent?.then?.((ok) => {
-    if (ok) {
-      const nextGapSec = pickIdleBodyContextGapSec();
-      nextIdleBodyContextAllowedAt = now + nextGapSec * 1000;
-      log(
-        `Gemini idle body context sent movement=${scenarioId || "unknown"} nextGap=${formatNumber(nextGapSec)}s range=${gapRangeSec.join("-")}s`,
-        "debug"
-      );
-    }
-  })?.catch?.((error) => {
-    log(`Gemini idle body context failed: ${error.message}`, "warn");
-  });
-  return sent;
+
+  if (ok) {
+    const nextGapSec = pickIdleBodyContextGapSec();
+    nextIdleBodyContextAllowedAt = now + nextGapSec * 1000;
+    log(
+      `Gemini idle body context sent with vision frame movement=${scenarioId || "unknown"} nextGap=${formatNumber(nextGapSec)}s range=${gapRangeSec.join("-")}s`,
+      "debug"
+    );
+  }
+  return ok;
 }
 
-function buildIdleBodyContextScene() {
-  const vision = getVisionContext();
-  const objects = Array.isArray(vision.objects)
-    ? vision.objects
-      .filter((object) => object?.visible !== false && object?.label)
-      .slice(0, 6)
-      .map((object) => ({
-        label: object.label,
-        position: object.position ?? "unknown"
-      }))
-    : [];
-  const userVisible = objects.some((object) => object.label === "person");
+async function sendIdleGeminiVisionFrame(reason = "idle_body_context") {
+  if (!geminiLiveRuntime?.sendVisionFrame) {
+    return false;
+  }
 
-  return {
-    summary: summarizeVisibleObjects(objects),
-    userVisible,
-    objects
-  };
+  const cameraStatus = cameraInput?.getCameraStatus?.() ?? {};
+  if (!cameraStatus.running) {
+    return false;
+  }
+
+  const quietGate = getGeminiQuietInputGate("vision_frame");
+  if (!quietGate.ok) {
+    return false;
+  }
+
+  const result = await cameraInput?.captureSnapshot?.({
+    includeDataUrl: true,
+    maxWidth: 320,
+    quality: 0.55,
+    emit: false,
+    record: false
+  });
+
+  if (!result?.ok || !result.snapshot?.dataUrl) {
+    return false;
+  }
+
+  return geminiLiveRuntime.sendVisionFrame({
+    data: result.snapshot.dataUrl,
+    mimeType: "image/jpeg",
+    width: result.snapshot.width,
+    height: result.snapshot.height,
+    reason: `${reason}_idle_vision`
+  });
 }
 
 function sendFollowStateContext(reason = "follow_context") {

@@ -193,6 +193,8 @@ assert.ok(systemPrompt.includes("<follow_rules>"));
 assert.ok(systemPrompt.includes("follow context only to know whether local tracking is active or lost"));
 assert.ok(systemPrompt.includes("Roboflow controls continuous tracking locally"));
 assert.ok(systemPrompt.includes("<body_context_rules>"));
+assert.ok(systemPrompt.includes("fresh video frame"));
+assert.ok(systemPrompt.includes("most recent live video frame"));
 
 const runtime = new GeminiLiveRuntime({
   toolExecutor,
@@ -282,8 +284,11 @@ assert.equal(runtime.getStatus().turnActive, true);
 assert.equal(runtime.getStatus().lastInputKind, "audio_transcript");
 
 const droppedBodyContext = await runtime.sendQuietContext("body_context", {
-  scene: { summary: "desk" },
-  source: "smoke"
+  event: "smoke_idle",
+  bodyMotion: {
+    movement: "tiny idle nudge",
+    commentPriority: "secondary"
+  }
 }, {
   wrapper: "body_context",
   reason: "smoke_body_context"
