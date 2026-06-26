@@ -22,15 +22,23 @@ This means a remote user cannot take over another user's body through the public
 server. The browser must be physically near the ESP32 and paired through the
 Bluetooth picker.
 
-## Run The Web App
+## Project Layout
+
+- `frontend/`: browser app, firmware upload assets, Web Bluetooth body control.
+- `backend/`: Node API server and Gemini Live relay.
+- `src/`: ESP32 firmware source.
+
+## Run The Backend Locally
 
 ```sh
-cd server-ui
+cd backend
 npm install
 npm run dev
 ```
 
-Open the printed local URL. Public deployments must use HTTPS for Web Bluetooth.
+With `SERVE_FRONTEND=true`, the backend can also serve `../frontend` for local
+testing. Public frontend deployments must use HTTPS for Web Bluetooth and Web
+Serial firmware upload.
 
 ## Firmware
 
@@ -43,20 +51,17 @@ Firmware source is in `src/main.cpp`. It exposes one BLE service:
 The browser sends newline-delimited JSON commands in small BLE chunks. Firmware
 responds with newline-delimited JSON notifications.
 
-Do not run PlatformIO until it is installed. After building firmware, sync the
-browser-upload files with:
-
-```sh
-cd server-ui
-npm run firmware:sync
-```
+Do not run PlatformIO until it is installed. After building firmware, copy the
+new `bootloader.bin`, `partitions.bin`, and app binary into `frontend/firmware/`
+so the browser firmware uploader serves the current BLE build.
 
 ## Checks
 
 ```sh
-cd server-ui
-npm run check
-npm run smoke:body
+cd backend
+npm run smoke:gemini-live
+npm run smoke:tools
+npm run smoke:esp32
 ```
 
 `npm run smoke:all` runs the broader non-PlatformIO smoke suite.

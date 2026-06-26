@@ -1,0 +1,12 @@
+[build]
+  publish = "frontend"
+
+[[headers]]
+  for = "/firmware/*"
+  [headers.values]
+    Cache-Control = "public, max-age=300"
+
+[[headers]]
+  for = "/runtime-config.js"
+  [headers.values]
+    Cache-Control = "no-store"

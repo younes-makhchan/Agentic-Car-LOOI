@@ -1,0 +1,912 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>LOOI Life Robot</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <script type="module" src="/vendor/esp-web-tools/install-button.js"></script>
+  </head>
+  <body>
+    <div id="runtimeGate" class="runtime-gate">
+      <div class="runtime-gate__card">
+        <p class="eyebrow">LOOI Runtime</p>
+        <h1>LOOI Setup</h1>
+        <p>
+          Install the ESP32 firmware, connect the body by Bluetooth, then start LOOI.
+        </p>
+        <div class="runtime-gate__actions" aria-label="LOOI setup actions">
+          <esp-web-install-button manifest="/firmware/manifest.json">
+            <button id="firmwareInstallButton" class="primary-button" slot="activate" type="button">
+              Upload Firmware
+            </button>
+            <span slot="unsupported">Firmware upload requires Chrome or Edge with Web Serial.</span>
+            <span slot="not-allowed">Firmware upload requires HTTPS or localhost.</span>
+          </esp-web-install-button>
+          <div class="bluetooth-connect-row">
+            <button id="gateConnectBluetoothButton" class="primary-button bluetooth-connect-button" type="button">
+              Connect using Bluetooth
+            </button>
+            <span id="gateBluetoothStatus" class="bluetooth-status" data-state="disconnected">
+              <span class="bluetooth-status__dot" aria-hidden="true"></span>
+              <span id="gateBluetoothStatusLabel">Connect</span>
+            </span>
+          </div>
+        </div>
+        <button id="productionStartButton" class="primary-button" type="button" disabled>
+          Start LOOI
+        </button>
+      </div>
+    </div>
+
+    <div class="production-actions" aria-label="Production controls">
+      <div
+        id="looiActivityIndicator"
+        class="looi-activity-indicator"
+        data-state="idle"
+        aria-live="polite"
+        aria-label="LOOI idle"
+      >
+        <div class="looi-activity-points" aria-hidden="true">
+          <span></span>
+          <span></span>
+          <span></span>
+          <span></span>
+          <span></span>
+        </div>
+        <span id="looiActivityLabel" class="looi-activity-label">Idle</span>
+      </div>
+      <button
+        id="settingsToggleButton"
+        class="settings-toggle-button"
+        type="button"
+        aria-label="Open settings"
+        aria-expanded="false"
+      >
+        ⚙
+      </button>
+    </div>
+
+    <aside id="looiVisionWidget" class="looi-vision-widget" aria-live="polite">
+      <div class="looi-vision-widget__header">
+        <span>LOOI Eyes</span>
+        <strong id="localVisionState">camera off</strong>
+      </div>
+      <div class="vision-preview-shell vision-preview-shell--compact">
+        <video id="localVisionPreview" autoplay playsinline muted></video>
+      </div>
+      <p id="localVisionDetail">Local Brain camera actions are blocked until allowed.</p>
+    </aside>
+
+    <main class="app-shell">
+      <section class="face-panel">
+        <div class="face-frame">
+          <div id="faceCanvas"></div>
+        </div>
+      </section>
+    </main>
+
+    <button id="settingsBackdrop" class="settings-backdrop" type="button" aria-label="Close settings"></button>
+
+    <section id="settingsPanel" class="control-panel" aria-label="Settings and diagnostics">
+        <div class="settings-drawer-header">
+          <div>
+            <p class="eyebrow">LOOI Settings</p>
+            <h2>Diagnostics</h2>
+          </div>
+          <button id="settingsCloseButton" type="button" aria-label="Close settings">Close</button>
+        </div>
+
+        <section class="panel-card settings-quick-actions" aria-label="LOOI quick actions">
+          <div>
+            <p class="eyebrow">Quick Actions</p>
+            <h2>LOOI Runtime</h2>
+          </div>
+          <div class="button-grid button-grid--compact">
+            <button id="localBrainQuickButton" class="local-brain-quick-button" type="button" disabled>
+              Start LOOI
+            </button>
+            <button id="productionStopButton" class="production-stop-button" type="button">
+              Stop
+            </button>
+          </div>
+        </section>
+
+        <header class="panel-card title-card">
+          <p class="eyebrow">Phone-Bodied Life Robot</p>
+          <h1>LOOI Life Robot</h1>
+          <p class="subtitle">
+            Local robot runtime for Gemini Live, camera, memory, and ESP32 body control.
+          </p>
+        </header>
+
+        <nav class="settings-nav" aria-label="Settings sections">
+          <a href="#settingsStatus">Status</a>
+          <a href="#settingsRobotBody">Body</a>
+          <a href="#settingsLocalBrain">Brain</a>
+          <a href="#settingsIdleScenarios">Idle</a>
+          <a href="#settingsCamera">Camera</a>
+          <a href="#settingsMovement">Move</a>
+          <a href="#settingsLog">Log</a>
+        </nav>
+
+        <section id="settingsStatus" class="panel-card settings-section-status">
+          <h2>Status</h2>
+          <div class="status-grid">
+            <div class="status-row">
+              <span>ESP32 connection</span>
+              <strong id="esp32Status">disconnected</strong>
+            </div>
+            <div class="status-row">
+              <span>mood</span>
+              <strong id="moodValue">neutral</strong>
+            </div>
+            <div class="status-row">
+              <span>energy</span>
+              <strong id="energyValue">0.75</strong>
+            </div>
+            <div class="status-row">
+              <span>boredom</span>
+              <strong id="boredomValue">0.20</strong>
+            </div>
+            <div class="status-row">
+              <span>fear</span>
+              <strong id="fearValue">0.00</strong>
+            </div>
+            <div class="status-row">
+              <span>curiosity</span>
+              <strong id="curiosityValue">0.60</strong>
+            </div>
+            <div class="status-row">
+              <span>current behavior</span>
+              <strong id="currentBehavior">soft_idle</strong>
+            </div>
+            <div class="status-row">
+              <span>attention target</span>
+              <strong id="attentionTarget">none</strong>
+            </div>
+            <div class="status-row">
+              <span>obstacle</span>
+              <strong id="obstacleState">false</strong>
+            </div>
+            <div class="status-row">
+              <span>listening</span>
+              <strong id="listeningState">false</strong>
+            </div>
+            <div class="status-row">
+              <span>speaking</span>
+              <strong id="speakingState">false</strong>
+            </div>
+          </div>
+        </section>
+
+        <section id="settingsLifeEngine" class="panel-card settings-section-life">
+          <h2>Life Engine</h2>
+          <p class="panel-note">
+            Local instincts only: mood, attention, drives, face, and safe body language.
+            No cloud or external AI calls are active.
+          </p>
+          <div class="button-grid">
+            <button id="lifeEngineToggle" class="primary-button" type="button">
+              Pause Life Engine
+            </button>
+          </div>
+        </section>
+
+        <section id="settingsPersonality" class="panel-card personality-card">
+          <h2>Personality / Memory</h2>
+          <p class="panel-note">
+            Personality changes local body behavior and gives the Local Brain context.
+            Memory helps the robot remember phrases, preferences, and shared moments.
+          </p>
+          <div class="input-stack">
+            <label class="field-label" for="personalityNameInput">Robot name</label>
+            <input id="personalityNameInput" type="text" maxlength="40" value="LOOI" />
+            <label class="field-label" for="personalityIdentityInput">Identity</label>
+            <input
+              id="personalityIdentityInput"
+              type="text"
+              maxlength="120"
+              value="small phone-bodied companion robot"
+            />
+            <label class="field-label" for="personalityPronounsInput">Pronouns</label>
+            <input id="personalityPronounsInput" type="text" maxlength="30" value="she/her" />
+          </div>
+          <div class="personality-grid">
+            <label class="slider-field" for="traitCuriosity">
+              <span>Curiosity</span>
+              <input id="traitCuriosity" type="range" min="0" max="1" step="0.05" value="0.75" />
+            </label>
+            <label class="slider-field" for="traitGentleness">
+              <span>Gentleness</span>
+              <input id="traitGentleness" type="range" min="0" max="1" step="0.05" value="0.85" />
+            </label>
+            <label class="slider-field" for="traitPlayfulness">
+              <span>Playfulness</span>
+              <input id="traitPlayfulness" type="range" min="0" max="1" step="0.05" value="0.55" />
+            </label>
+            <label class="slider-field" for="traitShyness">
+              <span>Shyness</span>
+              <input id="traitShyness" type="range" min="0" max="1" step="0.05" value="0.35" />
+            </label>
+            <label class="slider-field" for="traitAffection">
+              <span>Affection</span>
+              <input id="traitAffection" type="range" min="0" max="1" step="0.05" value="0.65" />
+            </label>
+            <label class="slider-field" for="traitIndependence">
+              <span>Independence</span>
+              <input id="traitIndependence" type="range" min="0" max="1" step="0.05" value="0.45" />
+            </label>
+            <label class="slider-field" for="traitTalkativeness">
+              <span>Talkativeness</span>
+              <input id="traitTalkativeness" type="range" min="0" max="1" step="0.05" value="0.35" />
+            </label>
+            <label class="slider-field" for="traitCaution">
+              <span>Caution</span>
+              <input id="traitCaution" type="range" min="0" max="1" step="0.05" value="0.70" />
+            </label>
+            <label class="slider-field" for="behaviorMovementSoftness">
+              <span>Movement softness</span>
+              <input id="behaviorMovementSoftness" type="range" min="0" max="1" step="0.05" value="0.8" />
+            </label>
+            <label class="slider-field" for="behaviorReactionSpeed">
+              <span>Reaction speed</span>
+              <input id="behaviorReactionSpeed" type="range" min="0" max="1" step="0.05" value="0.75" />
+            </label>
+            <label class="slider-field" for="behaviorIdleActivity">
+              <span>Idle activity</span>
+              <input id="behaviorIdleActivity" type="range" min="0" max="1" step="0.05" value="0.35" />
+            </label>
+            <label class="slider-field" for="behaviorEmotionalExpressiveness">
+              <span>Emotional expressiveness</span>
+              <input id="behaviorEmotionalExpressiveness" type="range" min="0" max="1" step="0.05" value="0.65" />
+            </label>
+            <label class="slider-field" for="behaviorHesitation">
+              <span>Hesitation</span>
+              <input id="behaviorHesitation" type="range" min="0" max="1" step="0.05" value="0.35" />
+            </label>
+            <label class="slider-field" for="behaviorPersonalSpaceRespect">
+              <span>Personal space respect</span>
+              <input id="behaviorPersonalSpaceRespect" type="range" min="0" max="1" step="0.05" value="0.8" />
+            </label>
+          </div>
+          <div class="button-grid">
+            <button id="savePersonalityButton" class="primary-button" type="button">
+              Save Personality
+            </button>
+            <button id="resetPersonalityButton" type="button">Reset Personality</button>
+            <button id="exportPersonalityButton" type="button">Export Personality</button>
+            <button id="importPersonalityButton" type="button">Import Personality</button>
+          </div>
+          <div class="input-stack">
+            <label class="field-label" for="memoryTextInput">Memory text</label>
+            <textarea id="memoryTextInput" rows="3" maxlength="2000"></textarea>
+            <label class="field-label" for="memoryTypeSelect">Memory type</label>
+            <select id="memoryTypeSelect">
+              <option value="long_term">long_term</option>
+              <option value="daily">daily</option>
+              <option value="personality_note">personality_note</option>
+            </select>
+          </div>
+          <div class="button-grid">
+            <button id="saveMemoryButton" class="primary-button" type="button">
+              Save Memory
+            </button>
+            <button id="refreshMemoryButton" type="button">Refresh Memory</button>
+          </div>
+          <pre id="memoryDisplay" class="memory-display">No memory loaded yet.</pre>
+          <div class="input-stack">
+            <label class="field-label" for="learnedPhraseInput">Phrase</label>
+            <input id="learnedPhraseInput" type="text" maxlength="160" placeholder="give me room" />
+            <label class="field-label" for="learnedMeaningInput">Meaning</label>
+            <input id="learnedMeaningInput" type="text" maxlength="240" placeholder="increase distance from user" />
+            <label class="field-label" for="learnedActionSelect">Action</label>
+            <select id="learnedActionSelect">
+              <option value="run_scenario">run_scenario</option>
+            </select>
+            <label class="field-label" for="learnedArgsInput">Args JSON</label>
+            <textarea id="learnedArgsInput" rows="3">{"name":"back_up"}</textarea>
+            <label class="field-label" for="learnedConfidenceSelect">Confidence</label>
+            <select id="learnedConfidenceSelect">
+              <option value="medium">medium</option>
+              <option value="low">low</option>
+              <option value="high">high</option>
+            </select>
+          </div>
+          <div class="button-grid">
+            <button id="saveLearnedPhraseButton" class="primary-button" type="button">
+              Save Learned Phrase
+            </button>
+            <button id="refreshLearnedPhrasesButton" type="button">
+              Refresh Learned Phrases
+            </button>
+          </div>
+          <div id="learnedPhraseList" class="learned-phrase-list">
+            No learned phrases loaded yet.
+          </div>
+          <div class="status-grid">
+            <div class="status-row">
+              <span>Life Events</span>
+              <strong id="lifeEventsState">disabled</strong>
+            </div>
+            <div class="status-row">
+              <span>Last life event</span>
+              <strong id="lastLifeEventDisplay">--</strong>
+            </div>
+          </div>
+          <label class="checkbox-field">
+            <input id="lifeEventsToggle" type="checkbox" />
+            <span>Enable Life Events</span>
+          </label>
+        </section>
+
+        <section id="settingsCamera" class="panel-card camera-card">
+          <h2>Camera / Eyes</h2>
+          <p class="panel-note">
+            The camera runs locally in the browser and feeds Gemini vision.
+          </p>
+          <div class="status-grid">
+            <div class="status-row">
+              <span>Camera support</span>
+              <strong id="cameraSupportState">checking</strong>
+            </div>
+            <div class="status-row">
+              <span>Camera running</span>
+              <strong id="cameraRunningState">stopped</strong>
+            </div>
+            <div class="status-row">
+              <span>Facing mode</span>
+              <strong id="cameraFacingMode">unknown</strong>
+            </div>
+            <div class="status-row">
+              <span>Vision support</span>
+              <strong id="cameraVisionSupport">checking</strong>
+            </div>
+            <div class="status-row">
+              <span>Last camera error</span>
+              <strong id="cameraLastError">--</strong>
+            </div>
+          </div>
+          <p id="cameraSecureWarning" class="camera-warning">
+            Camera access may require HTTPS or localhost.
+          </p>
+          <p class="privacy-note">
+            Camera access requires your browser permission. The Local Brain cannot request
+            camera actions unless explicitly allowed.
+          </p>
+          <div class="object-vision-panel">
+            <div class="object-vision-panel__header">
+              <div>
+                <h3>Camera Devices</h3>
+                <p>
+                  Choose the exact phone camera used for Gemini vision.
+                  Default uses camera 1 when available.
+                </p>
+              </div>
+              <button id="refreshCameraDevicesButton" type="button">
+                Refresh
+              </button>
+            </div>
+            <div class="slider-grid">
+              <label class="slider-field" for="frontCameraDeviceSelect">
+                <span>Front camera</span>
+                <select id="frontCameraDeviceSelect">
+                  <option value="">Default camera 1 / front</option>
+                </select>
+              </label>
+            </div>
+          </div>
+          <div class="object-vision-panel object-vision-panel--cloud">
+            <div class="object-vision-panel__header">
+              <div>
+                <h3>Gemini Live Vision</h3>
+                <p>
+                  Gemini keeps receiving camera frames for visual conversation.
+                </p>
+              </div>
+              <label class="checkbox-field">
+                <input id="geminiVisionAssistToggle" type="checkbox" checked />
+                <span>Gemini Vision</span>
+              </label>
+            </div>
+            <div class="slider-grid">
+              <label class="slider-field" for="geminiVisionAssistIntervalSlider">
+                <span>Gemini video interval</span>
+                <strong id="geminiVisionAssistIntervalValue">1500 ms</strong>
+                <input id="geminiVisionAssistIntervalSlider" type="range" min="1000" max="5000" step="250" value="1500" />
+              </label>
+            </div>
+            <div class="status-grid">
+              <div class="status-row">
+                <span>Gemini vision state</span>
+                <strong id="geminiVisionAssistState">off</strong>
+              </div>
+              <div class="status-row">
+                <span>Last Gemini frame</span>
+                <strong id="geminiVisionAssistLastFrame">--</strong>
+              </div>
+            </div>
+          </div>
+          <div class="slider-grid camera-widget-size-control">
+            <label class="slider-field" for="localVisionSizeSlider">
+              <span>Live video widget size</span>
+              <strong id="localVisionSizeValue">120px</strong>
+              <input id="localVisionSizeSlider" type="range" min="70" max="220" step="10" value="120" />
+            </label>
+          </div>
+          <div class="button-grid">
+            <button id="startFrontCameraButton" class="primary-button" type="button">
+              Start Front Camera
+            </button>
+            <button id="switchCameraButton" type="button">
+              Switch Camera
+            </button>
+            <button id="stopCameraButton" type="button">
+              Stop Camera
+            </button>
+            <button id="captureSnapshotButton" type="button">
+              Capture Snapshot
+            </button>
+          </div>
+          <div class="camera-preview-grid">
+            <div class="vision-preview-shell">
+              <video id="cameraPreview" autoplay playsinline muted></video>
+              <canvas id="objectDetectionOverlay" class="object-detection-overlay" aria-hidden="true"></canvas>
+            </div>
+            <img id="snapshotPreview" alt="Latest small camera snapshot" hidden />
+            <canvas id="cameraCanvas" hidden></canvas>
+          </div>
+          <!-- DISABLED_ROBOFLOW_FOLLOW: Object Vision / Follow UI is hidden but kept for restoration. -->
+          <div class="object-vision-panel" hidden>
+            <div class="object-vision-panel__header">
+              <div>
+                <h3>Object Vision / Follow</h3>
+                <p>
+                  Roboflow WebRTC runs only for focused object follow. It streams the camera
+                  through the server proxy and never exposes the API key in the browser.
+                </p>
+              </div>
+              <div class="button-grid button-grid--compact">
+                <button id="startObjectDetectionButton" type="button">Start Detector</button>
+                <button id="stopObjectDetectionButton" type="button">Stop Detector</button>
+              </div>
+            </div>
+            <div class="slider-grid">
+              <label class="slider-field" for="objectRoboflowWorkflowSelect">
+                <span>Roboflow workflow</span>
+                <select id="objectRoboflowWorkflowSelect">
+                  <option value="rf-detr">rf-detr</option>
+                  <option value="rf-detr-2">rf-detr-2</option>
+                </select>
+              </label>
+              <label class="slider-field" for="objectRoboflowGpuPlanSelect">
+                <span>Roboflow GPU</span>
+                <select id="objectRoboflowGpuPlanSelect">
+                  <option value="webrtc-gpu-small">Small GPU · lower cost</option>
+                  <option value="webrtc-gpu-medium">Medium GPU · balanced</option>
+                  <option value="webrtc-gpu-large">Large GPU · faster</option>
+                </select>
+              </label>
+              <label class="slider-field" for="objectMaxResultsInput">
+                <span>Max results</span>
+                <input id="objectMaxResultsInput" type="number" min="1" max="30" step="1" value="12" />
+              </label>
+              <label class="slider-field slider-field--wide" for="objectCategoryAllowlistInput">
+                <span>Category allowlist</span>
+                <input id="objectCategoryAllowlistInput" type="text" placeholder="optional: person,bottle,cup,cell phone" />
+              </label>
+              <label class="slider-field" for="followTuningPresetSelect">
+                <span>Follow tuning preset</span>
+                <select id="followTuningPresetSelect">
+                  <option value="case1">Case 1 · 0.200 / 300 / 100 / 0.140 / 300ms</option>
+                  <option value="case2">Case 2 · 0.036 / 20 / 90 / 0.115 / 300ms</option>
+                  <option value="case3">Case 3 · 0.032 / 10 / 60 / 0.135 / 300ms</option>
+                  <option value="case4">Case 4 · 0.030 / 10 / 80 / 0.105 / 300ms</option>
+                </select>
+              </label>
+            </div>
+            <div class="status-grid">
+              <div class="status-row">
+                <span>Detector</span>
+                <strong id="objectDetectorState">stopped</strong>
+              </div>
+              <div class="status-row">
+                <span>Model</span>
+                <strong id="objectDetectorModel">--</strong>
+              </div>
+              <div class="status-row">
+                <span>Workflow</span>
+                <strong id="objectDetectorWorkflow">--</strong>
+              </div>
+              <div class="status-row">
+                <span>Quality</span>
+                <strong id="objectDetectorQuality">--</strong>
+              </div>
+              <div class="status-row">
+                <span>GPU plan</span>
+                <strong id="objectDetectorGpuPlan">--</strong>
+              </div>
+              <div class="status-row">
+                <span>Filters</span>
+                <strong id="objectDetectorParams">--</strong>
+              </div>
+              <div class="status-row">
+                <span>Last run age</span>
+                <strong id="objectDetectionLastRun">--</strong>
+              </div>
+              <div class="status-row">
+                <span>Metadata objects</span>
+                <strong id="objectDetectionMetadataCount">0</strong>
+              </div>
+              <div class="status-row">
+                <span>Detector error</span>
+                <strong id="objectDetectionError">--</strong>
+              </div>
+            </div>
+            <div class="debug-grid">
+              <label class="debug-field">
+                <span>Detected objects</span>
+                <div id="objectDetectionList" class="detected-object-list">No detections yet.</div>
+              </label>
+              <label class="debug-field">
+                <span>Visible labels sent to Gemini</span>
+                <strong id="visibleObjectLabels">--</strong>
+              </label>
+            </div>
+            <div class="button-grid">
+              <input id="followTargetLabelInput" type="text" placeholder="apple, bottle, person..." />
+              <button id="setFollowTargetButton" type="button">Follow Target</button>
+              <button id="stopFollowingButton" type="button">Stop Following</button>
+            </div>
+            <div class="status-grid">
+              <div class="status-row">
+                <span>Active target</span>
+                <strong id="activeFollowTarget">--</strong>
+              </div>
+              <div class="status-row">
+                <span>Follow scenario</span>
+                <strong id="followScenarioState">idle</strong>
+              </div>
+              <div class="status-row">
+                <span>Controller</span>
+                <strong id="followControllerState">stopped</strong>
+              </div>
+              <div class="status-row">
+                <span>Current errorX</span>
+                <strong id="followCurrentErrorX">--</strong>
+              </div>
+              <div class="status-row">
+                <span>Steering</span>
+                <strong id="followSteeringState">--</strong>
+              </div>
+            </div>
+          </div>
+          <div class="status-grid">
+            <div class="status-row">
+              <span>User visible</span>
+              <strong id="cameraUserVisible">false</strong>
+            </div>
+            <div class="status-row">
+              <span>User position</span>
+              <strong id="cameraUserPosition">unknown</strong>
+            </div>
+            <div class="status-row">
+              <span>User distance</span>
+              <strong id="cameraUserDistance">unknown</strong>
+            </div>
+            <div class="status-row">
+              <span>Face count</span>
+              <strong id="cameraFaceCount">--</strong>
+            </div>
+            <div class="status-row">
+              <span>Last observation</span>
+              <strong id="cameraLastObservation">--</strong>
+            </div>
+          </div>
+        </section>
+
+        <section id="settingsLocalBrain" class="panel-card local-brain-card">
+          <h2>Gemini Live / Local Brain</h2>
+          <p class="panel-note">
+            Gemini Live handles voice. Movement still goes through the local safe tool path.
+          </p>
+          <div class="status-grid">
+            <div class="status-row">
+              <span>Brain state</span>
+              <strong id="localBrainState" class="local-brain-state--stopped">stopped</strong>
+            </div>
+            <div class="status-row">
+              <span>Adapter</span>
+              <strong id="localBrainAdapterState">mock + rule fallback</strong>
+            </div>
+            <div class="status-row">
+              <span>Server status</span>
+              <strong id="localBrainServerStatus" class="local-server-state--unavailable">checking</strong>
+            </div>
+            <div class="status-row">
+              <span>Provider</span>
+              <strong id="localBrainProvider">mock</strong>
+            </div>
+            <div class="status-row">
+              <span>Model</span>
+              <strong id="localBrainModel">mock</strong>
+            </div>
+            <div class="status-row">
+              <span>Latency</span>
+              <strong id="localBrainLatency">--</strong>
+            </div>
+            <div class="status-row">
+              <span>Last thought</span>
+              <strong id="localBrainLastThought">--</strong>
+            </div>
+            <div class="status-row">
+              <span>Gemini Live</span>
+              <strong id="geminiLiveState" class="local-server-state--unavailable">disabled</strong>
+            </div>
+            <div class="status-row">
+              <span>Gemini mic</span>
+              <strong id="geminiLiveMicState">off</strong>
+            </div>
+            <div class="status-row">
+              <span>Gemini audio</span>
+              <strong id="geminiLiveAudioState">idle</strong>
+            </div>
+            <div class="status-row">
+              <span>Gemini output</span>
+              <strong id="geminiLiveOutputState">--</strong>
+            </div>
+            <div class="status-row">
+              <span>Gemini frame</span>
+              <strong id="geminiLiveFrameState">--</strong>
+            </div>
+            <div class="status-row">
+              <span>Gemini latency</span>
+              <strong id="geminiLiveLatency">--</strong>
+            </div>
+          </div>
+          <div class="status-grid status-grid--wide">
+            <div class="status-row">
+              <span>Last heard</span>
+              <strong id="geminiLiveInputTranscript">--</strong>
+            </div>
+            <div class="status-row">
+              <span>Last said</span>
+              <strong id="geminiLiveOutputTranscript">--</strong>
+            </div>
+            <div class="status-row">
+              <span>Last tool</span>
+              <strong id="geminiLiveLastToolCall">--</strong>
+            </div>
+          </div>
+          <p class="safety-note">
+            Stop always works. Movement actions still go through ToolExecutor, Life Engine,
+            SafetyGate, CommandQueue, and ESP32.
+          </p>
+          <div class="brain-policy-grid">
+            <label class="checkbox-field local-motion-arm-field">
+              <input id="localMotionArmedToggle" type="checkbox" />
+              <span>Local Motion Armed</span>
+            </label>
+            <label class="idle-number-field" for="conversationSleepTimeoutInput">
+              <span>Sleep after silence (s)</span>
+              <input id="conversationSleepTimeoutInput" type="number" min="1" max="120" step="1" value="10" inputmode="numeric" />
+            </label>
+          </div>
+          <div class="button-grid">
+            <button id="startLocalBrainButton" class="primary-button" type="button">
+              Start LOOI
+            </button>
+            <button id="stopLocalBrainButton" type="button">
+              Stop LOOI
+            </button>
+            <button id="thinkNowButton" type="button">
+              Think Now
+            </button>
+            <button id="refreshLocalBrainServerStatusButton" type="button">
+              Refresh Server Status
+            </button>
+          </div>
+          <h3>Recent Thoughts</h3>
+          <div id="localBrainThoughtList" class="local-brain-list" aria-live="polite"></div>
+          <h3>Local Event Bus</h3>
+          <div class="button-grid button-grid--single">
+            <button id="clearLocalEventsButton" type="button">
+              Clear Local Events
+            </button>
+          </div>
+          <div id="localEventList" class="local-event-list" aria-live="polite"></div>
+        </section>
+
+        <section id="settingsIdleScenarios" class="panel-card settings-section-idle-scenarios">
+          <h2>Idle Scenarios</h2>
+          <p class="panel-note">
+            Local micro-movements when LOOI is live and no scenario is running.
+          </p>
+          <div class="idle-settings-grid">
+            <label class="idle-number-field" for="idleFirstGapMinInput">
+              <span>First min (s)</span>
+              <input id="idleFirstGapMinInput" type="number" min="1" max="120" step="1" value="1" inputmode="numeric" />
+            </label>
+            <label class="idle-number-field" for="idleFirstGapMaxInput">
+              <span>First max (s)</span>
+              <input id="idleFirstGapMaxInput" type="number" min="1" max="120" step="1" value="4" inputmode="numeric" />
+            </label>
+            <label class="idle-number-field" for="idleSilentGapMinInput">
+              <span>Silent min (s)</span>
+              <input id="idleSilentGapMinInput" type="number" min="1" max="120" step="1" value="1" inputmode="numeric" />
+            </label>
+            <label class="idle-number-field" for="idleSilentGapMaxInput">
+              <span>Silent max (s)</span>
+              <input id="idleSilentGapMaxInput" type="number" min="1" max="120" step="1" value="4" inputmode="numeric" />
+            </label>
+            <label class="idle-number-field" for="idleSpeakingGapMinInput">
+              <span>Gemini min (s)</span>
+              <input id="idleSpeakingGapMinInput" type="number" min="1" max="120" step="1" value="1" inputmode="numeric" />
+            </label>
+            <label class="idle-number-field" for="idleSpeakingGapMaxInput">
+              <span>Gemini max (s)</span>
+              <input id="idleSpeakingGapMaxInput" type="number" min="1" max="120" step="1" value="4" inputmode="numeric" />
+            </label>
+            <label class="idle-number-field" for="idleBalanceStartInput">
+              <span>Balance start %</span>
+              <input id="idleBalanceStartInput" type="number" min="0" max="100" step="1" value="20" inputmode="numeric" />
+            </label>
+            <label class="idle-number-field" for="idleBalanceIncrementInput">
+              <span>Balance + %</span>
+              <input id="idleBalanceIncrementInput" type="number" min="0" max="100" step="1" value="20" inputmode="numeric" />
+            </label>
+            <label class="idle-number-field" for="idleOppositeMixChanceInput">
+              <span>Mix chance %</span>
+              <input id="idleOppositeMixChanceInput" type="number" min="0" max="100" step="1" value="25" inputmode="numeric" />
+            </label>
+            <label class="idle-number-field" for="idleGeminiBodyContextGapMinInput">
+              <span>Gemini ctx min (s)</span>
+              <input id="idleGeminiBodyContextGapMinInput" type="number" min="0" max="120" step="1" value="4" inputmode="numeric" />
+            </label>
+            <label class="idle-number-field" for="idleGeminiBodyContextGapMaxInput">
+              <span>Gemini ctx max (s)</span>
+              <input id="idleGeminiBodyContextGapMaxInput" type="number" min="0" max="120" step="1" value="10" inputmode="numeric" />
+            </label>
+          </div>
+          <h3>Test Animations</h3>
+          <div id="idleScenarioTestList" class="idle-scenario-test-grid" aria-label="Idle animation test buttons"></div>
+        </section>
+
+        <section id="settingsRobotBody" class="panel-card settings-section-robot-body">
+          <h2>Robot Body</h2>
+          <p class="safety-note">
+            Safety: lift the wheels before the first movement test.
+          </p>
+          <p class="safety-note">
+            Connect a nearby <strong>LOOI Body</strong> with the browser Bluetooth picker.
+          </p>
+          <div class="button-grid button-grid--single">
+            <esp-web-install-button manifest="/firmware/manifest.json">
+              <button class="primary-button" slot="activate" type="button">Upload Firmware</button>
+              <span slot="unsupported">Firmware upload requires Chrome or Edge with Web Serial.</span>
+              <span slot="not-allowed">Firmware upload requires HTTPS or localhost.</span>
+            </esp-web-install-button>
+          </div>
+          <div class="button-grid button-grid--triple">
+            <button id="connectEsp32Button" class="primary-button" type="button">
+              Connect Bluetooth
+            </button>
+            <button id="disconnectEsp32Button" type="button">Disconnect</button>
+            <button id="pingButton" type="button">Ping</button>
+          </div>
+          <div class="button-grid button-grid--single">
+            <button id="stopButton" class="danger-button" type="button">
+              Emergency Stop
+            </button>
+          </div>
+        </section>
+
+        <section id="settingsMovement" class="panel-card settings-section-movement">
+          <h2>Manual Movement Test</h2>
+          <div class="slider-grid">
+            <label class="slider-field" for="speedSlider">
+              <span>Speed</span>
+              <strong id="speedValue">0.20</strong>
+              <input
+                id="speedSlider"
+                type="range"
+                min="0.05"
+                max="0.40"
+                step="0.05"
+                value="0.20"
+              />
+            </label>
+            <label class="slider-field" for="durationSlider">
+              <span>Duration</span>
+              <strong id="durationValue">400 ms</strong>
+              <input
+                id="durationSlider"
+                type="range"
+                min="100"
+                max="1000"
+                step="50"
+                value="400"
+              />
+            </label>
+          </div>
+          <div class="movement-grid">
+            <button id="moveForwardButton" class="movement-button" type="button">
+              Forward
+            </button>
+            <button id="moveBackwardButton" class="movement-button" type="button">
+              Backward
+            </button>
+            <button id="rotateLeftButton" class="movement-button" type="button">
+              Rotate Left
+            </button>
+            <button id="rotateRightButton" class="movement-button" type="button">
+              Rotate Right
+            </button>
+            <button id="manualStopButton" class="danger-button movement-button" type="button">
+              Stop
+            </button>
+          </div>
+        </section>
+
+        <section id="settingsScenarios" class="panel-card settings-section-scenarios">
+          <h2>Scenario Tests</h2>
+          <p class="panel-note">
+            These trigger local Life Engine reactions only. External cloud is not involved.
+          </p>
+          <div class="button-grid scenario-grid">
+            <button id="scenarioComeHereButton" class="primary-button" type="button">
+              Scenario: Come Here
+            </button>
+            <button id="scenarioGiveMeSpaceButton" type="button">
+              Scenario: Give Me Space
+            </button>
+            <button id="scenarioLookAroundButton" type="button">
+              Scenario: Look Around
+            </button>
+            <button id="scenarioStopButton" class="danger-button" type="button">
+              Scenario: Stop / Freeze
+            </button>
+            <button id="scenarioBoredButton" type="button">
+              Scenario: Ignored / Bored
+            </button>
+            <button id="scenarioLowEnergyButton" type="button">
+              Scenario: Low Energy
+            </button>
+            <button id="scenarioObstacleButton" class="warning-button" type="button">
+              Scenario: Obstacle
+            </button>
+            <button id="scenarioClearObstacleButton" type="button">
+              Scenario: Clear Obstacle
+            </button>
+          </div>
+        </section>
+
+        <section id="settingsFaceDemo" class="panel-card settings-section-face-demo">
+          <h2>Face & Demo</h2>
+          <div class="input-row">
+            <input
+              id="userInput"
+              type="text"
+              placeholder="Say something to LOOI..."
+              autocomplete="off"
+            />
+            <button id="sendButton" class="primary-button" type="button">
+              Send
+            </button>
+          </div>
+          <div class="button-grid">
+            <button id="happyButton" type="button">Test Happy</button>
+            <button id="curiousButton" type="button">Test Curious</button>
+          </div>
+        </section>
+
+        <section id="settingsLog" class="panel-card log-card">
+          <h2>Log</h2>
+          <div id="logPanel" class="log-panel" aria-live="polite"></div>
+        </section>
+    </section>
+
+    <script src="./runtime-config.js"></script>
+    <script type="module" src="./js/app.js"></script>
+  </body>
+</html>
