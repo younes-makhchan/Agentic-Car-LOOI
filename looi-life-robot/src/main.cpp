@@ -4,6 +4,9 @@
 #include <NimBLEDevice.h>
 #include <Wire.h>
 #include <esp_arduino_version.h>
+#include <esp_bt.h>
+#include <esp_err.h>
+#include <nvs_flash.h>
 
 #include <math.h>
 
@@ -132,6 +135,8 @@ char headPitchEasing[32] = "ease_in_out_cubic";
 void setupPins();
 void setupHeadServo();
 void setupBle();
+void initializeNvsForBle();
+void releaseClassicBluetoothMemory();
 void handleBleCommandData(const uint8_t *payload, size_t length);
 void handleJsonMessage(const uint8_t *payload, size_t length);
 void handleMotionCommand(JsonObjectConst root);
@@ -265,7 +270,9 @@ void setupHeadServo() {
 }
 
 class LooiBleServerCallbacks : public NimBLEServerCallbacks {
-  void onConnect(NimBLEServer *server) override {
+  void onConnect(NimBLEServer *server, NimBLEConnInfo &connInfo) override {
+    (void)server;
+    (void)connInfo;
     bleClientConnected = true;
     connectedClientCount = 1;
     bleCommandBuffer = "";
@@ -274,18 +281,23 @@ class LooiBleServerCallbacks : public NimBLEServerCallbacks {
     sendConfig(JsonVariantConst());
   }
 
-  void onDisconnect(NimBLEServer *server) override {
+  void onDisconnect(NimBLEServer *server, NimBLEConnInfo &connInfo,
+                    int reason) override {
+    (void)server;
+    (void)connInfo;
     bleClientConnected = false;
     connectedClientCount = 0;
     bleCommandBuffer = "";
-    Serial.println("[BLE] Client disconnected");
+    Serial.printf("[BLE] Client disconnected reason=%d\n", reason);
     stopMotors("ble_disconnect");
     NimBLEDevice::startAdvertising();
   }
 };
 
 class LooiBleCommandCallbacks : public NimBLECharacteristicCallbacks {
-  void onWrite(NimBLECharacteristic *characteristic) override {
+  void onWrite(NimBLECharacteristic *characteristic,
+               NimBLEConnInfo &connInfo) override {
+    (void)connInfo;
     std::string value = characteristic->getValue();
     if (value.empty()) {
       return;
@@ -297,8 +309,11 @@ class LooiBleCommandCallbacks : public NimBLECharacteristicCallbacks {
 };
 
 void setupBle() {
+  initializeNvsForBle();
+  releaseClassicBluetoothMemory();
+
   NimBLEDevice::init(BLE_DEVICE_NAME);
-  NimBLEDevice::setPower(ESP_PWR_LVL_P9);
+  NimBLEDevice::setPower(9);
 
   bleServer = NimBLEDevice::createServer();
   bleServer->setCallbacks(new LooiBleServerCallbacks());
@@ -315,12 +330,55 @@ void setupBle() {
   service->start();
 
   NimBLEAdvertising *advertising = NimBLEDevice::getAdvertising();
+  advertising->setName(BLE_DEVICE_NAME);
   advertising->addServiceUUID(BLE_SERVICE_UUID);
-  advertising->setScanResponse(true);
+  advertising->addTxPower();
+  advertising->enableScanResponse(true);
   advertising->start();
 
   Serial.printf("[BLE] Advertising as %s service=%s\n", BLE_DEVICE_NAME,
                 BLE_SERVICE_UUID);
+}
+
+void initializeNvsForBle() {
+  esp_err_t result = nvs_flash_init();
+
+  if (result == ESP_ERR_NVS_NO_FREE_PAGES ||
+      result == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+    Serial.printf("[BLE] NVS reset required before BLE init err=0x%x\n",
+                  static_cast<unsigned int>(result));
+    const esp_err_t eraseResult = nvs_flash_erase();
+    if (eraseResult != ESP_OK) {
+      Serial.printf("[BLE] NVS erase failed err=0x%x\n",
+                    static_cast<unsigned int>(eraseResult));
+      return;
+    }
+    result = nvs_flash_init();
+  }
+
+  if (result == ESP_OK) {
+    Serial.println("[BLE] NVS ready");
+  } else {
+    Serial.printf("[BLE] NVS init failed err=0x%x\n",
+                  static_cast<unsigned int>(result));
+  }
+}
+
+void releaseClassicBluetoothMemory() {
+  const esp_err_t result = esp_bt_controller_mem_release(ESP_BT_MODE_CLASSIC_BT);
+
+  if (result == ESP_OK) {
+    Serial.println("[BLE] Released Classic BT memory");
+    return;
+  }
+
+  if (result == ESP_ERR_INVALID_STATE) {
+    Serial.println("[BLE] Classic BT memory already released or controller initialized");
+    return;
+  }
+
+  Serial.printf("[BLE] Classic BT memory release skipped err=0x%x\n",
+                static_cast<unsigned int>(result));
 }
 
 void handleBleCommandData(const uint8_t *payload, size_t length) {
