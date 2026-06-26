@@ -1673,6 +1673,7 @@ async function applyCalibrationToRobot({ quiet = false } = {}) {
 
 async function startProductionRuntime({ quietReadyLog = false } = {}) {
   await requestFullscreenSafe();
+  await lockLandscapeSafe();
 
   if (robotClient?.refreshStatus) {
     await robotClient.refreshStatus().catch((error) => {
@@ -1863,6 +1864,20 @@ async function requestFullscreenSafe() {
     await target.requestFullscreen();
   } catch (error) {
     log(`Fullscreen request skipped: ${error.message}`, "warn");
+  }
+}
+
+async function lockLandscapeSafe() {
+  const orientation = globalThis.screen?.orientation;
+
+  if (!orientation?.lock) {
+    return;
+  }
+
+  try {
+    await orientation.lock("landscape");
+  } catch {
+    // Some mobile browsers only allow orientation from the PWA manifest.
   }
 }
 
