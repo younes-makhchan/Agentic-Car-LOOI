@@ -327,8 +327,6 @@ void setupBle() {
   bleEventsCharacteristic = service->createCharacteristic(
       BLE_EVENTS_CHARACTERISTIC_UUID, NIMBLE_PROPERTY::NOTIFY);
 
-  service->start();
-
   NimBLEAdvertising *advertising = NimBLEDevice::getAdvertising();
   advertising->setName(BLE_DEVICE_NAME);
   advertising->addServiceUUID(BLE_SERVICE_UUID);
