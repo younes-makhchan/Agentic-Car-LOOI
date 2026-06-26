@@ -38,7 +38,7 @@ export async function createGeminiLiveTokenFromEnv(env = process.env) {
   const apiKey = String(env.GEMINI_API_KEY || "").trim();
 
   if (!apiKey) {
-    throw Object.assign(new Error("GEMINI_API_KEY is not configured."), {
+    throw Object.assign(new Error("Agent API key is not configured."), {
       statusCode: 503
     });
   }
@@ -95,7 +95,7 @@ export async function createGeminiLiveTokenFromEnv(env = process.env) {
   });
 
   if (!token?.name) {
-    throw Object.assign(new Error("Gemini Live token response did not include a token name."), {
+    throw Object.assign(new Error("Agent token response did not include a token name."), {
       statusCode: 502
     });
   }

@@ -397,10 +397,10 @@ assert.equal(runtime.getStatus().lastInputTranscript, "move backward more");
 assert.ok(runtime.getStatus().lastInputTranscriptAt > 0);
 assert.equal(runtime.getStatus().toolCallActive, false);
 assert.equal(runtime.getStatus().lastOutputTranscript, "I can move back a little.");
-assert.ok(runtimeLogs.some((entry) => entry.message === "Gemini tool requests: none"));
+assert.ok(runtimeLogs.some((entry) => entry.message === "Agent tool requests: none"));
 assert.equal(actions.some((action) => action.source === "gemini_live_speech_start"), false);
 const visionContextMessage = sentMessages.find((message) => message.realtimeInput?.text?.startsWith("<vision_context>"));
-assert.ok(visionContextMessage, "Gemini Live should receive vision context text");
+assert.ok(visionContextMessage, "Agent should receive vision context text");
 assert.ok(visionContextMessage.realtimeInput.text.includes('"mode":"gemini_live_video"'));
 assert.equal(visionContextMessage.realtimeInput.text.includes('"targetLabel"'), false);
 assert.equal(visionContextMessage.realtimeInput.text.includes('"state":"following"'), false);
@@ -431,7 +431,7 @@ assert.ok(actions.some((action) =>
   action.type === "run_scenario" &&
   action.args?.name === "tell_me_about_yourself"
 ));
-assert.ok(runtimeLogs.some((entry) => entry.message === "Gemini speech-start scenario: tell_me_about_yourself"));
+assert.ok(runtimeLogs.some((entry) => entry.message === "Agent speech-start scenario: tell_me_about_yourself"));
 const speechStartCount = actions.filter((action) => action.source === "gemini_live_speech_start").length;
 fakeTransport.emit({
   serverContent: {
@@ -556,7 +556,7 @@ assert.equal(sentMessages.at(-1).toolResponse.functionResponses[0].response.outp
 assert.equal(sentMessages.at(-1).toolResponse.functionResponses[0].response.output.queued, true);
 assert.equal(sentMessages.at(-1).toolResponse.functionResponses[0].response.output.executed, false);
 assert.ok(runtimeLogs.some((entry) =>
-  entry.message === "Gemini deferred speech-start scenario until audio: tell_me_about_yourself"
+  entry.message === "Agent deferred speech-start scenario until audio: tell_me_about_yourself"
 ));
 
 fakeTransport.emit({
@@ -579,7 +579,7 @@ assert.equal(actions.length, deferredActionsBeforeAudio + 1);
 assert.equal(actions.at(-1).source, "gemini_live");
 assert.equal(actions.at(-1).args.name, "tell_me_about_yourself");
 assert.ok(runtimeLogs.some((entry) =>
-  entry.message === "Gemini deferred speech-start scenario: tell_me_about_yourself"
+  entry.message === "Agent deferred speech-start scenario: tell_me_about_yourself"
 ));
 
 const deferredQuestionActionsBeforeAudio = actions.length;
@@ -621,7 +621,7 @@ assert.equal(actions.length, deferredQuestionActionsBeforeAudio + 1);
 assert.equal(actions.at(-1).source, "gemini_live");
 assert.equal(actions.at(-1).args.name, "question");
 assert.ok(runtimeLogs.some((entry) =>
-  entry.message === "Gemini deferred speech-start scenario: question"
+  entry.message === "Agent deferred speech-start scenario: question"
 ));
 
 fakeTransport.emit({
@@ -641,8 +641,8 @@ await wait(5);
 assert.equal(actions.at(-1).type, "run_scenario");
 assert.equal(actions.at(-1).args.name, "look_left");
 assert.equal(sentMessages.at(-1).toolResponse.functionResponses[0].response.output.accepted, true);
-assert.ok(runtimeLogs.some((entry) => /Gemini tool requests: run_scenario\(/.test(entry.message)));
-assert.equal(runtimeLogs.some((entry) => /GEMINI RX/.test(entry.message)), false);
+assert.ok(runtimeLogs.some((entry) => /Agent tool requests: run_scenario\(/.test(entry.message)));
+assert.equal(runtimeLogs.some((entry) => /AGENT RX/.test(entry.message)), false);
 
 fakeTransport.emit({
   toolCall: {
@@ -750,7 +750,7 @@ directGoogleRuntime.configure({
 });
 await assert.rejects(
   () => directGoogleRuntime.start({ captureAudio: false }),
-  /server relay|browser Gemini token/
+  /server relay|browser provider token/
 );
 
 console.log("smoke:gemini-live passed");

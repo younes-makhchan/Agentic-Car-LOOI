@@ -10,10 +10,6 @@ import {
 } from "./lib/gemini/geminiLiveRelay.js";
 import { getGeminiLiveEnv } from "./lib/gemini/geminiLiveToken.js";
 import { createLocalBrainServerFromEnv } from "./lib/localBrain/localBrainServer.js";
-// DISABLED_MEMORY: keep lib/memory/* and backend/memory/* for easy restoration,
-// but do not import or expose memory stores while persistent memory is disabled.
-// import { LearnedPhraseStore } from "./lib/memory/learnedPhraseStore.js";
-// import { MemoryStore, looksLikeSecret } from "./lib/memory/memoryStore.js";
 // DISABLED_ROBOFLOW_FOLLOW: keep lib/roboflow/webrtcProxy.js and the package dependency
 // for easy restoration, but do not import or expose Roboflow routes while follow is disabled.
 // import {
@@ -40,9 +36,6 @@ const serverTraceRequestBodies = process.env.SERVER_TRACE_REQUEST_BODIES !== "fa
 const serverTraceResponseBodies = process.env.SERVER_TRACE_RESPONSE_BODIES !== "false";
 let apiTraceCounter = 0;
 let lastServerLogEntry = null;
-// DISABLED_MEMORY: memory stores are intentionally not instantiated.
-// const memoryStore = new MemoryStore();
-// const learnedPhraseStore = new LearnedPhraseStore();
 const localBrainProvider = normalizeLocalBrainProvider(process.env.LOCAL_BRAIN_PROVIDER);
 const localBrainModel = process.env.LOCAL_BRAIN_MODEL || defaultLocalBrainModel(localBrainProvider);
 const localBrainServer = createLocalBrainServerFromEnv(process.env, serverLog);
@@ -140,14 +133,12 @@ app.post("/api/gemini-live/session", requireGeminiLiveAccess, async (req, res) =
   if (!geminiLiveConfig.enabled) {
     res.status(404).json({
       ok: false,
-      error: "Gemini Live is disabled."
+      error: "Agent is disabled."
     });
     return;
   }
 
-  geminiLog(
-    `RELAY SESSION request model=${geminiLiveConfig.model} voice=${geminiLiveConfig.voice} thinking=${geminiLiveConfig.thinkingLevel}`
-  );
+  geminiLog("RELAY SESSION request");
 
   try {
     const session = buildGeminiLiveRelaySession({
@@ -155,7 +146,7 @@ app.post("/api/gemini-live/session", requireGeminiLiveAccess, async (req, res) =
       env: process.env,
       path: geminiLiveRelay.path
     });
-    geminiLog(`RELAY SESSION ok latency=${Date.now() - startedAt}ms url=${geminiLiveRelay.path}`);
+    geminiLog(`RELAY SESSION ok latency=${Date.now() - startedAt}ms`);
     res.json(session);
   } catch (error) {
     const statusCode = Number(error?.statusCode) || 502;
@@ -171,7 +162,7 @@ app.post("/api/gemini-live/token", requireGeminiLiveAccess, async (req, res) => 
   if (!geminiLiveConfig.enabled) {
     res.status(404).json({
       ok: false,
-      error: "Gemini Live is disabled."
+      error: "Agent is disabled."
     });
     return;
   }
@@ -229,16 +220,6 @@ app.post("/api/local-brain/chat", requireLocalBrainAccess, async (req, res) => {
   );
   res.status(response.ok === false ? 502 : 200).json(response);
 });
-
-// DISABLED_MEMORY: persistent memory and learned-phrase routes are intentionally
-// not registered while memory is disabled.
-// app.post("/api/memory/write", requireMemoryAccess, async (req, res) => {});
-// app.get("/api/memory/context", requireMemoryAccess, async (_req, res) => {});
-// app.get("/api/memory/learned-phrases", requireMemoryAccess, async (_req, res) => {});
-// app.post("/api/memory/learned-phrases", requireMemoryAccess, async (req, res) => {});
-// app.delete("/api/memory/learned-phrases/:id", requireMemoryAccess, async (req, res) => {});
-// app.post("/api/memory/learned-phrases/:id/use", requireMemoryAccess, async (req, res) => {});
-// app.get("/api/memory/stats", requireMemoryAccess, async (_req, res) => {});
 
 function apiTraceMiddleware(req, res, next) {
   if (!serverTraceEnabled || !req.path.startsWith("/api/")) {
@@ -322,10 +303,6 @@ function summarizeApiRequestBody(req) {
   // if (req.path === "/api/init-webrtc") {}
   // if (req.path === "/api/roboflow-webrtc/terminate") {}
 
-  // DISABLED_MEMORY: memory request-body tracing is disabled with the routes.
-  // if (req.path === "/api/memory/write") {}
-  // if (req.path.includes("/learned-phrases")) {}
-
   return redactAndCompact(body);
 }
 
@@ -359,7 +336,6 @@ function summarizeApiResponseBody(req, body) {
       localBrainModel: body.localBrainModel,
       geminiLiveEnabled: body.geminiLiveEnabled,
       geminiLiveConfigured: body.geminiLiveConfigured,
-      geminiLiveModel: body.geminiLiveModel,
       // DISABLED_ROBOFLOW_FOLLOW: Roboflow config is not public while disabled.
       // roboflowWebrtcEnabled: body.roboflowWebrtc?.enabled,
       // roboflowWebrtcConfigured: body.roboflowWebrtc?.configured,
@@ -375,16 +351,10 @@ function summarizeApiResponseBody(req, body) {
     return {
       ok: body.ok,
       transport: body.transport,
-      model: body.model,
-      voice: body.voice,
-      thinkingLevel: body.thinkingLevel,
       websocketUrl: body.websocketUrl ? geminiLiveRelay.path : undefined,
       error: body.error ? shortServerLogText(body.error, 240) : undefined
     };
   }
-
-  // DISABLED_MEMORY: memory response tracing is disabled with the routes.
-  // if (req.path.includes("/memory/")) {}
 
   return redactAndCompact(body);
 }
@@ -458,9 +428,6 @@ function summarizeWebrtcParams(wrtcParams = null) {
   };
 }
 
-// DISABLED_MEMORY: kept as comment for restoring memory route auth later.
-// function requireMemoryAccess(req, res, next) {}
-
 function requireLocalBrainAccess(req, res, next) {
   if (!localBrainRequireLocalNetwork || isLocalRequest(req) || isPrivateLanRequest(req)) {
     next();
@@ -480,9 +447,9 @@ function requireGeminiLiveAccess(req, res, next) {
   }
 
   res.status(403).json({
-    ok: false,
-    error:
-      "Gemini Live endpoint requires localhost, private LAN, or GEMINI_LIVE_ALLOW_PUBLIC_RELAY=true for temporary public testing."
+      ok: false,
+      error:
+      "Agent endpoint requires localhost, private LAN, or public relay access for temporary public testing."
   });
 }
 
@@ -551,15 +518,8 @@ function getRequestHeader(req, name) {
   return req?.headers?.[String(name).toLowerCase()];
 }
 
-// DISABLED_MEMORY: kept as comment for restoring memory route errors later.
-// function sendMemoryError(res, error) {}
-
 // DISABLED_ROBOFLOW_FOLLOW: kept as comment for restoring Roboflow route errors later.
 // function sendRoboflowWebrtcError(res, error, action = "request") {}
-
-// DISABLED_MEMORY: kept as comments for restoring learned-phrase writes later.
-// async function addLearnedPhraseAndRemember(body = {}, fallbackSource = "manual") {}
-// function rejectSecretLikeLearnedPhrase(entry = {}) {}
 
 function normalizeLocalBrainProvider(value) {
   const provider = String(value || "mock").trim().toLowerCase();
@@ -680,7 +640,7 @@ function apiLog(message, level = "info") {
 }
 
 function geminiLog(message, level = "info") {
-  serverLog(message, level, "GEMINI_LIVE");
+  serverLog(message, level, "AGENT");
 }
 
 function serverLog(message, level = "info", scope = "LOCAL_BRAIN") {
@@ -713,7 +673,7 @@ async function startServer() {
     `[BOOT] Local brain provider=${localBrainProvider} model=${localBrainModel || "(not set)"} trace=${process.env.LOCAL_BRAIN_TRACE === "true"}`
   );
   console.log(
-    `[BOOT] Gemini Live enabled=${geminiLiveConfig.enabled} configured=${geminiLiveConfig.configured} model=${geminiLiveConfig.model} voice=${geminiLiveConfig.voice}`
+    `[BOOT] Agent enabled=${geminiLiveConfig.enabled} configured=${geminiLiveConfig.configured}`
   );
   // DISABLED_ROBOFLOW_FOLLOW: Roboflow boot logging is disabled with the routes.
   // console.log(`[BOOT] Roboflow WebRTC enabled=${roboflowWebrtcConfig.enabled}`);

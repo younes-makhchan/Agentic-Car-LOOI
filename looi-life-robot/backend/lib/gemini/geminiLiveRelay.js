@@ -23,7 +23,7 @@ export function createGeminiLiveRelay({
     const config = getGeminiLiveEnv(env);
 
     if (!config.enabled || !config.configured) {
-      browserSocket.close(1011, "Gemini Live relay is not configured.");
+      browserSocket.close(1011, "Agent relay is not configured.");
       return;
     }
 
@@ -57,12 +57,12 @@ export function createGeminiLiveRelay({
 
     upstreamSocket.on("error", (error) => {
       logger(`RELAY ${relayId} upstream error="${shortLogText(error.message)}"`, "warn");
-      closePair(1011, "Gemini Live upstream error.");
+      closePair(1011, "Agent upstream error.");
     });
 
     upstreamSocket.on("close", (code, reason) => {
       logger(`RELAY ${relayId} upstream close code=${code} reason="${shortLogText(reason)}"`, "debug");
-      closePair(code || 1000, normalizeCloseReason(reason) || "Gemini Live upstream closed.");
+      closePair(code || 1000, normalizeCloseReason(reason) || "Agent upstream closed.");
     });
 
     browserSocket.on("message", (data, isBinary) => {
@@ -75,7 +75,7 @@ export function createGeminiLiveRelay({
 
       if (queuedClientMessages.length > 256) {
         logger(`RELAY ${relayId} client queue overflow`, "warn");
-        closePair(1009, "Gemini Live relay queue overflow.");
+        closePair(1009, "Agent relay queue overflow.");
         return;
       }
 
@@ -84,15 +84,15 @@ export function createGeminiLiveRelay({
 
     browserSocket.on("error", (error) => {
       logger(`RELAY ${relayId} client error="${shortLogText(error.message)}"`, "debug");
-      closePair(1011, "Gemini Live relay client error.");
+      closePair(1011, "Agent relay client error.");
     });
 
     browserSocket.on("close", (code, reason) => {
       logger(`RELAY ${relayId} client close code=${code} reason="${shortLogText(reason)}"`, "debug");
-      closePair(code || 1000, normalizeCloseReason(reason) || "Gemini Live client closed.");
+      closePair(code || 1000, normalizeCloseReason(reason) || "Agent client closed.");
     });
 
-    function closePair(code = 1000, reason = "Gemini Live relay closed.") {
+    function closePair(code = 1000, reason = "Agent relay closed.") {
       if (closed) {
         return;
       }
@@ -142,7 +142,7 @@ export function buildGeminiLiveServerWebSocketUrl(env = process.env) {
   const apiKey = String(env.GEMINI_API_KEY || "").trim();
 
   if (!apiKey) {
-    throw Object.assign(new Error("GEMINI_API_KEY is not configured."), {
+    throw Object.assign(new Error("Agent API key is not configured."), {
       statusCode: 503
     });
   }

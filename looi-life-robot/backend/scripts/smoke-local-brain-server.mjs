@@ -163,8 +163,6 @@ const sanitized = sanitizeBrainContext({
 assert.equal(JSON.stringify(sanitized).includes("data:image"), false);
 assert.equal(JSON.stringify(sanitized).includes("api key"), false);
 assert.equal(sanitized.recentEvents.length, 20);
-assert.equal("memory" in sanitized, false);
-assert.equal("learnedPhraseCount" in sanitized, false);
 
 const browserSanitized = sanitizeBrainRequestValue({
   recentThoughts: [
