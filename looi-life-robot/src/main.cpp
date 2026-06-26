@@ -94,6 +94,10 @@ Adafruit_PWMServoDriver headServoDriver = Adafruit_PWMServoDriver(0x40);
 NimBLEServer *bleServer = nullptr;
 NimBLECharacteristic *bleEventsCharacteristic = nullptr;
 String bleCommandBuffer;
+uint8_t blePendingData[BLE_COMMAND_BUFFER_MAX];
+size_t blePendingDataLength = 0;
+portMUX_TYPE blePendingDataMux = portMUX_INITIALIZER_UNLOCKED;
+volatile bool bleRxBufferOverflow = false;
 bool bleClientConnected = false;
 uint8_t connectedClientCount = 0;
 
@@ -137,6 +141,8 @@ void setupHeadServo();
 void setupBle();
 void initializeNvsForBle();
 void releaseClassicBluetoothMemory();
+void appendPendingBleData(const uint8_t *payload, size_t length);
+void processPendingBleData();
 void handleBleCommandData(const uint8_t *payload, size_t length);
 void handleJsonMessage(const uint8_t *payload, size_t length);
 void handleMotionCommand(JsonObjectConst root);
@@ -217,6 +223,7 @@ void setup() {
 void loop() {
   const uint32_t now = millis();
 
+  processPendingBleData();
   updateRampedMotion();
   updateHeadPitchMotion();
 
@@ -277,8 +284,6 @@ class LooiBleServerCallbacks : public NimBLEServerCallbacks {
     connectedClientCount = 1;
     bleCommandBuffer = "";
     Serial.println("[BLE] Client connected");
-    sendTelemetry();
-    sendConfig(JsonVariantConst());
   }
 
   void onDisconnect(NimBLEServer *server, NimBLEConnInfo &connInfo,
@@ -288,6 +293,9 @@ class LooiBleServerCallbacks : public NimBLEServerCallbacks {
     bleClientConnected = false;
     connectedClientCount = 0;
     bleCommandBuffer = "";
+    portENTER_CRITICAL(&blePendingDataMux);
+    blePendingDataLength = 0;
+    portEXIT_CRITICAL(&blePendingDataMux);
     Serial.printf("[BLE] Client disconnected reason=%d\n", reason);
     stopMotors("ble_disconnect");
     NimBLEDevice::startAdvertising();
@@ -303,7 +311,7 @@ class LooiBleCommandCallbacks : public NimBLECharacteristicCallbacks {
       return;
     }
 
-    handleBleCommandData(reinterpret_cast<const uint8_t *>(value.data()),
+    appendPendingBleData(reinterpret_cast<const uint8_t *>(value.data()),
                          value.length());
   }
 };
@@ -336,6 +344,49 @@ void setupBle() {
 
   Serial.printf("[BLE] Advertising as %s service=%s\n", BLE_DEVICE_NAME,
                 BLE_SERVICE_UUID);
+}
+
+void appendPendingBleData(const uint8_t *payload, size_t length) {
+  if (!payload || length == 0) {
+    return;
+  }
+
+  portENTER_CRITICAL(&blePendingDataMux);
+  if (blePendingDataLength + length > BLE_COMMAND_BUFFER_MAX) {
+    blePendingDataLength = 0;
+    bleRxBufferOverflow = true;
+  } else {
+    memcpy(blePendingData + blePendingDataLength, payload, length);
+    blePendingDataLength += length;
+  }
+  portEXIT_CRITICAL(&blePendingDataMux);
+}
+
+void processPendingBleData() {
+  if (bleRxBufferOverflow) {
+    bleRxBufferOverflow = false;
+    bleCommandBuffer = "";
+    Serial.println("[SAFE] BLE RX buffer overflow");
+    stopMotors("ble_rx_buffer_overflow");
+    sendError("unknown", "BLE RX buffer overflow", JsonVariantConst());
+    return;
+  }
+
+  static uint8_t data[BLE_COMMAND_BUFFER_MAX];
+  size_t length = 0;
+  portENTER_CRITICAL(&blePendingDataMux);
+  if (blePendingDataLength > 0) {
+    length = blePendingDataLength;
+    memcpy(data, blePendingData, length);
+    blePendingDataLength = 0;
+  }
+  portEXIT_CRITICAL(&blePendingDataMux);
+
+  if (length == 0) {
+    return;
+  }
+
+  handleBleCommandData(data, length);
 }
 
 void initializeNvsForBle() {
