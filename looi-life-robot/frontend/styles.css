@@ -4659,6 +4659,39 @@ body {
   pointer-events: none;
 }
 
+.runtime-gate__github-link {
+  position: fixed;
+  top: max(1rem, env(safe-area-inset-top));
+  left: max(1rem, env(safe-area-inset-left));
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 2.45rem;
+  padding: 0.56rem 0.78rem;
+  border: 1px solid rgba(122, 193, 255, 0.18);
+  border-radius: 0.8rem;
+  background: rgba(6, 10, 17, 0.68);
+  color: var(--text);
+  text-decoration: none;
+  font-size: 0.9rem;
+  font-weight: 800;
+  backdrop-filter: blur(12px);
+}
+
+.runtime-gate__github-link:hover,
+.runtime-gate__github-link:focus-visible {
+  border-color: rgba(122, 193, 255, 0.4);
+  color: var(--glow-strong);
+}
+
+.runtime-gate__github-icon {
+  width: 1.15rem;
+  height: 1.15rem;
+  flex: 0 0 auto;
+  fill: currentColor;
+}
+
 .runtime-gate__card {
   width: min(440px, 100%);
   max-height: calc(100dvh - 2rem);
