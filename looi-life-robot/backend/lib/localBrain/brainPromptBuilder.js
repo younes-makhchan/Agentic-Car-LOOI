@@ -1,4 +1,4 @@
-import { MODEL_SCENARIO_PROMPT_LIST } from "../../frontend/js/embodiment/scenarioCatalog.js";
+import { MODEL_SCENARIO_PROMPT_LIST } from "../../../frontend/js/embodiment/scenarioCatalog.js";
 
 const LOCAL_BRAIN_SERVER_SYSTEM_PROMPT = `
 

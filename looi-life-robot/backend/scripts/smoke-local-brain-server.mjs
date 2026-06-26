@@ -186,7 +186,11 @@ assert.equal(JSON.stringify(browserSanitized).includes("data:image"), false);
 assert.equal("dataUrl" in browserSanitized.recentThoughts[0].results[0].detail.snapshot, false);
 
 const { app } = await import("../server.js");
-const server = app.listen(0);
+const server = app.listen(0, "127.0.0.1");
+await new Promise((resolve, reject) => {
+  server.once("listening", resolve);
+  server.once("error", reject);
+});
 const baseUrl = `http://127.0.0.1:${server.address().port}`;
 
 try {

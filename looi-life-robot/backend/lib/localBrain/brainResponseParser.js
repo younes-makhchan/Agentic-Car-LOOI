@@ -1,6 +1,6 @@
 import {
   normalizeRunScenarioName
-} from "../../frontend/js/embodiment/scenarioCatalog.js";
+} from "../../../frontend/js/embodiment/scenarioCatalog.js";
 
 const LOCAL_BRAIN_ALLOWED_ACTIONS = new Set(["run_scenario"]);
 
