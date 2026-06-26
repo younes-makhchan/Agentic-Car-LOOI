@@ -1,8 +1,7 @@
 #include <Arduino.h>
 #include <Adafruit_PWMServoDriver.h>
 #include <ArduinoJson.h>
-#include <WebSocketsServer.h>
-#include <WiFi.h>
+#include <NimBLEDevice.h>
 #include <Wire.h>
 #include <esp_arduino_version.h>
 
@@ -64,19 +63,14 @@ constexpr uint16_t PWM_MAX_DUTY = (1u << PWM_RESOLUTION_BITS) - 1u;
 
 constexpr uint32_t SERIAL_BAUD = 115200;
 
-// Step 12 setup: station mode puts the phone, laptop server, and ESP32 on the
-// same Wi-Fi network. Edit these two values before uploading.
-constexpr char WIFI_SSID[] = "YOUR_HOME_WIFI_NAME";
-constexpr char WIFI_PASSWORD[] = "YOUR_HOME_WIFI_PASSWORD";
-
-// Fallback AP starts only if the ESP32 cannot join your home Wi-Fi.
-constexpr char FALLBACK_AP_SSID[] = "LOOI_BODY";
-constexpr char FALLBACK_AP_PASSWORD[] = "looi123456";
-const IPAddress AP_IP(192, 168, 4, 1);
-const IPAddress AP_GATEWAY(192, 168, 4, 1);
-const IPAddress AP_SUBNET(255, 255, 255, 0);
-
-constexpr uint16_t WS_PORT = 81;
+constexpr char BLE_DEVICE_NAME[] = "LOOI Body";
+constexpr char BLE_SERVICE_UUID[] = "7f2c2b6a-2d8f-4f6b-9a59-8a7f9d7c0001";
+constexpr char BLE_COMMAND_CHARACTERISTIC_UUID[] =
+    "7f2c2b6a-2d8f-4f6b-9a59-8a7f9d7c0002";
+constexpr char BLE_EVENTS_CHARACTERISTIC_UUID[] =
+    "7f2c2b6a-2d8f-4f6b-9a59-8a7f9d7c0003";
+constexpr size_t BLE_NOTIFY_CHUNK_SIZE = 180;
+constexpr size_t BLE_COMMAND_BUFFER_MAX = 4096;
 
 constexpr float FIRMWARE_HARD_MAX_SPEED = 0.50f;
 constexpr float DEFAULT_RUNTIME_MAX_SPEED = 0.40f;
@@ -90,14 +84,14 @@ constexpr uint32_t MAX_RAMP_MS = 500;
 constexpr uint32_t MOTOR_UPDATE_INTERVAL_MS = 20;
 
 constexpr uint32_t TELEMETRY_INTERVAL_MS = 1000;
-constexpr uint32_t WIFI_CONNECT_TIMEOUT_MS = 15000;
-constexpr uint8_t MAX_TRACKED_CLIENTS = 10;
 constexpr size_t JSON_DOC_SIZE = 2048;
 
-WebSocketsServer webSocket(WS_PORT);
 Adafruit_PWMServoDriver headServoDriver = Adafruit_PWMServoDriver(0x40);
 
-bool clientConnected[MAX_TRACKED_CLIENTS] = {false};
+NimBLEServer *bleServer = nullptr;
+NimBLECharacteristic *bleEventsCharacteristic = nullptr;
+String bleCommandBuffer;
+bool bleClientConnected = false;
 uint8_t connectedClientCount = 0;
 
 bool motionActive = false;
@@ -137,26 +131,23 @@ char headPitchEasing[32] = "ease_in_out_cubic";
 
 void setupPins();
 void setupHeadServo();
-void setupWifi();
-void setupWebSocket();
-void handleWebSocketEvent(uint8_t clientNum, WStype_t type, uint8_t *payload,
-                          size_t length);
-void handleJsonMessage(uint8_t clientNum, uint8_t *payload, size_t length);
-void handleMotionCommand(uint8_t clientNum, JsonObjectConst root);
-void handleHeadPitchCommand(uint8_t clientNum, JsonObjectConst root);
-void handleStopCommand(uint8_t clientNum, JsonObjectConst root);
-void handleConfigUpdateCommand(uint8_t clientNum, JsonObjectConst root);
-void handleConfigGetCommand(uint8_t clientNum, JsonObjectConst root);
+void setupBle();
+void handleBleCommandData(const uint8_t *payload, size_t length);
+void handleJsonMessage(const uint8_t *payload, size_t length);
+void handleMotionCommand(JsonObjectConst root);
+void handleHeadPitchCommand(JsonObjectConst root);
+void handleStopCommand(JsonObjectConst root);
+void handleConfigUpdateCommand(JsonObjectConst root);
+void handleConfigGetCommand(JsonObjectConst root);
 void sendTelemetry();
-void sendConfig(uint8_t clientNum, JsonVariantConst requestId);
-void sendAck(uint8_t clientNum, const char *cmd, JsonVariantConst requestId);
-void sendAck(uint8_t clientNum, const char *cmd, JsonVariantConst requestId,
-             const char *reason);
-void sendAck(uint8_t clientNum, const char *cmd, JsonVariantConst requestId,
-             float linear, float angular, uint32_t durationMs, float leftSpeed,
+void sendConfig(JsonVariantConst requestId);
+void sendAck(const char *cmd, JsonVariantConst requestId);
+void sendAck(const char *cmd, JsonVariantConst requestId, const char *reason);
+void sendAck(const char *cmd, JsonVariantConst requestId, float linear,
+             float angular, uint32_t durationMs, float leftSpeed,
              float rightSpeed, uint32_t rampMs, const char *label);
-void sendError(uint8_t clientNum, const char *cmd, const char *message,
-               JsonVariantConst requestId);
+void sendError(const char *cmd, const char *message, JsonVariantConst requestId);
+void sendBleText(const String &message);
 void setDrive(float linear, float angular, uint32_t durationMs, uint32_t rampMs,
               const char *label);
 void updateRampedMotion(bool force = false);
@@ -194,25 +185,14 @@ bool isStopped();
 bool deadlineReached(uint32_t now, uint32_t deadline);
 uint32_t motionRemainingMs(uint32_t now);
 const char *motorState();
-void trackClient(uint8_t clientNum, bool isConnected);
 void addRequestId(JsonDocument &doc, JsonVariantConst requestId);
 
 template <typename TDoc>
-void sendJsonToClient(uint8_t clientNum, const TDoc &doc) {
+void sendJsonEvent(const TDoc &doc) {
   String message;
   serializeJson(doc, message);
-  webSocket.sendTXT(clientNum, message);
-}
-
-template <typename TDoc>
-void broadcastJson(const TDoc &doc) {
-  if (connectedClientCount == 0) {
-    return;
-  }
-
-  String message;
-  serializeJson(doc, message);
-  webSocket.broadcastTXT(message);
+  message += '\n';
+  sendBleText(message);
 }
 
 void setup() {
@@ -225,15 +205,12 @@ void setup() {
 
   setupPins();
   setupHeadServo();
-  setupWifi();
-  setupWebSocket();
+  setupBle();
   stopMotors("boot");
 }
 
 void loop() {
   const uint32_t now = millis();
-
-  webSocket.loop();
 
   updateRampedMotion();
   updateHeadPitchMotion();
@@ -287,102 +264,110 @@ void setupHeadServo() {
                 static_cast<unsigned long>(HEAD_PITCH_DEFAULT_DURATION_MS));
 }
 
-void setupWifi() {
-  WiFi.mode(WIFI_STA);
-  WiFi.setSleep(false);
-
-  Serial.printf("[WIFI] Connecting to %s\n", WIFI_SSID);
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-
-  const uint32_t startedAt = millis();
-  while (WiFi.status() != WL_CONNECTED &&
-         millis() - startedAt < WIFI_CONNECT_TIMEOUT_MS) {
-    delay(250);
-    Serial.print(".");
-  }
-  Serial.println();
-
-  if (WiFi.status() == WL_CONNECTED) {
-    const String localIp = WiFi.localIP().toString();
-    Serial.println("[WIFI] Connected to home Wi-Fi");
-    Serial.printf("[WIFI] SSID: %s\n", WIFI_SSID);
-    Serial.printf("[WIFI] IP: %s\n", localIp.c_str());
-    Serial.printf("[WIFI] WebSocket URL: ws://%s:%u\n", localIp.c_str(),
-                  WS_PORT);
-    return;
+class LooiBleServerCallbacks : public NimBLEServerCallbacks {
+  void onConnect(NimBLEServer *server) override {
+    bleClientConnected = true;
+    connectedClientCount = 1;
+    bleCommandBuffer = "";
+    Serial.println("[BLE] Client connected");
+    sendTelemetry();
+    sendConfig(JsonVariantConst());
   }
 
-  Serial.println("[WIFI] Home Wi-Fi failed, starting fallback access point");
-  WiFi.disconnect(true);
-  delay(250);
-  WiFi.mode(WIFI_AP);
-
-  if (!WiFi.softAPConfig(AP_IP, AP_GATEWAY, AP_SUBNET)) {
-    Serial.println("[WIFI] Failed to apply AP IP config, continuing");
+  void onDisconnect(NimBLEServer *server) override {
+    bleClientConnected = false;
+    connectedClientCount = 0;
+    bleCommandBuffer = "";
+    Serial.println("[BLE] Client disconnected");
+    stopMotors("ble_disconnect");
+    NimBLEDevice::startAdvertising();
   }
+};
 
-  if (!WiFi.softAP(FALLBACK_AP_SSID, FALLBACK_AP_PASSWORD)) {
-    Serial.println("[WIFI] Failed to start fallback Wi-Fi access point");
-    return;
-  }
-
-  const String apIp = WiFi.softAPIP().toString();
-  Serial.println("[WIFI] Fallback AP started");
-  Serial.printf("[WIFI] SSID: %s\n", FALLBACK_AP_SSID);
-  Serial.printf("[WIFI] Password: %s\n", FALLBACK_AP_PASSWORD);
-  Serial.printf("[WIFI] AP IP: %s\n", apIp.c_str());
-  Serial.printf("[WIFI] WebSocket URL: ws://%s:%u\n", apIp.c_str(), WS_PORT);
-}
-
-void setupWebSocket() {
-  webSocket.begin();
-  webSocket.onEvent(handleWebSocketEvent);
-  Serial.printf("[WS] WebSocket server started on port %u\n", WS_PORT);
-}
-
-void handleWebSocketEvent(uint8_t clientNum, WStype_t type, uint8_t *payload,
-                          size_t length) {
-  switch (type) {
-    case WStype_CONNECTED: {
-      trackClient(clientNum, true);
-      const String remoteIp = webSocket.remoteIP(clientNum).toString();
-      Serial.printf("[WS] Client %u connected from %s\n", clientNum,
-                    remoteIp.c_str());
-      sendTelemetry();
-      break;
+class LooiBleCommandCallbacks : public NimBLECharacteristicCallbacks {
+  void onWrite(NimBLECharacteristic *characteristic) override {
+    std::string value = characteristic->getValue();
+    if (value.empty()) {
+      return;
     }
 
-    case WStype_DISCONNECTED:
-      Serial.printf("[WS] Client %u disconnected\n", clientNum);
-      trackClient(clientNum, false);
-      stopMotors("websocket_disconnect");
-      break;
+    handleBleCommandData(reinterpret_cast<const uint8_t *>(value.data()),
+                         value.length());
+  }
+};
 
-    case WStype_TEXT:
-      handleJsonMessage(clientNum, payload, length);
-      break;
+void setupBle() {
+  NimBLEDevice::init(BLE_DEVICE_NAME);
+  NimBLEDevice::setPower(ESP_PWR_LVL_P9);
 
-    default:
-      break;
+  bleServer = NimBLEDevice::createServer();
+  bleServer->setCallbacks(new LooiBleServerCallbacks());
+
+  NimBLEService *service = bleServer->createService(BLE_SERVICE_UUID);
+  NimBLECharacteristic *commandCharacteristic = service->createCharacteristic(
+      BLE_COMMAND_CHARACTERISTIC_UUID, NIMBLE_PROPERTY::WRITE |
+                                           NIMBLE_PROPERTY::WRITE_NR);
+  commandCharacteristic->setCallbacks(new LooiBleCommandCallbacks());
+
+  bleEventsCharacteristic = service->createCharacteristic(
+      BLE_EVENTS_CHARACTERISTIC_UUID, NIMBLE_PROPERTY::NOTIFY);
+
+  service->start();
+
+  NimBLEAdvertising *advertising = NimBLEDevice::getAdvertising();
+  advertising->addServiceUUID(BLE_SERVICE_UUID);
+  advertising->setScanResponse(true);
+  advertising->start();
+
+  Serial.printf("[BLE] Advertising as %s service=%s\n", BLE_DEVICE_NAME,
+                BLE_SERVICE_UUID);
+}
+
+void handleBleCommandData(const uint8_t *payload, size_t length) {
+  for (size_t index = 0; index < length; index++) {
+    const char value = static_cast<char>(payload[index]);
+
+    if (value == '\r') {
+      continue;
+    }
+
+    if (value == '\n') {
+      if (bleCommandBuffer.length() > 0) {
+        handleJsonMessage(
+            reinterpret_cast<const uint8_t *>(bleCommandBuffer.c_str()),
+            bleCommandBuffer.length());
+        bleCommandBuffer = "";
+      }
+      continue;
+    }
+
+    bleCommandBuffer += value;
+
+    if (bleCommandBuffer.length() > BLE_COMMAND_BUFFER_MAX) {
+      Serial.println("[SAFE] BLE command buffer overflow");
+      bleCommandBuffer = "";
+      stopMotors("ble_command_overflow");
+      sendError("unknown", "BLE command too large", JsonVariantConst());
+      return;
+    }
   }
 }
 
-void handleJsonMessage(uint8_t clientNum, uint8_t *payload, size_t length) {
+void handleJsonMessage(const uint8_t *payload, size_t length) {
   StaticJsonDocument<JSON_DOC_SIZE> doc;
   const DeserializationError error = deserializeJson(doc, payload, length);
 
   if (error) {
     Serial.printf("[SAFE] Invalid JSON received: %s\n", error.c_str());
     stopMotors("invalid_json");
-    sendError(clientNum, "unknown", "Invalid JSON", JsonVariantConst());
+    sendError("unknown", "Invalid JSON", JsonVariantConst());
     return;
   }
 
   if (!doc.is<JsonObjectConst>()) {
     Serial.println("[SAFE] Invalid JSON root, expected object");
     stopMotors("invalid_json_root");
-    sendError(clientNum, "unknown", "JSON root must be an object",
-              JsonVariantConst());
+    sendError("unknown", "JSON root must be an object", JsonVariantConst());
     return;
   }
 
@@ -393,35 +378,34 @@ void handleJsonMessage(uint8_t clientNum, uint8_t *payload, size_t length) {
   if (!typeValue.is<const char *>()) {
     Serial.println("[SAFE] Unknown command: missing or invalid type");
     stopMotors("unknown_command");
-    sendError(clientNum, "unknown", "Missing or invalid command type",
-              requestId);
+    sendError("unknown", "Missing or invalid command type", requestId);
     return;
   }
 
   const char *type = typeValue.as<const char *>();
 
   if (strcmp(type, "motion") == 0) {
-    handleMotionCommand(clientNum, root);
+    handleMotionCommand(root);
     return;
   }
 
   if (strcmp(type, "head_pitch") == 0) {
-    handleHeadPitchCommand(clientNum, root);
+    handleHeadPitchCommand(root);
     return;
   }
 
   if (strcmp(type, "stop") == 0) {
-    handleStopCommand(clientNum, root);
+    handleStopCommand(root);
     return;
   }
 
   if (strcmp(type, "config_update") == 0) {
-    handleConfigUpdateCommand(clientNum, root);
+    handleConfigUpdateCommand(root);
     return;
   }
 
   if (strcmp(type, "config_get") == 0) {
-    handleConfigGetCommand(clientNum, root);
+    handleConfigGetCommand(root);
     return;
   }
 
@@ -433,16 +417,16 @@ void handleJsonMessage(uint8_t clientNum, uint8_t *payload, size_t length) {
     response["type"] = "pong";
     response["uptime_ms"] = millis();
 
-    sendJsonToClient(clientNum, response);
+    sendJsonEvent(response);
     return;
   }
 
   Serial.printf("[SAFE] Unknown command received: %s\n", type);
   stopMotors("unknown_command");
-  sendError(clientNum, type, "Unknown command", requestId);
+  sendError(type, "Unknown command", requestId);
 }
 
-void handleMotionCommand(uint8_t clientNum, JsonObjectConst root) {
+void handleMotionCommand(JsonObjectConst root) {
   const JsonVariantConst requestId = root["id"];
   const JsonVariantConst linearValue = root["linear"];
   const JsonVariantConst angularValue = root["angular"];
@@ -452,8 +436,7 @@ void handleMotionCommand(uint8_t clientNum, JsonObjectConst root) {
   if (!isStrictNumber(linearValue) || !isStrictNumber(angularValue)) {
     Serial.println("[SAFE] Motion rejected: linear/angular missing or invalid");
     stopMotors("invalid_motion");
-    sendError(clientNum, "motion", "linear and angular must be numeric",
-              requestId);
+    sendError("motion", "linear and angular must be numeric", requestId);
     return;
   }
 
@@ -463,7 +446,7 @@ void handleMotionCommand(uint8_t clientNum, JsonObjectConst root) {
   if (!isFiniteNumber(rawLinear) || !isFiniteNumber(rawAngular)) {
     Serial.println("[SAFE] Motion rejected: linear/angular not finite");
     stopMotors("invalid_motion");
-    sendError(clientNum, "motion", "Motion values must be finite", requestId);
+    sendError("motion", "Motion values must be finite", requestId);
     return;
   }
 
@@ -539,12 +522,11 @@ void handleMotionCommand(uint8_t clientNum, JsonObjectConst root) {
         targetRightSpeed);
   }
 
-  sendAck(clientNum, "motion", requestId, currentLinear, currentAngular,
-          acceptedDuration, targetLeftSpeed, targetRightSpeed, acceptedRamp,
-          motionLabel);
+  sendAck("motion", requestId, currentLinear, currentAngular, acceptedDuration,
+          targetLeftSpeed, targetRightSpeed, acceptedRamp, motionLabel);
 }
 
-void handleHeadPitchCommand(uint8_t clientNum, JsonObjectConst root) {
+void handleHeadPitchCommand(JsonObjectConst root) {
   const JsonVariantConst requestId = root["id"];
   JsonVariantConst pulseValue = root["pulse"];
 
@@ -553,7 +535,7 @@ void handleHeadPitchCommand(uint8_t clientNum, JsonObjectConst root) {
   }
 
   if (!isStrictNumber(pulseValue) || !isFiniteNumber(pulseValue.as<double>())) {
-    sendError(clientNum, "head_pitch", "pulse must be numeric", requestId);
+    sendError("head_pitch", "pulse must be numeric", requestId);
     return;
   }
 
@@ -597,10 +579,10 @@ void handleHeadPitchCommand(uint8_t clientNum, JsonObjectConst root) {
   doc["safe_min"] = HEAD_PITCH_SAFE_MIN_PULSE;
   doc["safe_max"] = HEAD_PITCH_SAFE_MAX_PULSE;
   doc["label"] = acceptedLabel;
-  sendJsonToClient(clientNum, doc);
+  sendJsonEvent(doc);
 }
 
-void handleStopCommand(uint8_t clientNum, JsonObjectConst root) {
+void handleStopCommand(JsonObjectConst root) {
   const JsonVariantConst requestId = root["id"];
   const char *reason = "stop_command";
 
@@ -611,10 +593,10 @@ void handleStopCommand(uint8_t clientNum, JsonObjectConst root) {
   lastCommandAt = millis();
   Serial.printf("[CMD] Stop command received reason=%s\n", reason);
   stopMotors(reason);
-  sendAck(clientNum, "stop", requestId, reason);
+  sendAck("stop", requestId, reason);
 }
 
-void handleConfigUpdateCommand(uint8_t clientNum, JsonObjectConst root) {
+void handleConfigUpdateCommand(JsonObjectConst root) {
   const JsonVariantConst requestId = root["id"];
   StaticJsonDocument<JSON_DOC_SIZE> doc;
   addRequestId(doc, requestId);
@@ -706,13 +688,13 @@ void handleConfigUpdateCommand(uint8_t clientNum, JsonObjectConst root) {
       static_cast<unsigned long>(defaultRampMs), minPwm, warnings.size());
 
   lastCommandAt = millis();
-  sendJsonToClient(clientNum, doc);
+  sendJsonEvent(doc);
 }
 
-void handleConfigGetCommand(uint8_t clientNum, JsonObjectConst root) {
+void handleConfigGetCommand(JsonObjectConst root) {
   const JsonVariantConst requestId = root["id"];
   lastCommandAt = millis();
-  sendConfig(clientNum, requestId);
+  sendConfig(requestId);
 }
 
 void sendTelemetry() {
@@ -725,12 +707,8 @@ void sendTelemetry() {
 
   doc["type"] = "telemetry";
   doc["uptime_ms"] = now;
-  doc["wifi_mode"] = WiFi.getMode() == WIFI_AP ? "fallback_ap" : "station";
-  doc["ip"] =
-      WiFi.getMode() == WIFI_AP ? WiFi.softAPIP().toString()
-                                : WiFi.localIP().toString();
-  doc["ap_ip"] = WiFi.softAPIP().toString();
-  doc["rssi"] = WiFi.RSSI();
+  doc["transport"] = "ble";
+  doc["ble_connected"] = bleClientConnected;
   doc["clients"] = connectedClientCount;
   doc["battery"] = nullptr;
   doc["motor_state"] = motorState();
@@ -754,40 +732,39 @@ void sendTelemetry() {
   JsonObject config = doc.createNestedObject("config");
   addConfig(config);
 
-  broadcastJson(doc);
+  sendJsonEvent(doc);
 }
 
-void sendConfig(uint8_t clientNum, JsonVariantConst requestId) {
+void sendConfig(JsonVariantConst requestId) {
   StaticJsonDocument<JSON_DOC_SIZE> doc;
   addRequestId(doc, requestId);
   doc["type"] = "config";
   JsonObject config = doc.createNestedObject("config");
   addConfig(config);
-  sendJsonToClient(clientNum, doc);
+  sendJsonEvent(doc);
 }
 
-void sendAck(uint8_t clientNum, const char *cmd, JsonVariantConst requestId) {
+void sendAck(const char *cmd, JsonVariantConst requestId) {
   StaticJsonDocument<128> doc;
   addRequestId(doc, requestId);
   doc["type"] = "ack";
   doc["cmd"] = cmd;
   doc["accepted"] = true;
-  sendJsonToClient(clientNum, doc);
+  sendJsonEvent(doc);
 }
 
-void sendAck(uint8_t clientNum, const char *cmd, JsonVariantConst requestId,
-             const char *reason) {
+void sendAck(const char *cmd, JsonVariantConst requestId, const char *reason) {
   StaticJsonDocument<160> doc;
   addRequestId(doc, requestId);
   doc["type"] = "ack";
   doc["cmd"] = cmd;
   doc["accepted"] = true;
   doc["reason"] = reason;
-  sendJsonToClient(clientNum, doc);
+  sendJsonEvent(doc);
 }
 
-void sendAck(uint8_t clientNum, const char *cmd, JsonVariantConst requestId,
-             float linear, float angular, uint32_t durationMs, float leftSpeed,
+void sendAck(const char *cmd, JsonVariantConst requestId, float linear,
+             float angular, uint32_t durationMs, float leftSpeed,
              float rightSpeed, uint32_t rampMs, const char *label) {
   StaticJsonDocument<384> doc;
   addRequestId(doc, requestId);
@@ -801,17 +778,32 @@ void sendAck(uint8_t clientNum, const char *cmd, JsonVariantConst requestId,
   doc["label"] = label;
   doc["left_speed"] = leftSpeed;
   doc["right_speed"] = rightSpeed;
-  sendJsonToClient(clientNum, doc);
+  sendJsonEvent(doc);
 }
 
-void sendError(uint8_t clientNum, const char *cmd, const char *message,
-               JsonVariantConst requestId) {
+void sendError(const char *cmd, const char *message, JsonVariantConst requestId) {
   StaticJsonDocument<192> doc;
   addRequestId(doc, requestId);
   doc["type"] = "error";
   doc["cmd"] = cmd;
   doc["message"] = message;
-  sendJsonToClient(clientNum, doc);
+  sendJsonEvent(doc);
+}
+
+void sendBleText(const String &message) {
+  if (!bleClientConnected || !bleEventsCharacteristic) {
+    return;
+  }
+
+  for (size_t offset = 0; offset < message.length(); offset += BLE_NOTIFY_CHUNK_SIZE) {
+    const size_t chunkLength =
+        min(BLE_NOTIFY_CHUNK_SIZE, message.length() - offset);
+    bleEventsCharacteristic->setValue(
+        reinterpret_cast<const uint8_t *>(message.c_str() + offset),
+        chunkLength);
+    bleEventsCharacteristic->notify();
+    delay(2);
+  }
 }
 
 void setDrive(float linear, float angular, uint32_t durationMs, uint32_t rampMs,
@@ -1321,22 +1313,6 @@ const char *motorState() {
   }
 
   return "mixed";
-}
-
-void trackClient(uint8_t clientNum, bool isConnected) {
-  if (clientNum >= MAX_TRACKED_CLIENTS) {
-    return;
-  }
-
-  if (isConnected && !clientConnected[clientNum]) {
-    clientConnected[clientNum] = true;
-    connectedClientCount++;
-  } else if (!isConnected && clientConnected[clientNum]) {
-    clientConnected[clientNum] = false;
-    if (connectedClientCount > 0) {
-      connectedClientCount--;
-    }
-  }
 }
 
 void addRequestId(JsonDocument &doc, JsonVariantConst requestId) {

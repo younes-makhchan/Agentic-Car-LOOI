@@ -1,4 +1,8 @@
-const DEFAULT_URL = "ws://192.168.4.1:81";
+const BLE_DEVICE_NAME = "LOOI Body";
+const BLE_SERVICE_UUID = "7f2c2b6a-2d8f-4f6b-9a59-8a7f9d7c0001";
+const BLE_COMMAND_CHARACTERISTIC_UUID = "7f2c2b6a-2d8f-4f6b-9a59-8a7f9d7c0002";
+const BLE_EVENTS_CHARACTERISTIC_UUID = "7f2c2b6a-2d8f-4f6b-9a59-8a7f9d7c0003";
+const BLE_WRITE_CHUNK_SIZE = 180;
 const MAX_SPEED = 0.4;
 const MAX_DURATION_MS = 1000;
 const MIN_DURATION_MS = 50;
@@ -17,7 +21,7 @@ export const HEAD_PITCH_EASINGS = Object.freeze([
   "critically_damped_spring",
   "minimum_jerk"
 ]);
-const POLL_FALLBACK_INTERVAL_MS = 1000;
+
 const READY_STATE = {
   CONNECTING: 0,
   OPEN: 1,
@@ -29,97 +33,145 @@ let messageCounter = 0;
 
 export class ESP32Client {
   constructor({
-    url = DEFAULT_URL,
     logger,
-    apiBase = "/api/esp32",
-    getAuthHeaders = () => ({}),
     maxSpeed = MAX_SPEED,
-    minDurationMs = MIN_DURATION_MS
+    minDurationMs = MIN_DURATION_MS,
+    bluetooth = globalThis.navigator?.bluetooth
   } = {}) {
-    this.url = url;
     this.logger = logger;
-    this.apiBase = apiBase;
-    this.getAuthHeaders = getAuthHeaders;
+    this.bluetooth = bluetooth;
     this.maxSpeed = clamp(maxSpeed, 0.05, 0.5);
     this.minDurationMs = clamp(minDurationMs, 0, MAX_DURATION_MS);
     this.connected = false;
+    this.connecting = false;
     this.readyState = READY_STATE.CLOSED;
+    this.device = null;
+    this.server = null;
+    this.service = null;
+    this.commandCharacteristic = null;
+    this.eventsCharacteristic = null;
+    this.deviceName = BLE_DEVICE_NAME;
     this.latestTelemetry = null;
     this.latestConfig = null;
     this.lastPongAt = null;
     this.lastMessageAt = null;
-    this.lastSeq = 0;
-    this.pollTimer = null;
-    this.eventSource = null;
-    this.eventStreamConnected = false;
+    this.notificationBuffer = "";
+    this.sendQueue = Promise.resolve();
     this.statusCallbacks = new Set();
     this.telemetryCallbacks = new Set();
     this.messageCallbacks = new Set();
     this.ackCallbacks = new Set();
     this.configCallbacks = new Set();
     this.errorCallbacks = new Set();
+    this.handleNotification = this.handleNotification.bind(this);
+    this.handleGattDisconnected = this.handleGattDisconnected.bind(this);
   }
 
-  connect(urlOverride) {
-    const requestedUrl =
-      typeof urlOverride === "string" && urlOverride.trim()
-        ? urlOverride.trim()
-        : this.url;
-
-    this.url = requestedUrl;
+  async connect() {
+    this.ensureWebBluetoothAvailable();
+    this.connecting = true;
     this.readyState = READY_STATE.CONNECTING;
     this.emitStatus();
-    this.log(`Asking server gateway to connect to ESP32 at ${this.url}...`);
+    this.log("Opening Bluetooth picker for LOOI Body...");
 
-    return this.postGateway("/connect", { url: this.url })
-      .then((payload) => {
-        this.applySnapshot(payload);
-        this.startGatewayUpdates();
-        this.log(`Server gateway connected to ESP32 at ${this.url}`);
-        this.ping();
-        return this.getStatus();
-      })
-      .catch((error) => {
-        this.connected = false;
-        this.readyState = READY_STATE.CLOSED;
-        this.emitStatus();
-        this.emitError({
-          type: "gateway_error",
-          message: error.message
-        });
-        throw error;
+    try {
+      const device = await this.bluetooth.requestDevice({
+        filters: [
+          { name: BLE_DEVICE_NAME },
+          { namePrefix: "LOOI" }
+        ],
+        optionalServices: [BLE_SERVICE_UUID]
       });
+
+      this.device = device;
+      this.deviceName = device?.name || BLE_DEVICE_NAME;
+      device.addEventListener?.("gattserverdisconnected", this.handleGattDisconnected);
+
+      this.server = await device.gatt.connect();
+      this.service = await this.server.getPrimaryService(BLE_SERVICE_UUID);
+      this.commandCharacteristic = await this.service.getCharacteristic(
+        BLE_COMMAND_CHARACTERISTIC_UUID
+      );
+      this.eventsCharacteristic = await this.service.getCharacteristic(
+        BLE_EVENTS_CHARACTERISTIC_UUID
+      );
+      this.eventsCharacteristic.addEventListener(
+        "characteristicvaluechanged",
+        this.handleNotification
+      );
+      await this.eventsCharacteristic.startNotifications();
+
+      this.connected = true;
+      this.connecting = false;
+      this.readyState = READY_STATE.OPEN;
+      this.notificationBuffer = "";
+      this.emitStatus();
+      this.log(`Bluetooth connected to ${this.deviceName}.`);
+      this.requestConfig();
+      this.ping();
+      return this.getStatus();
+    } catch (error) {
+      this.connected = false;
+      this.connecting = false;
+      this.readyState = READY_STATE.CLOSED;
+      this.emitStatus();
+      this.emitError({
+        type: "bluetooth_error",
+        message: normalizeBluetoothError(error)
+      });
+      throw error;
+    }
   }
 
-  disconnect() {
-    this.stopGatewayUpdates();
+  async disconnect() {
     this.connected = false;
-    this.readyState = READY_STATE.CLOSED;
-    this.latestTelemetry = null;
-    this.lastPongAt = null;
+    this.connecting = false;
+    this.readyState = READY_STATE.CLOSING;
     this.emitStatus();
 
-    return this.postGateway("/disconnect", {
-      reason: "browser_disconnect"
-    }).catch((error) => {
-      this.log(`ESP32 gateway disconnect failed: ${error.message}`, "warn");
-    });
+    try {
+      if (this.eventsCharacteristic) {
+        this.eventsCharacteristic.removeEventListener?.(
+          "characteristicvaluechanged",
+          this.handleNotification
+        );
+        await this.eventsCharacteristic.stopNotifications?.();
+      }
+    } catch (error) {
+      this.log(`Bluetooth notifications stop failed: ${error.message}`, "warn");
+    }
+
+    try {
+      this.device?.gatt?.disconnect?.();
+    } catch (error) {
+      this.log(`Bluetooth disconnect failed: ${error.message}`, "warn");
+    }
+
+    this.clearConnectionState();
+    this.emitStatus();
+    return this.getStatus();
   }
 
   isConnected() {
-    return this.connected && this.readyState === READY_STATE.OPEN;
+    return Boolean(
+      this.connected &&
+      this.readyState === READY_STATE.OPEN &&
+      this.device?.gatt?.connected &&
+      this.commandCharacteristic
+    );
   }
 
   getStatus() {
-    const readyState = this.readyState;
-
     return {
-      url: this.url,
+      url: this.deviceName,
       connected: this.isConnected(),
-      readyState,
-      state: getReadyStateLabel(readyState, this.connected),
+      readyState: this.readyState,
+      state: getReadyStateLabel(this.readyState, this.connected, this.connecting),
       lastMessageAt: this.lastMessageAt,
-      lastPongAt: this.lastPongAt
+      lastPongAt: this.lastPongAt,
+      transport: "web_bluetooth",
+      deviceName: this.deviceName,
+      supported: this.isSupported()
     };
   }
 
@@ -157,7 +209,7 @@ export class ESP32Client {
 
   sendJson(payload) {
     if (!this.isConnected()) {
-      throw new Error("ESP32 server gateway is not connected.");
+      throw new Error("LOOI Body Bluetooth is not connected.");
     }
 
     const message = { ...payload };
@@ -166,17 +218,16 @@ export class ESP32Client {
       message.id = createMessageId();
     }
 
-    this.postGateway("/send", {
-      payload: message
-    })
-      .then((snapshot) => this.applySnapshot(snapshot))
+    this.sendQueue = this.sendQueue
+      .catch(() => {})
+      .then(() => this.writeJsonMessage(message))
       .catch((error) => {
         this.emitError({
-          type: "gateway_error",
+          type: "bluetooth_error",
           cmd: message.type,
           message: error.message
         });
-        this.log(`ESP32 gateway send failed: ${error.message}`, "error");
+        this.log(`Bluetooth send failed: ${error.message}`, "error");
       });
 
     return message.id;
@@ -247,177 +298,87 @@ export class ESP32Client {
     });
   }
 
-  refreshStatus() {
-    return this.getGateway(`/status?since=${encodeURIComponent(this.lastSeq)}`).then((snapshot) => {
-      this.applySnapshot(snapshot);
-      if (this.isConnected()) {
-        this.startGatewayUpdates();
-      }
-      return this.getStatus();
-    });
-  }
-
-  startGatewayUpdates() {
-    if (this.eventSource || this.pollTimer) {
-      return;
-    }
-
-    if (typeof EventSource === "function") {
-      this.startEventStream();
-      return;
-    }
-
-    this.startPollingFallback("EventSource is not available in this browser.");
-  }
-
-  stopGatewayUpdates() {
-    this.stopEventStream();
-    this.stopPollingFallback();
-  }
-
-  startEventStream() {
-    if (this.eventSource) {
-      return;
-    }
-
-    const eventUrl = `${this.apiBase}/events?since=${encodeURIComponent(this.lastSeq)}`;
-    const source = new EventSource(eventUrl);
-    this.eventSource = source;
-    this.eventStreamConnected = false;
-
-    source.addEventListener("open", () => {
-      this.eventStreamConnected = true;
-      this.stopPollingFallback();
-      this.log("ESP32 gateway event stream connected.");
-    });
-
-    source.addEventListener("snapshot", (event) => {
-      const snapshot = parseEventSourcePayload(event.data);
-      if (snapshot) {
-        this.applySnapshot(snapshot);
-      }
-    });
-
-    source.addEventListener("error", () => {
-      if (this.eventStreamConnected) {
-        this.log("ESP32 gateway event stream interrupted; browser will retry.", "warn");
-        return;
-      }
-
-      this.log("ESP32 gateway event stream unavailable; falling back to low-rate polling.", "warn");
-      this.stopEventStream();
-      this.startPollingFallback("event_stream_unavailable");
-    });
-  }
-
-  stopEventStream() {
-    if (!this.eventSource) {
-      return;
-    }
-
-    this.eventSource.close();
-    this.eventSource = null;
-    this.eventStreamConnected = false;
-  }
-
-  startPollingFallback(reason = "fallback") {
-    if (this.pollTimer) {
-      return;
-    }
-
-    this.log(`ESP32 gateway using fallback polling (${reason}).`, "warn");
-    this.pollMessages();
-    this.pollTimer = globalThis.setInterval(() => {
-      this.pollMessages();
-    }, POLL_FALLBACK_INTERVAL_MS);
-  }
-
-  stopPollingFallback() {
-    globalThis.clearInterval(this.pollTimer);
-    this.pollTimer = null;
-  }
-
-  pollMessages() {
-    this.getGateway(`/messages?since=${encodeURIComponent(this.lastSeq)}`)
-      .then((snapshot) => this.applySnapshot(snapshot))
-      .catch((error) => {
-        this.log(`ESP32 gateway poll failed: ${error.message}`, "warn");
-      });
-  }
-
-  applySnapshot(snapshot = {}) {
-    const status = snapshot.status ?? snapshot;
-
-    if (status?.url) {
-      this.url = status.url;
-    }
-
-    this.connected = Boolean(status?.connected);
-    this.readyState = Number.isFinite(Number(status?.readyState))
-      ? Number(status.readyState)
-      : this.connected
-        ? READY_STATE.OPEN
-        : READY_STATE.CLOSED;
-    this.lastMessageAt = status?.lastMessageAt ?? this.lastMessageAt;
-    this.lastPongAt = status?.lastPongAt ?? this.lastPongAt;
-
-    if (snapshot.telemetry) {
-      this.latestTelemetry = snapshot.telemetry;
-      this.emitTelemetry(snapshot.telemetry);
-    }
-
-    if (snapshot.config) {
-      this.latestConfig = structuredCloneSafe(snapshot.config);
-      this.emitConfig(this.latestConfig, {
-        type: "config",
-        config: this.latestConfig
-      });
-    }
-
-    const messages = Array.isArray(snapshot.messages) ? snapshot.messages : [];
-    messages.forEach((entry) => {
-      this.lastSeq = Math.max(this.lastSeq, Number(entry.seq) || this.lastSeq);
-      this.handleMessageObject(entry.message);
-    });
-
-    if (Number.isFinite(Number(snapshot.latestSeq))) {
-      this.lastSeq = Math.max(this.lastSeq, Number(snapshot.latestSeq));
-    }
-
+  async refreshStatus() {
     this.emitStatus();
+    return this.getStatus();
   }
 
-  async getGateway(path) {
-    const response = await fetch(`${this.apiBase}${path}`, {
-      headers: {
-        ...this.safeAuthHeaders()
-      }
-    });
-
-    return parseGatewayResponse(response);
+  isSupported() {
+    return Boolean(this.bluetooth?.requestDevice);
   }
 
-  async postGateway(path, body = {}) {
-    const response = await fetch(`${this.apiBase}${path}`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...this.safeAuthHeaders()
-      },
-      body: JSON.stringify(body)
-    });
-
-    return parseGatewayResponse(response);
-  }
-
-  safeAuthHeaders() {
-    try {
-      const headers = this.getAuthHeaders();
-      return headers && typeof headers === "object" ? headers : {};
-    } catch (error) {
-      this.log(`ESP32 gateway auth headers unavailable: ${error.message}`, "warn");
-      return {};
+  ensureWebBluetoothAvailable() {
+    if (!this.isSupported()) {
+      throw new Error("Web Bluetooth is not available in this browser. Use Chrome on HTTPS or localhost.");
     }
+  }
+
+  async writeJsonMessage(message) {
+    const encoded = new TextEncoder().encode(`${JSON.stringify(message)}\n`);
+
+    for (let offset = 0; offset < encoded.length; offset += BLE_WRITE_CHUNK_SIZE) {
+      const chunk = encoded.slice(offset, offset + BLE_WRITE_CHUNK_SIZE);
+      await writeBleChunk(this.commandCharacteristic, chunk);
+    }
+  }
+
+  handleNotification(event) {
+    const value = event?.target?.value;
+    if (!value) {
+      return;
+    }
+
+    this.notificationBuffer += new TextDecoder().decode(value);
+
+    while (true) {
+      const newlineIndex = this.notificationBuffer.indexOf("\n");
+      if (newlineIndex < 0) {
+        break;
+      }
+
+      const line = this.notificationBuffer.slice(0, newlineIndex).trim();
+      this.notificationBuffer = this.notificationBuffer.slice(newlineIndex + 1);
+
+      if (!line) {
+        continue;
+      }
+
+      try {
+        this.handleMessageObject(JSON.parse(line));
+      } catch (error) {
+        this.emitError({
+          type: "parse_error",
+          message: `Invalid Bluetooth JSON: ${error.message}`
+        });
+      }
+    }
+  }
+
+  handleGattDisconnected() {
+    const wasConnected = this.connected || this.connecting;
+    this.clearConnectionState();
+    this.emitStatus();
+
+    if (wasConnected) {
+      this.log("LOOI Body Bluetooth disconnected.", "warn");
+      this.emitError({
+        type: "bluetooth_disconnected",
+        message: "LOOI Body Bluetooth disconnected."
+      });
+    }
+  }
+
+  clearConnectionState() {
+    this.connected = false;
+    this.connecting = false;
+    this.readyState = READY_STATE.CLOSED;
+    this.server = null;
+    this.service = null;
+    this.commandCharacteristic = null;
+    this.eventsCharacteristic = null;
+    this.latestTelemetry = null;
+    this.lastPongAt = null;
+    this.notificationBuffer = "";
   }
 
   registerCallback(store, callback) {
@@ -456,11 +417,6 @@ export class ESP32Client {
 
   handleMessageObject(message) {
     if (!message || typeof message !== "object") {
-      return;
-    }
-
-    if (message.type === "gateway_status") {
-      this.log(`ESP32 gateway ${message.status}${message.url ? ` (${message.url})` : ""}`);
       return;
     }
 
@@ -508,6 +464,25 @@ export class ESP32Client {
   }
 }
 
+async function writeBleChunk(characteristic, chunk) {
+  if (typeof characteristic?.writeValueWithoutResponse === "function") {
+    await characteristic.writeValueWithoutResponse(chunk);
+    return;
+  }
+
+  if (typeof characteristic?.writeValueWithResponse === "function") {
+    await characteristic.writeValueWithResponse(chunk);
+    return;
+  }
+
+  if (typeof characteristic?.writeValue === "function") {
+    await characteristic.writeValue(chunk);
+    return;
+  }
+
+  throw new Error("Bluetooth command characteristic does not support writes.");
+}
+
 function clamp(value, min, max) {
   const numericValue = Number(value);
 
@@ -528,15 +503,15 @@ function structuredCloneSafe(value) {
 
 function createMessageId() {
   messageCounter += 1;
-  return `esp32-${Date.now()}-${messageCounter}`;
+  return `esp32-ble-${Date.now()}-${messageCounter}`;
 }
 
-function getReadyStateLabel(readyState, connected) {
+function getReadyStateLabel(readyState, connected, connecting) {
   if (connected) {
     return "connected";
   }
 
-  if (readyState === READY_STATE.CONNECTING) {
+  if (connecting || readyState === READY_STATE.CONNECTING) {
     return "connecting";
   }
 
@@ -547,20 +522,12 @@ function getReadyStateLabel(readyState, connected) {
   return "disconnected";
 }
 
-async function parseGatewayResponse(response) {
-  const payload = await response.json().catch(() => ({}));
+function normalizeBluetoothError(error) {
+  const message = error?.message || String(error);
 
-  if (!response.ok || payload.ok === false) {
-    throw new Error(payload.error ?? `ESP32 gateway HTTP ${response.status}`);
+  if (/user cancelled|user canceled|cancelled|canceled/i.test(message)) {
+    return "Bluetooth pairing was cancelled.";
   }
 
-  return payload;
-}
-
-function parseEventSourcePayload(data) {
-  try {
-    return JSON.parse(data);
-  } catch (_error) {
-    return null;
-  }
+  return message;
 }

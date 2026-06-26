@@ -18,16 +18,13 @@ export class RuleBrainFallback {
       return "background";
     }
 
-    if (/\b(stop following|stop tracking|cancel follow|cancel tracking|forget the target|never mind|nevermind)\b/.test(normalized)) {
-      return "scenario_stop_following";
-    }
-
     if (!/\bstopping\b|\bstop by\b/.test(normalized) && (/\b(stop|freeze|halt)\b/.test(normalized) || /\bdon'?t move\b|\bdo not move\b|\bstay still\b/.test(normalized))) {
       return "safety_stop";
     }
 
-    if (/\b(follow|track)\b/.test(normalized)) {
-      return "scenario_follow_target";
+    // DISABLED_ROBOFLOW_FOLLOW: follow/track requests are conversational only.
+    if (/\b(follow|track|stop following|stop tracking|cancel follow|cancel tracking|forget the target)\b/.test(normalized)) {
+      return "follow_disabled";
     }
 
     if (/\b(take|snap|shoot|capture)\b.*\b(picture|photo|selfie)\b|\b(picture|photo|selfie)\b.*\b(me|my)\b/.test(normalized)) {
@@ -66,22 +63,13 @@ export class RuleBrainFallback {
     const classification = this.classifyText(text, context);
 
     switch (classification) {
-      case "scenario_stop_following":
+      case "follow_disabled":
         return brainResponse({
-          text: "I'll stop following.",
-          action: scenarioAction("stop_following", { reason: "rule_follow_stop" }),
+          text: "I can look with my camera, but continuous following is disabled.",
+          action: null,
           reason: classification,
-          confidence: 0.9
+          confidence: 0.78
         });
-      case "scenario_follow_target": {
-        const label = extractFollowLabel(text, context);
-        return brainResponse({
-          text: label ? `I'll follow the ${label}.` : null,
-          action: label ? scenarioAction("follow_target", { label, mode: "gentle" }) : null,
-          reason: label ? classification : "follow_target_missing_label",
-          confidence: label ? 0.82 : 0.45
-        });
-      }
       case "scenario_take_picture":
         return brainResponse({
           text: "Okay, hold still.",

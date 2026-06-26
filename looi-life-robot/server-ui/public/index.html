@@ -5,17 +5,36 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>LOOI Life Robot</title>
     <link rel="stylesheet" href="./styles.css" />
+    <script type="module" src="/vendor/esp-web-tools/install-button.js"></script>
   </head>
   <body>
     <div id="runtimeGate" class="runtime-gate">
       <div class="runtime-gate__card">
         <p class="eyebrow">LOOI Runtime</p>
-        <h1>Wake Body</h1>
+        <h1>LOOI Setup</h1>
         <p>
-          Start this phone as LOOI's local runtime, enter full screen, and show the robot face.
+          Install the ESP32 firmware, connect the body by Bluetooth, then start LOOI.
         </p>
+        <div class="runtime-gate__actions" aria-label="LOOI setup actions">
+          <esp-web-install-button manifest="/firmware/manifest.json">
+            <button id="firmwareInstallButton" class="primary-button" slot="activate" type="button">
+              Upload Firmware
+            </button>
+            <span slot="unsupported">Firmware upload requires Chrome or Edge with Web Serial.</span>
+            <span slot="not-allowed">Firmware upload requires HTTPS or localhost.</span>
+          </esp-web-install-button>
+          <div class="bluetooth-connect-row">
+            <button id="gateConnectBluetoothButton" class="primary-button bluetooth-connect-button" type="button">
+              Connect using Bluetooth
+            </button>
+            <span id="gateBluetoothStatus" class="bluetooth-status" data-state="disconnected">
+              <span class="bluetooth-status__dot" aria-hidden="true"></span>
+              <span id="gateBluetoothStatusLabel">Connect</span>
+            </span>
+          </div>
+        </div>
         <button id="productionStartButton" class="primary-button" type="button" disabled>
-          Start Local Runtime & Enter
+          Start LOOI
         </button>
       </div>
     </div>
@@ -24,9 +43,9 @@
       <div
         id="looiActivityIndicator"
         class="looi-activity-indicator"
-        data-state="listening"
+        data-state="idle"
         aria-live="polite"
-        aria-label="LOOI listening"
+        aria-label="LOOI idle"
       >
         <div class="looi-activity-points" aria-hidden="true">
           <span></span>
@@ -35,7 +54,7 @@
           <span></span>
           <span></span>
         </div>
-        <span id="looiActivityLabel" class="looi-activity-label">Listening</span>
+        <span id="looiActivityLabel" class="looi-activity-label">Idle</span>
       </div>
       <button
         id="settingsToggleButton"
@@ -324,7 +343,7 @@
         <section id="settingsCamera" class="panel-card camera-card">
           <h2>Camera / Eyes</h2>
           <p class="panel-note">
-            The camera runs locally in the browser and feeds Gemini vision plus object-follow metadata.
+            The camera runs locally in the browser and feeds Gemini vision.
           </p>
           <div class="status-grid">
             <div class="status-row">
@@ -360,7 +379,7 @@
               <div>
                 <h3>Camera Devices</h3>
                 <p>
-                  Choose the exact phone camera used for the front follow stream.
+                  Choose the exact phone camera used for Gemini vision.
                   Default uses camera 1 when available.
                 </p>
               </div>
@@ -370,7 +389,7 @@
             </div>
             <div class="slider-grid">
               <label class="slider-field" for="frontCameraDeviceSelect">
-                <span>Front / follow camera</span>
+                <span>Front camera</span>
                 <select id="frontCameraDeviceSelect">
                   <option value="">Default camera 1 / front</option>
                 </select>
@@ -383,7 +402,6 @@
                 <h3>Gemini Live Vision</h3>
                 <p>
                   Gemini keeps receiving camera frames for visual conversation.
-                  Roboflow WebRTC runs separately for local follow tracking.
                 </p>
               </div>
               <label class="checkbox-field">
@@ -438,7 +456,8 @@
             <img id="snapshotPreview" alt="Latest small camera snapshot" hidden />
             <canvas id="cameraCanvas" hidden></canvas>
           </div>
-          <div class="object-vision-panel">
+          <!-- DISABLED_ROBOFLOW_FOLLOW: Object Vision / Follow UI is hidden but kept for restoration. -->
+          <div class="object-vision-panel" hidden>
             <div class="object-vision-panel__header">
               <div>
                 <h3>Object Vision / Follow</h3>
@@ -675,10 +694,10 @@
           </div>
           <div class="button-grid">
             <button id="startLocalBrainButton" class="primary-button" type="button">
-              Start Local Brain
+              Start LOOI
             </button>
             <button id="stopLocalBrainButton" type="button">
-              Stop Local Brain
+              Stop LOOI
             </button>
             <button id="thinkNowButton" type="button">
               Think Now
@@ -758,19 +777,19 @@
           <p class="safety-note">
             Safety: lift the wheels before the first movement test.
           </p>
-          <div class="input-stack">
-            <label class="field-label" for="esp32UrlInput">ESP32 WebSocket URL for server gateway</label>
-            <input
-              id="esp32UrlInput"
-              type="text"
-              value="ws://192.168.4.1:81"
-              autocomplete="off"
-              spellcheck="false"
-            />
+          <p class="safety-note">
+            Connect a nearby <strong>LOOI Body</strong> with the browser Bluetooth picker.
+          </p>
+          <div class="button-grid button-grid--single">
+            <esp-web-install-button manifest="/firmware/manifest.json">
+              <button class="primary-button" slot="activate" type="button">Upload Firmware</button>
+              <span slot="unsupported">Firmware upload requires Chrome or Edge with Web Serial.</span>
+              <span slot="not-allowed">Firmware upload requires HTTPS or localhost.</span>
+            </esp-web-install-button>
           </div>
           <div class="button-grid button-grid--triple">
             <button id="connectEsp32Button" class="primary-button" type="button">
-              Connect ESP32
+              Connect Bluetooth
             </button>
             <button id="disconnectEsp32Button" type="button">Disconnect</button>
             <button id="pingButton" type="button">Ping</button>

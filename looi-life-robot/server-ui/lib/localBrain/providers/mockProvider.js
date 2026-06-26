@@ -33,10 +33,12 @@ export class MockProvider {
 
     return response({
       text: scenario.text,
-      action: {
-        type: "run_scenario",
-        args: scenario.args
-      },
+      action: scenario.args
+        ? {
+            type: "run_scenario",
+            args: scenario.args
+          }
+        : null,
       reason: scenario.reason,
       confidence: scenario.confidence
     });
@@ -48,22 +50,13 @@ function inferScenario(text, context = {}) {
     return null;
   }
 
-  if (/\b(stop following|stop tracking|cancel follow|cancel tracking|forget the target|never mind|nevermind)\b/.test(text)) {
+  // DISABLED_ROBOFLOW_FOLLOW: follow/track requests are conversational only.
+  if (/\b(follow|track|keep following|keep tracking|stop following|stop tracking|cancel follow|cancel tracking|forget the target)\b/.test(text)) {
     return {
-      args: { name: "stop_following", reason: "mock_follow_stop" },
-      text: "I'll stop following.",
-      reason: "stop_following_request",
-      confidence: 0.9
-    };
-  }
-
-  const followLabel = extractFollowLabel(text, context);
-  if (followLabel) {
-    return {
-      args: { name: "follow_target", label: followLabel, mode: "gentle" },
-      text: `I'll follow the ${followLabel}.`,
-      reason: "follow_target_request",
-      confidence: 0.86
+      args: null,
+      text: "I can look with my camera, but continuous following is disabled.",
+      reason: "follow_disabled",
+      confidence: 0.78
     };
   }
 

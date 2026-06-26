@@ -7,3 +7,4 @@ node_modules/
 dist/
 build/
 *.log
+server-ui/memory/robot-tokens.json

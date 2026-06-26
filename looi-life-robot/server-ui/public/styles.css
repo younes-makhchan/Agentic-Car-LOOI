@@ -3786,7 +3786,6 @@ body {
 }
 
 #userInput,
-#esp32UrlInput,
 .personality-card input[type="text"],
 .personality-card textarea,
 .personality-card select,
@@ -3799,7 +3798,6 @@ button {
 }
 
 #userInput,
-#esp32UrlInput,
 .personality-card input[type="text"],
 .personality-card textarea,
 .personality-card select {
@@ -3815,7 +3813,6 @@ button {
 }
 
 #userInput:focus,
-#esp32UrlInput:focus,
 .personality-card input[type="text"]:focus,
 .personality-card textarea:focus,
 .personality-card select:focus {
@@ -4544,6 +4541,7 @@ body {
   transition: opacity 120ms ease;
 }
 
+.looi-activity-indicator[data-state="idle"] .looi-activity-label,
 .looi-activity-indicator[data-state="listening"] .looi-activity-label,
 .looi-activity-indicator[data-state="hearing"] .looi-activity-label,
 .looi-activity-indicator[data-state="starting"] .looi-activity-label {
@@ -4679,7 +4677,7 @@ body {
 }
 
 .runtime-gate__card {
-  width: min(380px, 100%);
+  width: min(440px, 100%);
   padding: 2rem;
   border-radius: 1.6rem;
   border: 1px solid rgba(122, 193, 255, 0.22);
@@ -4700,9 +4698,89 @@ body {
   line-height: 1.5;
 }
 
-.runtime-gate__card button {
+.runtime-gate__actions {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 1.1rem;
+}
+
+.runtime-gate__card button,
+.runtime-gate__card esp-web-install-button {
   width: 100%;
+}
+
+esp-web-install-button {
+  display: block;
+}
+
+esp-web-install-button button {
+  width: 100%;
+}
+
+.runtime-gate__card > button {
   margin-top: 0.75rem;
+}
+
+.bluetooth-connect-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.bluetooth-connect-button {
+  min-width: 0;
+}
+
+.bluetooth-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  min-width: 6.8rem;
+  min-height: 2.9rem;
+  padding: 0 0.8rem;
+  border: 1px solid rgba(122, 193, 255, 0.18);
+  border-radius: 0.8rem;
+  background: rgba(6, 10, 17, 0.72);
+  color: var(--muted);
+  font-size: 0.88rem;
+  font-weight: 800;
+}
+
+.bluetooth-status__dot {
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 999px;
+  background: rgba(143, 168, 196, 0.72);
+  box-shadow: 0 0 0 3px rgba(143, 168, 196, 0.1);
+}
+
+.bluetooth-status[data-state="connecting"] .bluetooth-status__dot {
+  background: var(--warning);
+  box-shadow: 0 0 0 3px rgba(255, 209, 102, 0.14);
+}
+
+.bluetooth-status[data-state="connected"] {
+  border-color: rgba(126, 224, 186, 0.46);
+  color: #c9ffe9;
+}
+
+.bluetooth-status[data-state="connected"] .bluetooth-status__dot {
+  background: var(--success);
+  box-shadow:
+    0 0 0 3px rgba(126, 224, 186, 0.14),
+    0 0 12px rgba(126, 224, 186, 0.7);
+}
+
+@media (max-width: 460px) {
+  .bluetooth-connect-row {
+    grid-template-columns: 1fr;
+  }
+
+  .bluetooth-status {
+    width: 100%;
+  }
 }
 
 .looi-vision-widget {

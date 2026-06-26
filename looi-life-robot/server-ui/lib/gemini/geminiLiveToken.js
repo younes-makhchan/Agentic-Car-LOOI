@@ -5,6 +5,7 @@ const DEFAULT_VOICE = "Kore";
 const DEFAULT_THINKING_LEVEL = "minimal";
 const DEFAULT_NEW_SESSION_TTL_MS = 60_000;
 const DEFAULT_SESSION_TTL_MS = 30 * 60_000;
+const DEFAULT_SLIDING_WINDOW_TOKENS = 32_768;
 
 export function getGeminiLiveEnv(env = process.env) {
   const model = String(env.GEMINI_LIVE_MODEL || DEFAULT_MODEL).trim() || DEFAULT_MODEL;
@@ -12,13 +13,24 @@ export function getGeminiLiveEnv(env = process.env) {
   const thinkingLevel =
     String(env.GEMINI_LIVE_THINKING_LEVEL || DEFAULT_THINKING_LEVEL).trim().toLowerCase() ||
     DEFAULT_THINKING_LEVEL;
+  const contextCompression = env.GEMINI_LIVE_CONTEXT_COMPRESSION !== "false";
+  const sessionResumption = env.GEMINI_LIVE_SESSION_RESUMPTION !== "false";
+  const slidingWindowTokens = clampInteger(
+    env.GEMINI_LIVE_SLIDING_WINDOW_TOKENS,
+    4_096,
+    1_000_000,
+    DEFAULT_SLIDING_WINDOW_TOKENS
+  );
 
   return {
     enabled: env.GEMINI_LIVE_ENABLED === "true",
     configured: Boolean(String(env.GEMINI_API_KEY || "").trim()),
     model,
     voice,
-    thinkingLevel
+    thinkingLevel,
+    contextCompression,
+    sessionResumption,
+    slidingWindowTokens
   };
 }
 
@@ -61,7 +73,21 @@ export async function createGeminiLiveTokenFromEnv(env = process.env) {
       liveConnectConstraints: {
         model: config.model,
         config: {
-          responseModalities: ["AUDIO"]
+          responseModalities: ["AUDIO"],
+          ...(config.contextCompression
+            ? {
+                contextWindowCompression: {
+                  slidingWindow: {
+                    targetTokens: config.slidingWindowTokens
+                  }
+                }
+              }
+            : {}),
+          ...(config.sessionResumption
+            ? {
+                sessionResumption: {}
+              }
+            : {})
         }
       },
       lockAdditionalFields: []
@@ -81,6 +107,9 @@ export async function createGeminiLiveTokenFromEnv(env = process.env) {
     model: config.model,
     voice: config.voice,
     thinkingLevel: config.thinkingLevel,
+    contextCompression: config.contextCompression,
+    sessionResumption: config.sessionResumption,
+    slidingWindowTokens: config.slidingWindowTokens,
     apiVersion: "v1alpha",
     websocketUrl:
       `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContentConstrained?access_token=${encodeURIComponent(token.name)}`,

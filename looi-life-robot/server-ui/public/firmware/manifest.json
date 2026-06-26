@@ -1,0 +1,23 @@
+{
+  "name": "LOOI ESP32 Body",
+  "version": "0.1.0",
+  "builds": [
+    {
+      "chipFamily": "ESP32",
+      "parts": [
+        {
+          "path": "/firmware/bootloader.bin",
+          "offset": 4096
+        },
+        {
+          "path": "/firmware/partitions.bin",
+          "offset": 32768
+        },
+        {
+          "path": "/firmware/looi-esp32.bin",
+          "offset": 65536
+        }
+      ]
+    }
+  ]
+}

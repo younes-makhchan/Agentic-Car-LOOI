@@ -63,6 +63,7 @@ export class FollowTargetController {
       };
     }
 
+    // Initialize one follow session from the Roboflow track selected by the scenario manager.
     this.targetLabel = targetLabel || this.targetLabel;
     this.targetTrackId = trackId ?? this.targetTrackId;
     this.mode = FOLLOW_MODES.has(mode) ? mode : "gentle";
@@ -73,6 +74,7 @@ export class FollowTargetController {
 
     this.running = true;
     this.lostAnnounced = false;
+    // If Roboflow already sees the target, enter following; otherwise start in search state.
     this.state = startingVisible ? "following" : "searching";
     this.targetVisible = startingVisible;
     this.lostForMs = startingVisible ? 0 : this.lostTimeoutMs;

@@ -550,118 +550,37 @@ assert.equal(routedSequences.at(-1).action.args.scenario, "finish_telling");
 assert.equal(faceEvents.some((event) => event.type === "finish_telling"), true);
 assert.equal(tellingActive, false);
 
-const followStarted = [];
-const followStops = [];
-let followRunning = false;
-let followTargetLabel = "";
-let followMode = "gentle";
-executor.setVisionControllers({
-  visionScenarioManager: {
-    async startFollowTarget(payload) {
-      followStarted.push(payload);
-      followRunning = true;
-      followTargetLabel = payload.label;
-      followMode = payload.mode ?? "gentle";
-      return {
-        status: "completed",
-        executed: true,
-        message: `Started following ${payload.label}.`,
-        detail: { targetLabel: payload.label, scenario: "follow_object" }
-      };
-    },
-    stopFollowing(reason) {
-      followStops.push(reason);
-      followRunning = false;
-      followTargetLabel = "";
-      return { ok: true, reason };
-    }
-  },
-  followTargetController: {
-    isRunning() {
-      return followRunning;
-    },
-    getStatus() {
-      return {
-        running: followRunning,
-        targetLabel: followTargetLabel,
-        mode: followMode
-      };
-    },
-    stop(reason) {
-      followRunning = false;
-      followTargetLabel = "";
-      return { ok: true, reason };
-    }
-  }
-});
 const followScenario = await executor.executeAction({
   id: "follow_1",
   source: "gemini_live",
   type: "run_scenario",
   args: { name: "follow_target", label: "bottle", mode: "gentle" }
 });
-assert.equal(followScenario.status, "completed");
-assert.equal(followStarted.at(-1).label, "bottle");
+assert.equal(followScenario.status, "rejected");
+assert.equal(followScenario.message, "Follow is disabled.");
+assert.equal(followScenario.executed, false);
 
-const followStartsBeforeDuplicate = followStarted.length;
-const followStopsBeforeDuplicate = followStops.length;
-const duplicateFollowScenario = await executor.executeAction({
-  id: "follow_duplicate",
-  source: "gemini_live",
-  type: "run_scenario",
-  args: { name: "follow_target", label: "bottle", mode: "gentle" }
-});
-assert.equal(duplicateFollowScenario.status, "completed");
-assert.equal(duplicateFollowScenario.executed, true);
-assert.equal(duplicateFollowScenario.detail.alreadyActive, true);
-assert.equal(followStarted.length, followStartsBeforeDuplicate);
-assert.equal(followStops.length, followStopsBeforeDuplicate);
-assert.equal(followRunning, true);
-
-const followModeUpdate = await executor.executeAction({
-  id: "follow_mode_update",
-  source: "gemini_live",
-  type: "run_scenario",
-  args: { name: "follow_target", label: "bottle", mode: "curious" }
-});
-assert.equal(followModeUpdate.status, "completed");
-assert.equal(followStarted.length, followStartsBeforeDuplicate + 1);
-assert.equal(followStops.length, followStopsBeforeDuplicate);
-assert.equal(followMode, "curious");
-
-const activeFollowStopsBefore = followStops.length;
 const activeFollowStop = await executor.executeAction({
   id: "follow_stop_active",
   source: "gemini_live",
   type: "run_scenario",
   args: { name: "stop_following", reason: "conversation_continues" }
 });
-assert.equal(activeFollowStop.status, "completed");
-assert.equal(followStops.length, activeFollowStopsBefore + 1);
+assert.equal(activeFollowStop.status, "rejected");
+assert.equal(activeFollowStop.message, "Follow is disabled.");
 
-const followScenarioAgain = await executor.executeAction({
-  id: "follow_2",
-  source: "gemini_live",
-  type: "run_scenario",
-  args: { name: "follow_target", label: "bottle", mode: "gentle" }
-});
-assert.equal(followScenarioAgain.status, "completed");
-assert.equal(followRunning, true);
-
-const routesBeforeFollowExit = routedSequences.length;
-const backUpWhileFollowing = await executor.executeAction({
-  id: "back_up_while_following",
+const routesBeforeBackUp = routedSequences.length;
+const backUpAfterDisabledFollow = await executor.executeAction({
+  id: "back_up_after_disabled_follow",
   source: "gemini_live",
   type: "run_scenario",
   args: { name: "back_up" }
 });
-assert.equal(backUpWhileFollowing.status, "queued");
-assert.equal(backUpWhileFollowing.detail.execution, "parallel");
+assert.equal(backUpAfterDisabledFollow.status, "queued");
+assert.equal(backUpAfterDisabledFollow.detail.execution, "parallel");
 await settleAsyncScenario();
-assert.equal(followRunning, false);
-assert.equal(routedSequences.length, routesBeforeFollowExit + 1);
+assert.equal(routedSequences.length, routesBeforeBackUp + 1);
 assert.equal(routedSequences.at(-1).action.args.scenario, "back_up");
-assert.equal(followStops.at(-1), "before:back_up");
 
 executor.getRuntimeContext = () => ({
   geminiLive: { lastInputTranscript: "stop following it" }
@@ -672,7 +591,8 @@ const stoppedFollow = await executor.executeAction({
   type: "run_scenario",
   args: { name: "stop_following", reason: "user_request" }
 });
-assert.equal(stoppedFollow.status, "completed");
+assert.equal(stoppedFollow.status, "rejected");
+assert.equal(stoppedFollow.message, "Follow is disabled.");
 
 const stopResult = await executor.executeAction({
   id: "stop_1",

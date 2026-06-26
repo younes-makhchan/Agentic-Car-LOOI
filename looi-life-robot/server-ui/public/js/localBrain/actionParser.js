@@ -130,12 +130,6 @@ export function validateBrainAction(action) {
         error: "run_scenario requires a valid scenario name."
       };
     }
-    if (scenario === "follow_target" && typeof args.label !== "string") {
-      return {
-        ok: false,
-        error: "run_scenario follow_target requires label."
-      };
-    }
   }
 
   return {

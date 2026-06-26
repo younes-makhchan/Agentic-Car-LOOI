@@ -74,6 +74,7 @@ export class ObjectDetectorEngine {
       return this.getStatus();
     }
 
+    // Roboflow initialization is browser-only because it loads the WebRTC SDK module.
     if (!this.supported) {
       this.lastError = "Roboflow WebRTC detection is only available in the browser.";
       this.emitStatus();
@@ -87,6 +88,7 @@ export class ObjectDetectorEngine {
     }
 
     try {
+      // Load the Roboflow SDK before any camera stream is opened against the workflow.
       this.sdk = await this.loadRoboflowModule();
       this.ready = Boolean(this.sdk?.connectors && this.sdk?.webrtc);
       this.lastError = this.ready ? null : "Roboflow WebRTC SDK did not expose connectors/webrtc.";
@@ -127,6 +129,7 @@ export class ObjectDetectorEngine {
     this.emitStatus();
 
     try {
+      // Starting clones the current camera stream so Roboflow can consume it over WebRTC.
       this.sourceStream = cloneMediaStream(inputStream);
       const proxyConnector = this.sdk.connectors.withProxyUrl(this.proxyUrl, {
         turnConfigUrl: this.turnConfigUrl

@@ -350,21 +350,24 @@ const MODEL_VISIBLE_SCENARIOS = Object.freeze(
   Object.values(SCENARIO_DEFINITIONS).filter((definition) => definition.modelVisible !== false)
 );
 
-const MODEL_ONLY_SCENARIOS = Object.freeze({
-  follow_target: Object.freeze({
-    name: "follow_target",
-    description: "Start local object follow for a visible target label.",
-    lifecycle: Object.freeze({
-      exitScenario: "stop_following",
-      exitPolicy: "auto_before_next",
-      isActive: ({ followTargetController } = {}) => followTargetController?.isRunning?.() === true
-    })
-  }),
-  stop_following: Object.freeze({
-    name: "stop_following",
-    description: "Stop the active local object-follow state."
-  })
-});
+// DISABLED_ROBOFLOW_FOLLOW: keep the model-only follow scenarios here for easy restoration,
+// but do not expose them to Gemini/local brain while Roboflow follow is disabled.
+// const MODEL_ONLY_SCENARIOS = Object.freeze({
+//   follow_target: Object.freeze({
+//     name: "follow_target",
+//     description: "Start local object follow for a visible target label.",
+//     lifecycle: Object.freeze({
+//       exitScenario: "stop_following",
+//       exitPolicy: "auto_before_next",
+//       isActive: ({ followTargetController } = {}) => followTargetController?.isRunning?.() === true
+//     })
+//   }),
+//   stop_following: Object.freeze({
+//     name: "stop_following",
+//     description: "Stop the active local object-follow state."
+//   })
+// });
+const MODEL_ONLY_SCENARIOS = Object.freeze({});
 
 export const MODEL_SCENARIO_NAMES = Object.freeze([
   ...MODEL_VISIBLE_SCENARIOS.map(({ name }) => name),

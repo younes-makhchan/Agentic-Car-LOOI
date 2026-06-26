@@ -27,10 +27,12 @@ export class MockBrainAdapter {
 
     return response({
       text: scenario.text,
-      action: {
-        type: "run_scenario",
-        args: scenario.args
-      },
+      action: scenario.args
+        ? {
+            type: "run_scenario",
+            args: scenario.args
+          }
+        : null,
       reason: scenario.reason,
       confidence: scenario.confidence
     });
@@ -42,22 +44,13 @@ function inferScenario(text, context = {}) {
     return null;
   }
 
-  if (/\b(stop following|stop tracking|cancel follow|cancel tracking|forget the target|never mind|nevermind)\b/.test(text)) {
+  // DISABLED_ROBOFLOW_FOLLOW: follow/track requests are conversational only.
+  if (/\b(follow|track|keep following|keep tracking|stop following|stop tracking|cancel follow|cancel tracking|forget the target)\b/.test(text)) {
     return {
-      args: { name: "stop_following", reason: "mock_follow_stop" },
-      text: "I'll stop following.",
-      reason: "stop_following_request",
-      confidence: 0.9
-    };
-  }
-
-  const followLabel = extractFollowLabel(text, context);
-  if (followLabel) {
-    return {
-      args: { name: "follow_target", label: followLabel, mode: "gentle" },
-      text: `I'll follow the ${followLabel}.`,
-      reason: "follow_target_request",
-      confidence: 0.86
+      args: null,
+      text: "I can look with my camera, but continuous following is disabled.",
+      reason: "follow_disabled",
+      confidence: 0.78
     };
   }
 
@@ -109,24 +102,7 @@ function inferScenario(text, context = {}) {
   return null;
 }
 
-function extractFollowLabel(text, context = {}) {
-  if (!/\b(follow|track|keep following|keep tracking)\b/.test(text)) {
-    return "";
-  }
-
-  const explicit = text.match(/\b(?:follow|track)\s+(?:the\s+|this\s+|that\s+)?([a-z][a-z -]{1,40})\b/);
-  const label = explicit?.[1]?.replace(/\b(please|now|for me)\b/g, "").trim();
-  if (label && !["it", "this", "that", "me"].includes(label)) {
-    return label;
-  }
-
-  return String(
-    context.recentObjectReference?.label ??
-      context.vision?.activeTarget?.label ??
-      context.vision?.objects?.find?.((object) => object?.visible)?.label ??
-      ""
-  ).trim();
-}
+// DISABLED_ROBOFLOW_FOLLOW: extractFollowLabel kept removed from active mock behavior.
 
 function response({ text = null, action = null, reason = "mock", confidence = 0.8 } = {}) {
   return {

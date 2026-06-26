@@ -89,7 +89,8 @@ export class ToolExecutor {
   async immediateStop(reason = "tool_executor_immediate_stop") {
     this.scenarioToken += 1;
     this.activeScenario = null;
-    this.visionScenarioManager?.stopFollowing?.(reason) ?? this.followTargetController?.stop?.(reason);
+    // DISABLED_ROBOFLOW_FOLLOW: no active follow controller to stop while Roboflow follow is disabled.
+    // this.visionScenarioManager?.stopFollowing?.(reason) ?? this.followTargetController?.stop?.(reason);
     this.face?.dismissPhoto?.();
     const dropped = this.executionQueue.splice(0);
     const stopResult = await this.executeStop({ reason }, { id: "immediate_stop", type: "stop" });
@@ -156,6 +157,19 @@ export class ToolExecutor {
   }
 
   async executeRunScenario(args = {}, action = {}, { forceBlocking = false } = {}) {
+    if (isDisabledFollowScenarioName(args.name ?? args.scenario)) {
+      return this.buildResult("rejected", {
+        action,
+        executed: false,
+        physical: false,
+        message: "Follow is disabled.",
+        detail: {
+          scenario: String(args.name ?? args.scenario ?? ""),
+          disabled: "DISABLED_ROBOFLOW_FOLLOW"
+        }
+      });
+    }
+
     const normalizedArgs = normalizeRunScenarioArgs(args, {
       allowInternalScenario: action.source === "local"
     });
@@ -173,7 +187,8 @@ export class ToolExecutor {
       `STEP 4 RUN_SCENARIO name=${normalizedArgs.name} label=${normalizedArgs.label || "none"} mode=${normalizedArgs.mode}`
     );
 
-    if (normalizedArgs.name === "follow_target") {
+    // DISABLED_ROBOFLOW_FOLLOW: follow execution branch kept commented for easy restoration.
+    /* if (normalizedArgs.name === "follow_target") {
       const activeFollow = this.getActiveFollowRequestState(normalizedArgs);
 
       if (activeFollow.sameTarget && activeFollow.sameMode) {
@@ -203,9 +218,9 @@ export class ToolExecutor {
         label: normalizedArgs.label,
         mode: normalizedArgs.mode
       }, action);
-    }
+    } */
 
-    if (normalizedArgs.name === "stop_following") {
+    /* if (normalizedArgs.name === "stop_following") {
       const lifecyclePrelude = await this.runLifecycleExitsBeforeScenario(normalizedArgs.name, action, {
         physical: false
       });
@@ -216,7 +231,7 @@ export class ToolExecutor {
       return this.executeStopFollowingScenario({
         reason: normalizedArgs.reason || "run_scenario_stop_following"
       }, action);
-    }
+    } */
 
     const scenario = getScenarioDefinition(normalizedArgs.name);
 
@@ -571,7 +586,8 @@ export class ToolExecutor {
     const reason = normalizeShortText(args.reason, 160) || "local_stop";
     this.scenarioToken += 1;
     this.activeScenario = null;
-    this.visionScenarioManager?.stopFollowing?.(reason) ?? this.followTargetController?.stop?.(reason);
+    // DISABLED_ROBOFLOW_FOLLOW: no active follow controller to stop while Roboflow follow is disabled.
+    // this.visionScenarioManager?.stopFollowing?.(reason) ?? this.followTargetController?.stop?.(reason);
     this.face?.dismissPhoto?.();
 
     const routed = await this.executeEmbodiedRoute({
@@ -1019,6 +1035,11 @@ function normalizeShortText(value, maxLength) {
 
 function normalizeFollowMode(mode) {
   return ["gentle", "curious", "cautious"].includes(mode) ? mode : "gentle";
+}
+
+function isDisabledFollowScenarioName(value) {
+  const name = String(value ?? "").trim();
+  return name === "follow_target" || name === "stop_following";
 }
 
 function normalizeRunScenarioArgs(args = {}, { allowInternalScenario = false } = {}) {

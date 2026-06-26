@@ -4,8 +4,6 @@ import { clampNumber, safeStringify } from "./core/runtimeUtils.js";
 import { EmbodiedActionRouter } from "./embodiment/embodiedActionRouter.js";
 import { ScenarioFrameSequencer } from "./embodiment/scenarioFrameSequencer.js";
 import { PriorityScheduler } from "./embodiment/priorityScheduler.js";
-import { OpenWakeWordWakeDetector } from "./audio/openWakeWordWakeDetector.js";
-import { WakePhraseDetector } from "./audio/wakePhraseDetector.js";
 import { GeminiLiveRuntime } from "./gemini/geminiLiveRuntime.js";
 import { IDLE_SCENARIOS } from "./idle/idleScenarioCatalog.js";
 import {
@@ -32,18 +30,16 @@ import { PerformanceMonitor } from "./runtime/performanceMonitor.js";
 import { ReliabilityManager } from "./runtime/reliabilityManager.js";
 import { WakeLockManager } from "./runtime/wakeLockManager.js";
 import { createFaceController } from "./ui/faceCanvas.js";
-import {
-  DEFAULT_OBJECT_DETECTOR_MAX_RESULTS,
-  ObjectDetectorEngine
-} from "./vision/objectDetectorEngine.js";
-import { ObjectTracker } from "./vision/objectTracker.js";
 import { VisionState } from "./vision/visionState.js";
 import {
-  buildVisionContext,
-  findMentionedObjectLabels
+  buildVisionContext
 } from "./vision/visionMetadataBuilder.js";
-import { FollowTargetController } from "./vision/followTargetController.js";
-import { VisionScenarioManager } from "./vision/visionScenarioManager.js";
+// DISABLED_ROBOFLOW_FOLLOW: keep Roboflow/follow source files for restoration, but do not
+// import ObjectDetectorEngine, ObjectTracker, FollowTargetController, or VisionScenarioManager.
+// import { DEFAULT_OBJECT_DETECTOR_MAX_RESULTS, ObjectDetectorEngine } from "./vision/objectDetectorEngine.js";
+// import { ObjectTracker } from "./vision/objectTracker.js";
+// import { FollowTargetController } from "./vision/followTargetController.js";
+// import { VisionScenarioManager } from "./vision/visionScenarioManager.js";
 
 const DEFAULT_SPEED = 0.2;
 const DEFAULT_DURATION_MS = 400;
@@ -61,42 +57,10 @@ const IDLE_BODY_CONTEXT_GAP_MIN_SEC = 0;
 const IDLE_BODY_CONTEXT_GAP_MAX_SEC = 120;
 const IDLE_BODY_CONTEXT_USER_TRANSCRIPT_COOLDOWN_MS = 2000;
 const DEFAULT_IDLE_SCENARIO_SETTINGS = createDefaultIdleScenarioSettings();
-const FOLLOW_TUNING_STORAGE_KEY = "looi.followTuning.v3";
-const FOLLOW_TUNING_PRESETS = Object.freeze({
-  case1: Object.freeze({
-    label: "Case 1",
-    maxObjectFollowSpeed: 0.2,
-    followCommandDurationMs: 300,
-    followCommandRefreshMs: 100,
-    followCenterDeadband: 0.14,
-    followMaxDetectionAgeMs: 300
-  }),
-  case2: Object.freeze({
-    label: "Case 2",
-    maxObjectFollowSpeed: 0.036,
-    followCommandDurationMs: 20,
-    followCommandRefreshMs: 90,
-    followCenterDeadband: 0.115,
-    followMaxDetectionAgeMs: 300
-  }),
-  case3: Object.freeze({
-    label: "Case 3",
-    maxObjectFollowSpeed: 0.032,
-    followCommandDurationMs: 10,
-    followCommandRefreshMs: 60,
-    followCenterDeadband: 0.135,
-    followMaxDetectionAgeMs: 300
-  }),
-  case4: Object.freeze({
-    label: "Case 4",
-    maxObjectFollowSpeed: 0.03,
-    followCommandDurationMs: 10,
-    followCommandRefreshMs: 80,
-    followCenterDeadband: 0.105,
-    followMaxDetectionAgeMs: 300
-  })
-});
-const DEFAULT_FOLLOW_TUNING_PRESET = "case1";
+// DISABLED_ROBOFLOW_FOLLOW: follow tuning constants are kept commented for easy restoration.
+// const FOLLOW_TUNING_STORAGE_KEY = "looi.followTuning.v3";
+// const FOLLOW_TUNING_PRESETS = Object.freeze({});
+// const DEFAULT_FOLLOW_TUNING_PRESET = "case1";
 const LOCAL_VISION_SIZE_MIN = 70;
 const LOCAL_VISION_SIZE_MAX = 220;
 const LOCAL_VISION_SIZE_STEP = 10;
@@ -109,12 +73,16 @@ const MAX_LOG_PANEL_ENTRIES = 180;
 const DEFAULT_CONVERSATION_SLEEP_TIMEOUT_SEC = 10;
 const CONVERSATION_SLEEP_TIMEOUT_MIN_SEC = 1;
 const CONVERSATION_SLEEP_TIMEOUT_MAX_SEC = 120;
-const WAKE_GATE_MIC_START_DELAY_MS = 120;
+// WAKE_WORD_DISABLED: no wake-gate mic delay is needed.
+// const WAKE_GATE_MIC_START_DELAY_MS = 120;
 
 const ui = {
   canvas: document.getElementById("faceCanvas"),
   runtimeGate: document.getElementById("runtimeGate"),
   productionStartButton: document.getElementById("productionStartButton"),
+  gateConnectBluetoothButton: document.getElementById("gateConnectBluetoothButton"),
+  gateBluetoothStatus: document.getElementById("gateBluetoothStatus"),
+  gateBluetoothStatusLabel: document.getElementById("gateBluetoothStatusLabel"),
   productionStopButton: document.getElementById("productionStopButton"),
   localBrainQuickButton: document.getElementById("localBrainQuickButton"),
   looiActivityIndicator: document.getElementById("looiActivityIndicator"),
@@ -233,7 +201,6 @@ const ui = {
   refreshLocalBrainServerStatusButton: document.getElementById("refreshLocalBrainServerStatusButton"),
   localEventList: document.getElementById("localEventList"),
   clearLocalEventsButton: document.getElementById("clearLocalEventsButton"),
-  esp32UrlInput: document.getElementById("esp32UrlInput"),
   connectEsp32Button: document.getElementById("connectEsp32Button"),
   disconnectEsp32Button: document.getElementById("disconnectEsp32Button"),
   pingButton: document.getElementById("pingButton"),
@@ -311,8 +278,9 @@ let wakeLockManager = null;
 let performanceMonitor = null;
 let reliabilityManager = null;
 let geminiLiveRuntime = null;
-let wakePhraseDetector = null;
-let wakePhraseStatus = null;
+// WAKE_WORD_DISABLED: detector state is kept out of the active runtime.
+// let wakePhraseDetector = null;
+// let wakePhraseStatus = null;
 let cameraInput = null;
 let objectDetectorEngine = null;
 let objectTracker = null;
@@ -358,9 +326,9 @@ let looiActivityRaf = 0;
 let looiActivitySlotForDot = [0, 1, 2, 3, 4];
 let looiActivityActiveStep = 0;
 let looiActivityStepStart = 0;
-let looiActivityState = "listening";
-let conversationGateState = "inactive";
-let conversationGateActivatedAt = 0;
+let looiActivityState = "idle";
+let conversationGateState = "active";
+let conversationGateActivatedAt = Date.now();
 let conversationGateLastInputTranscriptAt = 0;
 let conversationGateActivationInProgress = false;
 let conversationSilenceTimer = 0;
@@ -381,18 +349,40 @@ updateConversationSleepTimeoutUi();
 renderIdleScenarioTestButtons();
 
 ui.productionStartButton.addEventListener("click", () => {
-  startProductionRuntime().catch((error) => {
-    log(`Local runtime start failed: ${error.message}`, "error");
+  startLooiFromUi("gate");
+});
+
+ui.gateConnectBluetoothButton?.addEventListener("click", () => {
+  connectRobotBodyFromUi("gate").catch((error) => {
+    log(`Bluetooth body connection failed: ${error.message}`, "error");
     requestPoseScenario("pose_scared");
   });
 });
 
 ui.localBrainQuickButton.addEventListener("click", () => {
+  startLooiFromUi("settings");
+});
+
+function startLooiFromUi(_source = "manual") {
+  if (!confirmStartWithoutBluetoothBody()) {
+    return;
+  }
+
   startLocalBrainProductionMode().catch((error) => {
-    log(`Local Brain start failed: ${error.message}`, "error");
+    log(`LOOI start failed: ${error.message}`, "error");
     requestPoseScenario("pose_scared");
   });
-});
+}
+
+function confirmStartWithoutBluetoothBody() {
+  if (robotClient?.isConnected?.()) {
+    return true;
+  }
+
+  const message = "Bluetooth body is not connected.\nStart LOOI anyway?";
+
+  return globalThis.confirm?.(message) === true;
+}
 
 ui.productionStopButton.addEventListener("click", async () => {
   await immediateStop("production_top_stop", "Immediate stop sent from production controls.", "warn");
@@ -547,7 +537,7 @@ ui.geminiVisionAssistToggle?.addEventListener("change", () => {
   syncGeminiVisionAssist("toggle");
   log(
     geminiVisionAssistEnabled
-      ? "Gemini Live Vision enabled. Roboflow follow runs separately for tracking."
+      ? "Gemini Live Vision enabled. Camera frames go directly to Gemini."
       : "Gemini Live Vision disabled.",
     geminiVisionAssistEnabled ? "warn" : "info"
   );
@@ -577,10 +567,11 @@ ui.startLocalBrainButton.addEventListener("click", () => {
 
 ui.stopLocalBrainButton.addEventListener("click", () => {
   idleScenarioScheduler?.stop?.("ui_stop_local_brain");
-  stopConversationWakeGate("ui_stop_local_brain");
+  stopConversationRuntime("ui_stop_local_brain");
   stopGeminiVisionAssist("ui_stop_local_brain");
   clearPendingGeminiVisionAfterSpeech();
-  stopLooiRoboflowRuntime("ui_stop_local_brain");
+  // DISABLED_ROBOFLOW_FOLLOW: no Roboflow runtime to stop.
+  // stopLooiRoboflowRuntime("ui_stop_local_brain");
   geminiLiveRuntime?.stop?.("ui_stop_local_brain");
   localBrainEngine?.stop?.();
   updateLocalBrainUi();
@@ -644,23 +635,27 @@ ui.captureSnapshotButton.addEventListener("click", () => {
   });
 });
 
-ui.connectEsp32Button.addEventListener("click", async () => {
+ui.connectEsp32Button.addEventListener("click", () => {
+  connectRobotBodyFromUi("settings").catch((error) => {
+    log(`Bluetooth body connection failed: ${error.message}`, "error");
+    requestPoseScenario("pose_scared");
+  });
+});
+
+async function connectRobotBodyFromUi(_source = "manual") {
   if (!robotClient) {
     log("Robot client is still initializing.", "warn");
     return;
   }
 
-  const nextUrl = ui.esp32UrlInput.value.trim() || activeConfig.defaultEsp32WsUrl;
-
+  setBluetoothConnectBusy(true);
   try {
-    await robotClient.connect(nextUrl);
-    ui.esp32UrlInput.value = nextUrl;
+    await robotClient.connect();
     await applyCalibrationToRobot({ quiet: true });
-  } catch (error) {
-    log(`Robot connection failed: ${error.message}`, "error");
-    requestPoseScenario("pose_scared");
+  } finally {
+    setBluetoothConnectBusy(false);
   }
-});
+}
 
 ui.disconnectEsp32Button.addEventListener("click", async () => {
   if (!robotClient) {
@@ -806,102 +801,31 @@ ui.speedSlider.addEventListener("input", updateSliderLabels);
 ui.durationSlider.addEventListener("input", updateSliderLabels);
 ui.localVisionSizeSlider?.addEventListener("input", () => {
   applyLocalVisionWidgetSize(ui.localVisionSizeSlider.value);
-  drawObjectDetectionOverlays(objectDetectorEngine?.lastResult ?? { detections: [] });
 });
-globalThis.addEventListener?.("resize", () => {
-  drawObjectDetectionOverlays(objectDetectorEngine?.lastResult ?? { detections: [] });
-});
-ui.startObjectDetectionButton?.addEventListener("click", () => {
-  startObjectDetectionFromUi().catch((error) => log(`Object detector start failed: ${error.message}`, "warn"));
-});
-ui.stopObjectDetectionButton?.addEventListener("click", () => {
-  stopLooiRoboflowRuntime("manual_object_detector_stop");
-  updateVisionUi();
-});
-ui.objectRoboflowWorkflowSelect?.addEventListener("change", () => {
-  setRoboflowWorkflowFromUi().catch((error) => {
-    log(`Roboflow workflow switch failed: ${error.message}`, "warn");
-    updateVisionUi();
-  });
-});
-ui.objectRoboflowGpuPlanSelect?.addEventListener("change", () => {
-  setRoboflowGpuPlanFromUi().catch((error) => {
-    log(`Roboflow GPU plan switch failed: ${error.message}`, "warn");
-    updateVisionUi();
-  });
-});
-ui.objectMaxResultsInput?.addEventListener("change", () => {
-  objectDetectorEngine?.setMaxResults?.(Number(ui.objectMaxResultsInput.value));
-  updateVisionUi();
-});
-ui.objectCategoryAllowlistInput?.addEventListener("change", () => {
-  objectDetectorEngine?.setCategoryAllowlist?.(ui.objectCategoryAllowlistInput.value);
-  updateVisionUi();
-});
-ui.followTuningPresetSelect?.addEventListener("change", () => {
-  applyFollowPresetFromUi();
-});
-ui.setFollowTargetButton?.addEventListener("click", () => {
-  const label = ui.followTargetLabelInput?.value?.trim();
-  if (!label) {
-    log("Follow target requires a label.", "warn");
-    return;
-  }
-  visionScenarioManager?.startFollowTarget?.({ label, mode: "gentle" })
-    ?.then?.((result) => {
-      log(result.message, result.executed ? "info" : "warn");
-      updateVisionUi();
-    });
-});
-ui.stopFollowingButton?.addEventListener("click", () => {
-  visionScenarioManager?.stopFollowing?.("manual_stop_following");
-  updateVisionUi();
-});
+// DISABLED_ROBOFLOW_FOLLOW: detector/follow UI event handlers are intentionally not registered.
+// ui.startObjectDetectionButton?.addEventListener("click", () => {});
+// ui.stopObjectDetectionButton?.addEventListener("click", () => {});
+// ui.objectRoboflowWorkflowSelect?.addEventListener("change", () => {});
+// ui.objectRoboflowGpuPlanSelect?.addEventListener("change", () => {});
+// ui.objectMaxResultsInput?.addEventListener("change", () => {});
+// ui.objectCategoryAllowlistInput?.addEventListener("change", () => {});
+// ui.followTuningPresetSelect?.addEventListener("change", () => {});
+// ui.setFollowTargetButton?.addEventListener("click", () => {});
+// ui.stopFollowingButton?.addEventListener("click", () => {});
 
 init();
 
 async function init() {
   activeConfig = await loadPublicConfig();
-  const savedFollowTuning = loadFollowTuningSettings();
+  // DISABLED_ROBOFLOW_FOLLOW: follow tuning is not loaded while Roboflow follow is disabled.
+  // const savedFollowTuning = loadFollowTuningSettings();
   brainPolicy = clampBrainPolicy({
     ...createDefaultBrainPolicy(),
     maxThoughtsPerMinute:
       activeConfig.localBrainMaxThoughtsPerMinute ??
       PUBLIC_CONFIG.localBrainMaxThoughtsPerMinute ??
       12,
-    followLostTimeoutMs:
-      activeConfig.followLostTimeoutMs ??
-      PUBLIC_CONFIG.followLostTimeoutMs ??
-      3000,
-    followTargetCenterX:
-      activeConfig.followTargetCenterX ??
-      PUBLIC_CONFIG.followTargetCenterX ??
-      0.5,
-    followCenterDeadband:
-      activeConfig.followCenterDeadband ??
-      PUBLIC_CONFIG.followCenterDeadband ??
-      FOLLOW_TUNING_PRESETS[DEFAULT_FOLLOW_TUNING_PRESET].followCenterDeadband,
-    followSteerGain:
-      activeConfig.followSteerGain ??
-      PUBLIC_CONFIG.followSteerGain ??
-      0.9,
-    maxObjectFollowSpeed:
-      activeConfig.maxObjectFollowSpeed ??
-      PUBLIC_CONFIG.maxObjectFollowSpeed ??
-      FOLLOW_TUNING_PRESETS[DEFAULT_FOLLOW_TUNING_PRESET].maxObjectFollowSpeed,
-    followCommandDurationMs:
-      activeConfig.followCommandDurationMs ??
-      PUBLIC_CONFIG.followCommandDurationMs ??
-      FOLLOW_TUNING_PRESETS[DEFAULT_FOLLOW_TUNING_PRESET].followCommandDurationMs,
-    followCommandRefreshMs:
-      activeConfig.followCommandRefreshMs ??
-      PUBLIC_CONFIG.followCommandRefreshMs ??
-      FOLLOW_TUNING_PRESETS[DEFAULT_FOLLOW_TUNING_PRESET].followCommandRefreshMs,
-    followMaxDetectionAgeMs:
-      activeConfig.followMaxDetectionAgeMs ??
-      PUBLIC_CONFIG.followMaxDetectionAgeMs ??
-      FOLLOW_TUNING_PRESETS[DEFAULT_FOLLOW_TUNING_PRESET].followMaxDetectionAgeMs,
-    ...savedFollowTuning,
+    // DISABLED_ROBOFLOW_FOLLOW: keep default follow policy fields from createDefaultBrainPolicy only.
     eventThoughtCooldownMs:
       activeConfig.localBrainEventCooldownMs ??
       PUBLIC_CONFIG.localBrainEventCooldownMs ??
@@ -987,14 +911,11 @@ async function init() {
   lifeEventsEnabled =
     globalThis.localStorage?.getItem?.("looi.lifeEventsEnabled.v1") === "true";
 
-  ui.esp32UrlInput.value =
-    activeConfig.defaultEsp32WsUrl || PUBLIC_CONFIG.defaultEsp32WsUrl;
   ui.speedSlider.max = activeConfig.maxSpeed?.toFixed(2) ?? "0.40";
   ui.durationSlider.max = String(activeConfig.maxDurationMs ?? PUBLIC_CONFIG.maxDurationMs);
   updateSliderLabels();
 
   robotClient = new ESP32Client({
-    url: ui.esp32UrlInput.value,
     minDurationMs: 0,
     logger: (message, level = "info") => log(message, level)
   });
@@ -1003,13 +924,16 @@ async function init() {
     .refreshStatus?.()
     .then((status) => {
       if (status.connected) {
-        log(`ESP32 server gateway already connected at ${status.url}`);
+        log(`LOOI Body Bluetooth already connected: ${status.deviceName || status.url}`);
         return applyCalibrationToRobot({ quiet: true });
+      }
+      if (status.supported === false) {
+        log("Web Bluetooth is unavailable. Body movement can be connected from Chrome on HTTPS or localhost.", "warn");
       }
       return null;
     })
     .catch((error) => {
-      log(`ESP32 server gateway status unavailable: ${error.message}`, "warn");
+      log(`Bluetooth body status unavailable: ${error.message}`, "warn");
     });
 
   commandQueue = createCommandQueue(robotClient);
@@ -1061,43 +985,9 @@ async function init() {
   visionState = new VisionState({
     logger: (message, level = "info") => log(message, level)
   });
-  objectTracker = new ObjectTracker({
-    maxLostMs: brainPolicy.followLostTimeoutMs,
-    logger: (message, level = "info") => log(message, level)
-  });
-  objectDetectorEngine = new ObjectDetectorEngine({
-    videoElement: ui.cameraPreview,
-    cameraInput,
-    moduleUrl:
-      activeConfig.objectDetectorModuleUrl ??
-      PUBLIC_CONFIG.objectDetectorModuleUrl,
-    proxyUrl:
-      activeConfig.roboflowWebrtcProxyUrl ??
-      PUBLIC_CONFIG.roboflowWebrtcProxyUrl,
-    turnConfigUrl:
-      activeConfig.roboflowWebrtcTurnConfigUrl ??
-      PUBLIC_CONFIG.roboflowWebrtcTurnConfigUrl,
-    terminateUrl:
-      activeConfig.roboflowWebrtcTerminateUrl ??
-      PUBLIC_CONFIG.roboflowWebrtcTerminateUrl,
-    roboflowConfig:
-      activeConfig.roboflowWebrtc ??
-      PUBLIC_CONFIG.roboflowWebrtc,
-    maxResults:
-      activeConfig.objectDetectorMaxResults ??
-      PUBLIC_CONFIG.objectDetectorMaxResults ??
-      DEFAULT_OBJECT_DETECTOR_MAX_RESULTS,
-    logger: (message, level = "info") => log(message, level)
-  });
-  objectDetectorEngine.onDetections(handleObjectDetections);
-  objectDetectorEngine.onStatus((status) => {
-    visionState?.setDetectorStatus?.(status);
-    updateVisionUi();
-  });
-  objectDetectorEngine.onError((message) => {
-    log(`Object detector error: ${message}`, "warn");
-    updateVisionUi();
-  });
+  // DISABLED_ROBOFLOW_FOLLOW: Roboflow detector/tracker startup is intentionally disabled.
+  // objectTracker = new ObjectTracker({ maxLostMs: brainPolicy.followLostTimeoutMs, logger: (message, level = "info") => log(message, level) });
+  // objectDetectorEngine = new ObjectDetectorEngine({ videoElement: ui.cameraPreview, cameraInput, logger: (message, level = "info") => log(message, level) });
 
   toolExecutor = new ToolExecutor({
     lifeEngine,
@@ -1114,27 +1004,9 @@ async function init() {
     getExecutionPolicy
   });
 
-  followTargetController = new FollowTargetController({
-    visionState,
-    objectTracker,
-    lifeEngine,
-    commandQueue,
-    eventBus: localEventBus,
-    getPolicy: getExecutionPolicy,
-    lostTimeoutMs: brainPolicy.followLostTimeoutMs,
-    logger: (message, level = "info") => log(message, level)
-  });
-  visionScenarioManager = new VisionScenarioManager({
-    cameraInput,
-    objectDetectorEngine,
-    objectTracker,
-    visionState,
-    followTargetController,
-    face,
-    eventBus: localEventBus,
-    armMovement: armMovementForScenario,
-    logger: (message, level = "info") => log(message, level)
-  });
+  // DISABLED_ROBOFLOW_FOLLOW: Follow controller/scenario manager startup is intentionally disabled.
+  // followTargetController = new FollowTargetController({});
+  // visionScenarioManager = new VisionScenarioManager({});
   toolExecutor.setVisionControllers?.({
     visionScenarioManager,
     visionState,
@@ -1151,16 +1023,11 @@ async function init() {
   });
   geminiLiveRuntime.configure(activeConfig);
   geminiLiveRuntime.onStatus(handleGeminiLiveStatus);
-  wakePhraseDetector = createWakePhraseDetector();
-  [
-    "vision_follow_started",
-    "vision_follow_stopped",
-    "vision_follow_not_found",
-    "vision_target_lost",
-    "vision_target_reacquired"
-  ].forEach((type) => {
-    localEventBus.subscribe(type, handleVisionFollowEvent);
-  });
+  // WAKE_WORD_DISABLED: no wake detector is created.
+  // wakePhraseDetector = createWakePhraseDetector();
+  // DISABLED_ROBOFLOW_FOLLOW: Follow event subscriptions are intentionally disabled.
+  // ["vision_follow_started", "vision_follow_stopped", "vision_follow_not_found", "vision_target_lost", "vision_target_reacquired"]
+  //   .forEach((type) => localEventBus.subscribe(type, handleVisionFollowEvent));
 
   localServerBrainAdapter = new LocalServerBrainAdapter({
     logger: (message, level = "info") => log(message, level)
@@ -1245,7 +1112,7 @@ async function init() {
   log("UI ready.");
   log("Local-first runtime active.");
   log("Local Motion is disarmed by default. Arm only while supervised.");
-  log(`Default ESP32 URL: ${ui.esp32UrlInput.value}`);
+  log("Robot body transport: Web Bluetooth.");
   log("Safety: lift the wheels before the first movement test.", "warn");
 }
 
@@ -1392,10 +1259,11 @@ async function handleLocalTextInput(input = {}) {
     return null;
   }
 
-  updateRecentObjectReferenceFromText(text);
-  if (isStopFollowIntent(text)) {
-    visionScenarioManager?.stopFollowing?.("user_stop_following");
-  }
+  // DISABLED_ROBOFLOW_FOLLOW: object-reference/follow-stop handling is disabled.
+  // updateRecentObjectReferenceFromText(text);
+  // if (isStopFollowIntent(text)) {
+  //   visionScenarioManager?.stopFollowing?.("user_stop_following");
+  // }
 
   const source = "typed";
   const eventType = "user_text";
@@ -1645,7 +1513,8 @@ function handleCameraCommandResult(result = {}) {
 
   if (result.ok) {
     if (result.status?.running === false) {
-      visionScenarioManager?.stopFollowing?.("camera_stopped");
+      // DISABLED_ROBOFLOW_FOLLOW: no follow scenario to stop on camera stop.
+      // visionScenarioManager?.stopFollowing?.("camera_stopped");
       drawObjectDetectionOverlays([]);
       syncGeminiVisionAssist("camera_stopped");
     } else if (result.status?.running) {
@@ -1932,7 +1801,7 @@ async function startProductionRuntime({ quietReadyLog = false } = {}) {
 
   if (robotClient?.refreshStatus) {
     await robotClient.refreshStatus().catch((error) => {
-      log(`ESP32 gateway refresh failed: ${error.message}`, "warn");
+      log(`Bluetooth body refresh failed: ${error.message}`, "warn");
     });
   }
 
@@ -1951,6 +1820,32 @@ async function startProductionRuntime({ quietReadyLog = false } = {}) {
   updateProductionChrome();
 }
 
+async function ensureGeminiCameraRunning(reason = "looi_start") {
+  if (!cameraInput) {
+    throw new Error("Camera input is not initialized.");
+  }
+
+  const cameraStatus = cameraInput.getCameraStatus?.() ?? {};
+  if (cameraStatus.running) {
+    syncGeminiVisionAssist(reason);
+    return cameraStatus;
+  }
+
+  const deviceId = getFrontCameraDeviceId();
+  log(`Starting camera for Gemini vision using ${formatCameraDeviceForLog(deviceId)}.`);
+  const result = await cameraInput.startCamera({
+    facingMode: "user",
+    deviceId
+  });
+  handleCameraCommandResult(result);
+
+  if (!result?.ok) {
+    throw new Error(result?.error || "Camera could not start for Gemini vision.");
+  }
+
+  return result.status ?? cameraInput.getCameraStatus?.() ?? {};
+}
+
 async function startLocalBrainProductionMode() {
   if (looiStartupActive) {
     log("LOOI startup is already in progress.", "warn");
@@ -1967,8 +1862,6 @@ async function startLocalBrainProductionMode() {
         captureAudio: false
       }).catch((error) => ({ error }))
     : null;
-
-  let roboflowReady = false;
 
   try {
     setLooiStartupPhase("Opening LOOI face");
@@ -1993,6 +1886,9 @@ async function startLocalBrainProductionMode() {
     updateLocalBrainUi();
     updateCameraUi();
 
+    setLooiStartupPhase("Starting camera");
+    await ensureGeminiCameraRunning("looi_start");
+
     setLooiStartupPhase("Starting local brain");
     localBrainEngine?.start?.();
 
@@ -2001,15 +1897,9 @@ async function startLocalBrainProductionMode() {
     }
     updateLifeEventsUi();
 
-    setLooiStartupPhase("Starting Roboflow");
-    await ensureRoboflowDetectorRunning("looi_start")
-      .then((status) => {
-        roboflowReady = Boolean(status?.running || status?.starting || isRoboflowDetectorActive());
-      })
-      .catch((error) => {
-        roboflowReady = false;
-        log(`Roboflow prewarm skipped: ${error.message}`, "warn");
-      });
+    // DISABLED_ROBOFLOW_FOLLOW: Roboflow detector prewarm is intentionally disabled.
+    // setLooiStartupPhase("Starting Roboflow");
+    // await ensureRoboflowDetectorRunning("looi_start");
 
     if (useGeminiLive) {
       setLooiStartupPhase("Connecting Gemini");
@@ -2019,8 +1909,9 @@ async function startLocalBrainProductionMode() {
       throw geminiStartResult.error;
     }
     if (useGeminiLive) {
-      startConversationWakeGate("looi_start");
+      await startDirectGeminiConversation("looi_start");
       deferIdleBodyContext("looi_start");
+      syncGeminiVisionAssist("looi_start");
     }
     attentionSystem?.wake?.("live_start", activeConfig.conversationWindowMs ?? 30000);
 
@@ -2028,8 +1919,8 @@ async function startLocalBrainProductionMode() {
     idleScenarioScheduler?.start?.("start_looi");
     log(
       useGeminiLive
-        ? `Gemini Live connected: say Hey LOOI to talk. Camera, Roboflow ${roboflowReady ? "ready" : "unavailable"}, LOOI mode, and movement are enabled.`
-        : `Local Brain Live started: camera, Roboflow ${roboflowReady ? "ready" : "unavailable"}, LOOI mode, and movement are enabled.`,
+        ? "Gemini Live connected: camera, mic, LOOI mode, and movement are enabled."
+        : "Local Brain Live started: camera, LOOI mode, and movement are enabled.",
       "warn"
     );
     updateAttentionUi();
@@ -2067,24 +1958,22 @@ async function ensureOfficialRobotConnection() {
 
   if (robotClient?.refreshStatus) {
     await robotClient.refreshStatus().catch((error) => {
-      log(`ESP32 gateway refresh failed: ${error.message}`, "warn");
+      log(`Bluetooth body refresh failed: ${error.message}`, "warn");
     });
   }
 
   if (!robotClient?.isConnected?.()) {
-    const nextUrl = ui.esp32UrlInput.value.trim() || activeConfig.defaultEsp32WsUrl;
-    await robotClient.connect(nextUrl).catch((error) => {
-      log(`ESP32 gateway is not connected yet: ${error.message}`, "warn");
-    });
+    log("Live mode started without a Bluetooth body connection. Use Connect Bluetooth to pair nearby hardware.", "warn");
+    return;
   }
 
   if (robotClient?.isConnected?.()) {
     await applyCalibrationToRobot({ quiet: true }).catch((error) => {
       log(`Calibration apply during live startup failed: ${error.message}`, "warn");
     });
-    log("ESP32 server gateway is attached for live mode.");
+    log("LOOI Body Bluetooth is attached for live mode.");
   } else {
-    log("Live mode started without ESP32 body connection. Commands will wait until the server gateway is connected.", "warn");
+    log("Live mode started without ESP32 body connection. Commands will wait until Bluetooth is connected.", "warn");
   }
 }
 
@@ -2127,9 +2016,11 @@ function updateProductionChrome() {
     liveRunning
   );
 
-  if (liveRunning) {
-    ui.productionStartButton.textContent = "Enter LOOI Face";
-  }
+  ui.productionStartButton.textContent = looiStartupActive
+    ? "Starting LOOI..."
+    : liveRunning
+      ? "LOOI Started"
+      : "Start LOOI";
 
   ui.localVisionState.textContent = cameraStatus.running
     ? `${cameraStatus.facingMode ?? "camera"} live`
@@ -2165,7 +2056,7 @@ function setLooiStartupLoading(active, label = "Starting LOOI") {
   ui.startLocalBrainButton.disabled = looiStartupActive;
   ui.productionStartButton.disabled = looiStartupActive;
   if (ui.startLocalBrainButton) {
-    ui.startLocalBrainButton.textContent = looiStartupActive ? "Starting LOOI..." : "Start Local Brain";
+    ui.startLocalBrainButton.textContent = looiStartupActive ? "Starting LOOI..." : "Start LOOI";
   }
 
   updateProductionChrome();
@@ -2186,6 +2077,39 @@ function updateConnectionState(status) {
   const state = status?.state ?? "disconnected";
 
   ui.esp32Status.textContent = state;
+  updateBluetoothStatusChip(status);
+}
+
+function setBluetoothConnectBusy(busy) {
+  const isBusy = Boolean(busy);
+  if (ui.gateConnectBluetoothButton) {
+    ui.gateConnectBluetoothButton.disabled = isBusy;
+    ui.gateConnectBluetoothButton.textContent = isBusy ? "Connecting..." : "Connect using Bluetooth";
+  }
+  if (ui.connectEsp32Button) {
+    ui.connectEsp32Button.disabled = isBusy;
+    ui.connectEsp32Button.textContent = isBusy ? "Connecting..." : "Connect Bluetooth";
+  }
+  if (isBusy) {
+    updateBluetoothStatusChip({ state: "connecting", connected: false });
+  } else {
+    updateBluetoothStatusChip(robotClient?.getStatus?.() ?? { state: "disconnected", connected: false });
+  }
+}
+
+function updateBluetoothStatusChip(status = {}) {
+  const connected = Boolean(status.connected);
+  const connecting = status.state === "connecting" || status.readyState === 0;
+  const state = connected ? "connected" : connecting ? "connecting" : "disconnected";
+  const label = connected ? "Connected" : connecting ? "Connecting" : "Connect";
+
+  if (ui.gateBluetoothStatus) {
+    ui.gateBluetoothStatus.dataset.state = state;
+    ui.gateBluetoothStatus.setAttribute("aria-label", `Bluetooth ${label.toLowerCase()}`);
+  }
+  if (ui.gateBluetoothStatusLabel) {
+    ui.gateBluetoothStatusLabel.textContent = label;
+  }
 }
 
 function getLifeConnectionState(status) {
@@ -2276,7 +2200,8 @@ function updateLocalBrainUi() {
   const geminiPrimaryActive = Boolean(geminiStatus.running || geminiStatus.connecting || geminiStatus.connected);
 
   ui.localMotionArmedToggle.checked = Boolean(brainPolicy.localMotionArmed);
-  updateFollowTuningUi();
+  // DISABLED_ROBOFLOW_FOLLOW: follow tuning UI is disabled with Roboflow follow.
+  // updateFollowTuningUi();
 
   ui.localBrainState.textContent = geminiPrimaryActive
     ? geminiStatus.connected
@@ -2352,12 +2277,8 @@ function updateGeminiLiveUi(status = geminiLiveRuntime?.getStatus?.() ?? {}) {
           ? conversationGateActivationInProgress
             ? "mic starting"
             : "mic inactive"
-        : status.connected && isConversationWakeRequired()
-          ? wakePhraseStatus?.supported === false
-            ? "wake unavailable"
-            : wakePhraseStatus?.listening
-              ? "say Hey LOOI"
-              : "wake standby"
+          : status.connected && isConversationWakeRequired()
+          ? "mic standby"
           : "off";
   }
 
@@ -2413,6 +2334,7 @@ function updateLooiActivityIndicator(geminiStatus = geminiLiveRuntime?.getStatus
 
   const lifeState = lifeEngine?.getState?.() ?? {};
   const localBrainStatus = localBrainEngine?.getStatus?.() ?? {};
+  const runtimeRunning = Boolean(localBrainEngine?.isRunning?.() || geminiStatus.running);
   const geminiEnabled = Boolean(activeConfig.geminiLiveEnabled);
   const geminiOffline = Boolean(
     geminiEnabled &&
@@ -2438,26 +2360,21 @@ function updateLooiActivityIndicator(geminiStatus = geminiLiveRuntime?.getStatus
     conversationGateState === "active" &&
     !geminiStatus.micStreaming
   );
-  const wakeRequired = Boolean(
-    isConversationWakeRequired() ||
-    (
-      conversationGateState === "active" &&
-      !conversationGateActivationInProgress &&
-      !geminiStatus.micStreaming
-    )
-  );
-  const state = wakeRequired
-    ? "listening"
-    : thinking
-      ? "thinking"
-      : hearingUser
-        ? "hearing"
-        : "listening";
-  let label = "Listening";
+  const wakeRequired = false;
+  const state = !runtimeRunning
+    ? "idle"
+    : wakeRequired
+      ? "listening"
+      : thinking
+        ? "thinking"
+        : hearingUser
+          ? "hearing"
+          : "listening";
+  let label = runtimeRunning ? "Listening" : "Idle";
   if (geminiOffline) {
     label = "Gemini Offline";
-  } else if (wakeRequired) {
-    label = "Say Hey LOOI";
+  } else if (runtimeRunning && wakeRequired) {
+    label = "Listening";
   } else if (thinking) {
     label = "Thinking";
   } else if (micStarting) {
@@ -2628,7 +2545,8 @@ function scheduleGeminiVisionResumeAfterSpeech(reason = "gemini_audio_finished",
   clearGeminiVisionResumeTimer();
   geminiVisionResumeTimer = globalThis.setTimeout?.(() => {
     geminiVisionResumeTimer = null;
-    flushPendingFollowVisionContext(reason);
+    // DISABLED_ROBOFLOW_FOLLOW: no pending follow context to flush.
+    // flushPendingFollowVisionContext(reason);
     syncGeminiVisionAssist(reason);
   }, Math.max(20, Number(delayMs) || GEMINI_VISION_RESUME_AFTER_SPEECH_MS)) ?? null;
 }
@@ -2768,7 +2686,8 @@ function getGeminiVisionAssistState(reason = "") {
     audioPlaying: isGeminiAudioPlaying(geminiStatus),
     quietGateReason: quietGate.reason,
     quietRetryAfterMs: Number(quietGate.retryAfterMs || 0),
-    followActive: isFollowVisionModeActive(),
+    // DISABLED_ROBOFLOW_FOLLOW: Follow activity is always false while Roboflow follow is disabled.
+    followActive: false,
     reason: shouldRun ? reason || "running" : blockedReason
   };
 }
@@ -2947,59 +2866,40 @@ function updateOutputAudioUi() {
 
 function handleGeminiLiveStatus(status = geminiLiveRuntime?.getStatus?.() ?? {}) {
   updateConversationGateFromGeminiStatus(status);
-  flushPendingFollowVisionContext("gemini_status");
+  // DISABLED_ROBOFLOW_FOLLOW: no pending follow context to flush.
+  // flushPendingFollowVisionContext("gemini_status");
   updateGeminiLiveUi(status);
 }
 
-function createWakePhraseDetector() {
-  const webSpeechDetector = new WakePhraseDetector({
-    onWakePhrase: handleWakePhraseDetected,
-    onStatus: handleWakePhraseStatus,
-    logger: (message, level = "info") => log(message, level)
-  });
-  const openWakeWordConfig = activeConfig.openWakeWord ?? {};
-  const provider = String(activeConfig.wakeDetectorProvider ?? "web_speech").trim().toLowerCase();
-  const shouldUseOpenWakeWord = provider === "openwakeword" ||
-    (provider === "auto" && openWakeWordConfig.enabled === true);
-
-  if (!shouldUseOpenWakeWord) {
-    return webSpeechDetector;
+async function startDirectGeminiConversation(reason = "conversation_start") {
+  clearConversationSilenceTimer();
+  const geminiStatus = geminiLiveRuntime?.getStatus?.() ?? {};
+  if (!geminiStatus.connected) {
+    setConversationGateState("inactive", `${reason}_gemini_offline`);
+    updateGeminiLiveUi();
+    return;
   }
 
-  return new OpenWakeWordWakeDetector({
-    wsUrl: resolveOpenWakeWordWsUrl(openWakeWordConfig.wsUrl),
-    fallbackDetector: openWakeWordConfig.fallbackToWebSpeech === false ? null : webSpeechDetector,
-    onWakePhrase: handleWakePhraseDetected,
-    onStatus: handleWakePhraseStatus,
-    logger: (message, level = "info") => log(message, level)
-  });
-}
+  conversationGateActivationInProgress = true;
+  setConversationGateState("active", reason);
+  conversationGateActivatedAt = Date.now();
+  conversationGateLastInputTranscriptAt = Number(geminiStatus.lastInputTranscriptAt || 0);
 
-function handleWakePhraseStatus(status = {}) {
-  wakePhraseStatus = status;
-  updateGeminiLiveUi();
-}
-
-function startConversationWakeGate(reason = "wake_gate_start") {
-  clearConversationSilenceTimer();
-  conversationGateActivationInProgress = false;
-  conversationGateActivatedAt = 0;
-  conversationGateLastInputTranscriptAt = Number(geminiLiveRuntime?.getStatus?.().lastInputTranscriptAt || 0);
-  setConversationGateState("wake_required", reason);
-  geminiLiveRuntime?.stopAudioInput?.(`${reason}_reset`);
-
-  const started = wakePhraseDetector?.start?.(reason);
-  if (started === false) {
-    log("Wake phrase detector is unavailable; Gemini mic will stay off until this browser supports speech recognition.", "warn");
-  } else {
-    log("Conversation gate ready. Say Hey LOOI to talk.");
+  try {
+    if (!geminiStatus.micStreaming) {
+      await geminiLiveRuntime.startAudioInput(reason);
+    }
+    log("Gemini mic is active.");
+  } catch (error) {
+    log(`Gemini mic could not start: ${error.message}`, "warn");
+  } finally {
+    conversationGateActivationInProgress = false;
+    updateGeminiLiveUi();
   }
-  updateGeminiLiveUi();
 }
 
-function stopConversationWakeGate(reason = "wake_gate_stop") {
+function stopConversationRuntime(reason = "conversation_stop") {
   clearConversationSilenceTimer();
-  wakePhraseDetector?.stop?.(reason);
   conversationGateActivationInProgress = false;
   conversationGateActivatedAt = 0;
   conversationGateLastInputTranscriptAt = 0;
@@ -3008,72 +2908,9 @@ function stopConversationWakeGate(reason = "wake_gate_stop") {
   updateGeminiLiveUi();
 }
 
-function handleWakePhraseDetected(event = {}) {
-  activateConversationFromWake(event).catch((error) => {
-    conversationGateActivationInProgress = false;
-    log(`Wake phrase activation failed: ${error.message}`, "warn");
-    if (geminiLiveRuntime?.getStatus?.().connected) {
-      startConversationWakeGate("wake_activation_failed");
-    }
-  });
-}
-
-async function activateConversationFromWake({
-  phrase = "",
-  commandText = ""
-} = {}) {
-  if (conversationGateState === "active" || conversationGateActivationInProgress) {
-    return;
-  }
-
-  const geminiStatus = geminiLiveRuntime?.getStatus?.() ?? {};
-  if (!geminiStatus.connected) {
-    log("Wake phrase heard, but Gemini Live is not connected yet.", "warn");
-    return;
-  }
-
-  conversationGateActivationInProgress = true;
-  wakePhraseDetector?.stop?.("wake_phrase_detected");
-  setConversationGateState("active", "wake_phrase_detected");
-  conversationGateActivatedAt = Date.now();
-  conversationGateLastInputTranscriptAt = Number(geminiStatus.lastInputTranscriptAt || 0);
-  scheduleConversationSilenceTimeout("wake_phrase_detected");
-
-  runScenarioFromUi("wake_activation").catch((error) => {
-    log(`Wake activation animation failed: ${error.message}`, "warn");
-  });
-
-  try {
-    await waitMs(WAKE_GATE_MIC_START_DELAY_MS);
-    await geminiLiveRuntime.startAudioInput("wake_phrase");
-
-    const cleanCommandText = String(commandText ?? "").trim();
-    if (cleanCommandText) {
-      const sent = await geminiLiveRuntime.sendUserText(cleanCommandText, {
-        source: "wake_phrase",
-        reason: "wake_phrase_command"
-      });
-      if (sent) {
-        log(`Wake command forwarded to Gemini: "${cleanCommandText}"`, "debug");
-      }
-    }
-
-    log(`Wake phrase accepted${phrase ? `: ${phrase}` : ""}. Gemini mic is active.`);
-  } catch (error) {
-    log(`Wake phrase accepted, but Gemini mic could not start: ${error.message}`, "warn");
-    setConversationGateState("wake_required", "wake_mic_failed");
-    wakePhraseDetector?.start?.("wake_mic_failed");
-  } finally {
-    conversationGateActivationInProgress = false;
-    updateGeminiLiveUi();
-  }
-}
-
 function updateConversationGateFromGeminiStatus(status = {}) {
   if (!status.connected && !status.connecting && conversationGateState !== "inactive") {
-    clearConversationSilenceTimer();
-    wakePhraseDetector?.stop?.("gemini_disconnected");
-    setConversationGateState("inactive", "gemini_disconnected");
+    stopConversationRuntime("gemini_disconnected");
     return;
   }
 
@@ -3081,24 +2918,9 @@ function updateConversationGateFromGeminiStatus(status = {}) {
     return;
   }
 
-  if (
-    status.connected &&
-    !status.micStreaming &&
-    !conversationGateActivationInProgress
-  ) {
-    clearConversationSilenceTimer();
-    conversationGateActivatedAt = 0;
-    conversationGateLastInputTranscriptAt = 0;
-    setConversationGateState("wake_required", "gemini_mic_inactive");
-    wakePhraseDetector?.start?.("gemini_mic_inactive");
-    log("Conversation gate reset because Gemini mic is not streaming.", "warn");
-    return;
-  }
-
   const transcriptAt = Number(status.lastInputTranscriptAt || 0);
   if (transcriptAt > 0 && transcriptAt !== conversationGateLastInputTranscriptAt) {
     conversationGateLastInputTranscriptAt = transcriptAt;
-    scheduleConversationSilenceTimeout("user_transcript");
   }
 }
 
@@ -3112,44 +2934,14 @@ function setConversationGateState(nextState, reason = "state_change") {
 }
 
 function scheduleConversationSilenceTimeout(reason = "conversation_activity") {
+  // WAKE_WORD_DISABLED: do not put Gemini to sleep after silence.
+  void reason;
   clearConversationSilenceTimer();
-  if (conversationGateState !== "active") {
-    return;
-  }
-
-  const now = Date.now();
-  const lastUserInputAt = conversationGateLastInputTranscriptAt || conversationGateActivatedAt || now;
-  const elapsedMs = now - lastUserInputAt;
-  const timeoutMs = getConversationSleepTimeoutMs();
-  const delayMs = Math.max(250, timeoutMs - elapsedMs);
-  conversationSilenceTimer = globalThis.setTimeout?.(() => {
-    conversationSilenceTimer = 0;
-    handleConversationSilenceTimeout(reason);
-  }, delayMs) ?? 0;
 }
 
 function handleConversationSilenceTimeout(reason = "conversation_silence_timeout") {
-  if (conversationGateState !== "active") {
-    return;
-  }
-
-  const now = Date.now();
-  const lastUserInputAt = conversationGateLastInputTranscriptAt || conversationGateActivatedAt || now;
-  const remainingMs = getConversationSleepTimeoutMs() - (now - lastUserInputAt);
-  if (remainingMs > 250) {
-    scheduleConversationSilenceTimeout(reason);
-    return;
-  }
-
-  clearConversationSilenceTimer();
-  conversationGateActivationInProgress = false;
-  conversationGateActivatedAt = 0;
-  conversationGateLastInputTranscriptAt = 0;
-  setConversationGateState("wake_required", "conversation_silence_timeout");
-  geminiLiveRuntime?.stopAudioInput?.("conversation_silence_timeout");
-  wakePhraseDetector?.start?.("conversation_silence_timeout");
-  log("Conversation gate sleeping. Say Hey LOOI to talk again.");
-  updateGeminiLiveUi();
+  // WAKE_WORD_DISABLED: retained as a no-op for reversible restoration.
+  void reason;
 }
 
 function clearConversationSilenceTimer() {
@@ -3166,27 +2958,25 @@ function isConversationGateActive() {
 }
 
 function isConversationWakeRequired() {
-  return conversationGateState === "wake_required";
+  return false;
 }
 
 function formatConversationGateState(state = conversationGateState) {
-  return state === "wake_required"
-    ? "wake-required"
-    : state === "active"
+  return state === "active"
       ? "active"
       : "inactive";
 }
 
-function resolveOpenWakeWordWsUrl(configUrl = "") {
-  const cleanUrl = String(configUrl ?? "").trim();
-  if (cleanUrl) {
-    return cleanUrl;
-  }
-
-  const protocol = globalThis.location?.protocol === "https:" ? "wss:" : "ws:";
-  const hostname = globalThis.location?.hostname || "localhost";
-  return `${protocol}//${hostname}:8765`;
-}
+// function resolveOpenWakeWordWsUrl(configUrl = "") {
+//   const cleanUrl = String(configUrl ?? "").trim();
+//   if (cleanUrl) {
+//     return cleanUrl;
+//   }
+//
+//   const protocol = globalThis.location?.protocol === "https:" ? "wss:" : "ws:";
+//   const hostname = globalThis.location?.hostname || "localhost";
+//   return `${protocol}//${hostname}:8765`;
+// }
 
 function getConversationSleepTimeoutMs() {
   return conversationSleepTimeoutSec * 1000;
@@ -3636,138 +3426,66 @@ function isStopFollowIntent(text) {
 }
 
 function updateVisionUi() {
-  const detectorStatus = objectDetectorEngine?.getStatus?.() ?? {};
+  // DISABLED_ROBOFLOW_FOLLOW: Roboflow detector/follow UI is inactive. Keep the
+  // hidden/debug fields stable if they still exist in the DOM.
   const context = getVisionContext();
-  const activeTarget = context.activeTarget;
-  const followStatus = followTargetController?.getStatus?.() ?? {};
-  updateFollowTuningUi(followStatus);
-
-  if (ui.objectMaxResultsInput && detectorStatus.maxResults !== undefined && document.activeElement !== ui.objectMaxResultsInput) {
-    ui.objectMaxResultsInput.value = String(detectorStatus.maxResults);
-  }
-  if (
-    ui.objectCategoryAllowlistInput &&
-    Array.isArray(detectorStatus.categoryAllowlist) &&
-    document.activeElement !== ui.objectCategoryAllowlistInput
-  ) {
-    ui.objectCategoryAllowlistInput.value = detectorStatus.categoryAllowlist.join(",");
-  }
   if (ui.objectDetectorState) {
-    ui.objectDetectorState.textContent = detectorStatus.running ? "running" : detectorStatus.ready ? "ready" : "stopped";
+    ui.objectDetectorState.textContent = "disabled";
   }
   if (ui.objectDetectorModel) {
-    ui.objectDetectorModel.textContent = detectorStatus.modelName ?? "--";
-  }
-  if (ui.objectRoboflowWorkflowSelect && detectorStatus.workflowId) {
-    syncSelectOptions(ui.objectRoboflowWorkflowSelect, detectorStatus.workflowOptions, detectorStatus.workflowId);
-  }
-  if (
-    ui.objectRoboflowWorkflowSelect &&
-    detectorStatus.workflowId &&
-    document.activeElement !== ui.objectRoboflowWorkflowSelect
-  ) {
-    setSelectValue(ui.objectRoboflowWorkflowSelect, detectorStatus.workflowId);
+    ui.objectDetectorModel.textContent = "--";
   }
   if (ui.objectDetectorWorkflow) {
-    ui.objectDetectorWorkflow.textContent = detectorStatus.workflowId ?? "--";
+    ui.objectDetectorWorkflow.textContent = "--";
   }
   if (ui.objectDetectorQuality) {
-    ui.objectDetectorQuality.textContent = [
-      detectorStatus.modelQuality,
-      detectorStatus.modelInputShape,
-      detectorStatus.modelQuantization
-    ].filter(Boolean).join(" · ") || "--";
-  }
-  if (
-    ui.objectRoboflowGpuPlanSelect &&
-    detectorStatus.requestedPlan &&
-    document.activeElement !== ui.objectRoboflowGpuPlanSelect
-  ) {
-    setSelectValue(ui.objectRoboflowGpuPlanSelect, detectorStatus.requestedPlan, formatRoboflowGpuPlan(detectorStatus.requestedPlan));
+    ui.objectDetectorQuality.textContent = "--";
   }
   if (ui.objectDetectorGpuPlan) {
-    ui.objectDetectorGpuPlan.textContent = formatRoboflowGpuPlan(detectorStatus.requestedPlan);
+    ui.objectDetectorGpuPlan.textContent = "--";
   }
   if (ui.objectDetectorParams) {
-    ui.objectDetectorParams.textContent = [
-      detectorStatus.maxResults ? `max ${detectorStatus.maxResults}` : null,
-      detectorStatus.categoryAllowlist?.length ? `allow ${detectorStatus.categoryAllowlist.join(", ")}` : "all categories"
-    ].filter(Boolean).join(" · ");
+    ui.objectDetectorParams.textContent = "disabled";
   }
   if (ui.objectDetectionLastRun) {
-    ui.objectDetectionLastRun.textContent =
-      context.lastDetectionAgeMs === null || context.lastDetectionAgeMs === undefined
-        ? "--"
-        : `${Math.round(context.lastDetectionAgeMs / 1000)}s ago`;
+    ui.objectDetectionLastRun.textContent = "--";
   }
   if (ui.objectDetectionMetadataCount) {
-    ui.objectDetectionMetadataCount.textContent = String(context.objects.length);
+    ui.objectDetectionMetadataCount.textContent = "0";
   }
   if (ui.objectDetectionError) {
-    ui.objectDetectionError.textContent = detectorStatus.lastError ?? "--";
+    ui.objectDetectionError.textContent = "Roboflow follow disabled";
   }
   if (ui.objectDetectionList) {
-    renderDetectedObjects(ui.objectDetectionList, objectDetectorEngine?.lastResult?.detections ?? []);
+    ui.objectDetectionList.textContent = "Roboflow follow is disabled.";
   }
   if (ui.visibleObjectLabels) {
-    ui.visibleObjectLabels.textContent = context.visibleLabels || "--";
+    ui.visibleObjectLabels.textContent = context.cameraRunning ? "Gemini sees live camera frames" : "--";
   }
-  const followLabel = followStatus.targetLabel || activeTarget?.label || "";
-  const followState = followStatus.running ? followStatus.state : (context.scenario?.state ?? "idle");
-  const followVisible = followStatus.running ? followStatus.targetVisible : activeTarget?.visible;
-
   if (ui.activeFollowTarget) {
-    ui.activeFollowTarget.textContent = followLabel
-      ? `${followLabel} · ${followVisible ? "visible" : "not visible"}`
-      : "--";
+    ui.activeFollowTarget.textContent = "--";
   }
   if (ui.followScenarioState) {
-    ui.followScenarioState.textContent = followState ?? "idle";
+    ui.followScenarioState.textContent = "disabled";
   }
   if (ui.followControllerState) {
-    ui.followControllerState.textContent = followStatus.running
-      ? `${followStatus.state ?? "running"} · motion ${followStatus.motionAllowed ? "allowed" : `held: ${followStatus.motionHeldReason ?? "unknown"}`}`
-      : "stopped";
+    ui.followControllerState.textContent = "disabled";
   }
-  drawObjectDetectionOverlays(objectDetectorEngine?.lastResult ?? { detections: [] });
+  drawObjectDetectionOverlays({ detections: [] });
 }
 
 function applyFollowPresetFromUi() {
-  const presetId = ui.followTuningPresetSelect?.value;
-  const preset = FOLLOW_TUNING_PRESETS[presetId];
-
-  if (!preset) {
-    return;
-  }
-
-  const nextTuning = {
-    ...preset,
-    followTargetCenterX: brainPolicy.followTargetCenterX
-  };
-  delete nextTuning.label;
-  patchBrainPolicy(nextTuning);
-  saveFollowTuningSettings(nextTuning);
-  updateFollowTuningUi(undefined, { syncPreset: false });
-  updateVisionUi();
-  log(`Follow tuning preset applied: ${FOLLOW_TUNING_PRESETS[presetId].label}.`, "info");
+  // DISABLED_ROBOFLOW_FOLLOW: no-op while follow tuning is disabled.
+  return null;
 }
 
-function updateFollowTuningUi(followStatus = followTargetController?.getStatus?.() ?? {}, { syncPreset = true } = {}) {
-  if (ui.followTuningPresetSelect && syncPreset) {
-    setSelectValue(ui.followTuningPresetSelect, findMatchingFollowPresetId() ?? DEFAULT_FOLLOW_TUNING_PRESET);
-  }
-
+function updateFollowTuningUi(_followStatus = {}, _options = {}) {
+  // DISABLED_ROBOFLOW_FOLLOW: keep hidden fields stable without reading removed preset constants.
   if (ui.followCurrentErrorX) {
-    const errorX = followStatus.lastSteering?.errorX;
-    ui.followCurrentErrorX.textContent = Number.isFinite(Number(errorX))
-      ? formatSignedFollowValue(errorX, 3)
-      : "--";
+    ui.followCurrentErrorX.textContent = "--";
   }
   if (ui.followSteeringState) {
-    const steering = followStatus.lastSteering;
-    ui.followSteeringState.textContent = steering
-      ? `${steering.direction} · angular ${formatSignedFollowValue(steering.angular, 3)} · duration ${Math.round(steering.commandDurationMs ?? brainPolicy.followCommandDurationMs)}ms · interval ${Math.round(steering.commandRefreshMs ?? brainPolicy.followCommandRefreshMs)}ms · tolerance ${formatFollowValue(steering.deadband, 3)} · max age ${Math.round(brainPolicy.followMaxDetectionAgeMs ?? 0)}ms`
-      : "--";
+    ui.followSteeringState.textContent = "--";
   }
 }
 
@@ -4449,68 +4167,22 @@ function chanceToPercent(value) {
 }
 
 function loadFollowTuningSettings() {
-  try {
-    const stored = globalThis.localStorage?.getItem?.(FOLLOW_TUNING_STORAGE_KEY);
-    if (!stored) {
-      return {};
-    }
-
-    const normalized = normalizeStoredFollowTuning(JSON.parse(stored));
-    return findMatchingFollowPresetId(normalized) ? normalized : {};
-  } catch {
-    return {};
-  }
+  // DISABLED_ROBOFLOW_FOLLOW: no-op while follow tuning is disabled.
+  return {};
 }
 
-function saveFollowTuningSettings(settings = {}) {
-  try {
-    globalThis.localStorage?.setItem?.(
-      FOLLOW_TUNING_STORAGE_KEY,
-      JSON.stringify(normalizeStoredFollowTuning(settings))
-    );
-  } catch {
-    // Tuning still applies for this session if browser storage is blocked.
-  }
+function saveFollowTuningSettings(_settings = {}) {
+  // DISABLED_ROBOFLOW_FOLLOW: no-op while follow tuning is disabled.
 }
 
-function findMatchingFollowPresetId(settings = brainPolicy) {
-  const normalized = normalizeStoredFollowTuning(settings);
-  return Object.entries(FOLLOW_TUNING_PRESETS).find(([, preset]) => (
-    nearlyEqual(normalized.maxObjectFollowSpeed, preset.maxObjectFollowSpeed, 0.0005) &&
-    Number(normalized.followCommandDurationMs) === Number(preset.followCommandDurationMs) &&
-    Number(normalized.followCommandRefreshMs) === Number(preset.followCommandRefreshMs) &&
-    nearlyEqual(normalized.followCenterDeadband, preset.followCenterDeadband, 0.0005) &&
-    Number(normalized.followMaxDetectionAgeMs) === Number(preset.followMaxDetectionAgeMs)
-  ))?.[0] ?? null;
+function findMatchingFollowPresetId(_settings = brainPolicy) {
+  // DISABLED_ROBOFLOW_FOLLOW: no preset is active while follow tuning is disabled.
+  return null;
 }
 
-function normalizeStoredFollowTuning(settings = {}) {
-  const source = settings && typeof settings === "object" ? settings : {};
-  const normalized = {};
-
-  if (Number.isFinite(Number(source.maxObjectFollowSpeed))) {
-    normalized.maxObjectFollowSpeed = clampNumber(source.maxObjectFollowSpeed, 0, 0.25, FOLLOW_TUNING_PRESETS[DEFAULT_FOLLOW_TUNING_PRESET].maxObjectFollowSpeed);
-  }
-  if (Number.isFinite(Number(source.followTargetCenterX))) {
-    normalized.followTargetCenterX = clampNumber(source.followTargetCenterX, 0.25, 0.75, 0.5);
-  }
-  if (Number.isFinite(Number(source.followCenterDeadband))) {
-    normalized.followCenterDeadband = clampNumber(source.followCenterDeadband, 0.005, 0.2, FOLLOW_TUNING_PRESETS[DEFAULT_FOLLOW_TUNING_PRESET].followCenterDeadband);
-  }
-  if (Number.isFinite(Number(source.followCommandDurationMs))) {
-    normalized.followCommandDurationMs = Math.round(clampNumber(source.followCommandDurationMs, 0, 600, FOLLOW_TUNING_PRESETS[DEFAULT_FOLLOW_TUNING_PRESET].followCommandDurationMs));
-  }
-  if (Number.isFinite(Number(source.followCommandRefreshMs))) {
-    normalized.followCommandRefreshMs = Math.round(clampNumber(source.followCommandRefreshMs, 0, 300, FOLLOW_TUNING_PRESETS[DEFAULT_FOLLOW_TUNING_PRESET].followCommandRefreshMs));
-  }
-  normalized.followMaxDetectionAgeMs = Math.round(clampNumber(
-    source.followMaxDetectionAgeMs,
-    40,
-    3000,
-    FOLLOW_TUNING_PRESETS[DEFAULT_FOLLOW_TUNING_PRESET].followMaxDetectionAgeMs
-  ));
-
-  return normalized;
+function normalizeStoredFollowTuning(_settings = {}) {
+  // DISABLED_ROBOFLOW_FOLLOW: no stored follow tuning is applied while disabled.
+  return {};
 }
 
 function nearlyEqual(a, b, epsilon = 0.0001) {
@@ -4785,11 +4457,10 @@ function isStartupOrConnectionLog(message = "") {
   return (
     /^(Life Engine started\.|Life events enabled\.|UI ready\.|Local-first runtime active\.)$/.test(message) ||
     /^Local Motion disarmed by default\./.test(message) ||
-    /^Default ESP32 URL:/.test(message) ||
+    /^Robot body transport: Web Bluetooth\./.test(message) ||
     /^Safety:/.test(message) ||
-    /^ESP32 gateway (connecting|connected|disconnected)/.test(message) ||
-    /^Asking server gateway to connect to ESP32/.test(message) ||
-    /^ESP32 server gateway is attached/.test(message) ||
+    /^LOOI Body Bluetooth/.test(message) ||
+    /^Opening Bluetooth picker for LOOI Body/.test(message) ||
     /^GEMINI STEP [123] /.test(message) ||
     /^Gemini Live started:/.test(message) ||
     /^Local Brain started\./.test(message) ||

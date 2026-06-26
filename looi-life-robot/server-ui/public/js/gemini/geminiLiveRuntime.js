@@ -115,7 +115,11 @@ export class GeminiLiveRuntime {
       lastTurnCompleteAt: 0,
       lastInterruptedAt: 0,
       lastInputKind: "",
-      lastInputGateReason: ""
+      lastInputGateReason: "",
+      lastSessionHandle: "",
+      lastSessionUpdateAt: 0,
+      goAwayAt: 0,
+      goAwayTimeLeftMs: null
     };
   }
 
@@ -125,6 +129,9 @@ export class GeminiLiveRuntime {
     this.status.model = config.geminiLiveModel || this.status.model;
     this.status.voice = config.geminiLiveVoice || this.status.voice || "Kore";
     this.status.thinkingLevel = config.geminiLiveThinkingLevel || this.status.thinkingLevel || "minimal";
+    this.status.contextCompression = config.geminiLiveContextCompression !== false;
+    this.status.sessionResumption = config.geminiLiveSessionResumption !== false;
+    this.status.slidingWindowTokens = normalizePositiveInteger(config.geminiLiveSlidingWindowTokens, 32_768);
     this.emitStatus();
   }
 
@@ -214,7 +221,10 @@ export class GeminiLiveRuntime {
       this.sendJson(buildGeminiLiveSetup({
         model: this.status.model,
         voice: this.status.voice,
-        thinkingLevel: this.status.thinkingLevel
+        thinkingLevel: this.status.thinkingLevel,
+        contextCompression: this.status.contextCompression,
+        sessionResumption: this.status.sessionResumption,
+        slidingWindowTokens: this.status.slidingWindowTokens
       }));
       this.log("GEMINI STEP 3 setup sent with audio response + tool declarations");
 
@@ -583,6 +593,21 @@ export class GeminiLiveRuntime {
     if (lifecycle.interrupted) {
       this.inputCoordinator.handleInterrupted("gemini_server_interrupted");
       this.interruptAudio("gemini_server_interrupted");
+    }
+
+    if (lifecycle.sessionHandle) {
+      this.patchStatus({
+        lastSessionHandle: lifecycle.sessionHandle,
+        lastSessionUpdateAt: this.now()
+      });
+    }
+
+    if (Number.isFinite(lifecycle.goAwayTimeLeftMs)) {
+      this.patchStatus({
+        goAwayAt: this.now(),
+        goAwayTimeLeftMs: lifecycle.goAwayTimeLeftMs
+      });
+      this.log(`Gemini Live GoAway received timeLeftMs=${lifecycle.goAwayTimeLeftMs}`, "warn");
     }
 
     const audioChunks = extractAudioChunks(message);
@@ -1325,9 +1350,7 @@ export class GeminiLiveRuntime {
     if (action.type !== "run_scenario" || !this.eventBus?.publish) {
       return;
     }
-    if (action.args?.name === "stop_following") {
-      return;
-    }
+    // DISABLED_ROBOFLOW_FOLLOW: no follow-specific event suppression is needed.
 
     this.eventBus.publish(type, {
       scenario: action.args?.name ?? "",
@@ -2095,6 +2118,8 @@ function summarizeServerMessage(message = {}) {
   if (lifecycle.interrupted) labels.push("interrupted");
   if (lifecycle.generationComplete) labels.push("generationComplete");
   if (lifecycle.turnComplete) labels.push("turnComplete");
+  if (lifecycle.sessionHandle) labels.push("sessionUpdate");
+  if (Number.isFinite(lifecycle.goAwayTimeLeftMs)) labels.push(`goAway:${Math.round(lifecycle.goAwayTimeLeftMs)}ms`);
   if (!labels.length) labels.push(Object.keys(message).slice(0, 4).join(",") || "unknown");
 
   return labels.join(" | ");
@@ -2102,6 +2127,16 @@ function summarizeServerMessage(message = {}) {
 
 function readServerLifecycle(message = {}) {
   const serverContent = message.serverContent ?? message.server_content ?? {};
+  const sessionUpdate = message.sessionResumptionUpdate
+    ?? message.session_resumption_update
+    ?? serverContent.sessionResumptionUpdate
+    ?? serverContent.session_resumption_update
+    ?? {};
+  const goAway = message.goAway
+    ?? message.go_away
+    ?? serverContent.goAway
+    ?? serverContent.go_away
+    ?? {};
 
   return {
     interrupted: Boolean(serverContent.interrupted),
@@ -2116,8 +2151,33 @@ function readServerLifecycle(message = {}) {
       serverContent.turn_complete ??
       message.turnComplete ??
       message.turn_complete
-    )
+    ),
+    sessionHandle: shortText(sessionUpdate.newHandle ?? sessionUpdate.new_handle ?? sessionUpdate.handle, 2048),
+    goAwayTimeLeftMs: parseDurationMs(goAway.timeLeft ?? goAway.time_left)
   };
+}
+
+function parseDurationMs(value) {
+  if (value == null) {
+    return null;
+  }
+
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : null;
+  }
+
+  const text = String(value).trim();
+  const match = /^(-?\d+(?:\.\d+)?)(s|ms)?$/.exec(text);
+  if (!match) {
+    return null;
+  }
+
+  const amount = Number(match[1]);
+  if (!Number.isFinite(amount)) {
+    return null;
+  }
+
+  return match[2] === "ms" ? amount : amount * 1000;
 }
 
 function readFunctionCalls(message = {}) {
@@ -2185,6 +2245,11 @@ function parseAudioRate(mimeType = "") {
   return Number.isFinite(rate) && rate > 0 ? rate : null;
 }
 
+function normalizePositiveInteger(value, fallback) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && numeric > 0 ? Math.round(numeric) : fallback;
+}
+
 function estimateBase64Bytes(base64 = "") {
   const value = String(base64 || "");
   if (!value) {
@@ -2195,8 +2260,9 @@ function estimateBase64Bytes(base64 = "") {
   return Math.max(0, Math.floor((value.length * 3) / 4) - padding);
 }
 
-function shouldKeepLocalToolRunningAfterGeminiCancellation(entry = {}) {
-  return entry.action?.type === "run_scenario" && entry.action?.args?.name === "follow_target";
+function shouldKeepLocalToolRunningAfterGeminiCancellation(_entry = {}) {
+  // DISABLED_ROBOFLOW_FOLLOW: no persistent local follow tool remains active after cancellation.
+  return false;
 }
 
 function stripDataUrlPrefix(value) {
@@ -2206,30 +2272,12 @@ function stripDataUrlPrefix(value) {
 }
 
 function compactVisionContext(vision = {}, { recentObjectReference = null, reason = "" } = {}) {
-  const followScenarioActive = Boolean(
-    vision?.scenario?.active &&
-    vision?.scenario?.type === "follow_object" &&
-    vision?.scenario?.state !== "idle" &&
-    vision?.scenario?.state !== "not_found"
-  );
-  const targetLabel = vision?.scenario?.targetLabel || vision?.activeTarget?.label || "";
-  const follow = followScenarioActive || vision?.activeTarget || targetLabel
-    ? {
-        active: followScenarioActive,
-        event: shortText(reason, 80),
-        targetLabel: shortText(targetLabel, 80),
-        state: shortText(vision?.scenario?.state, 80),
-        targetVisible: Boolean(vision?.activeTarget?.visible),
-        detectorRunning: Boolean(vision?.detectorRunning)
-      }
-    : null;
-
   return {
     mode: "gemini_live_video",
     reason: shortText(reason, 80),
-    follow,
     cameraRunning: Boolean(vision?.cameraRunning),
     currentCameraFacingMode: shortText(vision?.currentCameraFacingMode, 40),
+    // DISABLED_ROBOFLOW_FOLLOW: no activeTarget/follow/Roboflow metadata is sent to Gemini.
     recentObjectReference: recentObjectReference
       ? {
           label: shortText(recentObjectReference.label, 80)
@@ -2241,14 +2289,6 @@ function compactVisionContext(vision = {}, { recentObjectReference = null, reaso
 function stableVisionSignature(payload = {}) {
   return {
     mode: payload.mode,
-    follow: payload.follow
-      ? {
-          active: Boolean(payload.follow.active),
-          targetLabel: payload.follow.targetLabel,
-          state: payload.follow.state,
-          targetVisible: Boolean(payload.follow.targetVisible)
-        }
-      : null,
     cameraRunning: payload.cameraRunning,
     currentCameraFacingMode: payload.currentCameraFacingMode,
     recentObjectReference: payload.recentObjectReference

@@ -3,19 +3,20 @@ import dotenv from "dotenv";
 import express from "express";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { ESP32Gateway } from "./lib/esp32Gateway.js";
 import { createGeminiLiveTokenFromEnv, getGeminiLiveEnv } from "./lib/gemini/geminiLiveToken.js";
 import { createLocalBrainServerFromEnv } from "./lib/localBrain/localBrainServer.js";
 import { LearnedPhraseStore } from "./lib/memory/learnedPhraseStore.js";
 import { MemoryStore, looksLikeSecret } from "./lib/memory/memoryStore.js";
-import {
-  fetchRoboflowTurnConfig,
-  getRoboflowWebrtcEnv,
-  initializeRoboflowWebrtcWorker,
-  isRoboflowWorkflowError,
-  publicRoboflowWebrtcConfig,
-  terminateRoboflowPipeline
-} from "./lib/roboflow/webrtcProxy.js";
+// DISABLED_ROBOFLOW_FOLLOW: keep lib/roboflow/webrtcProxy.js and the package dependency
+// for easy restoration, but do not import or expose Roboflow routes while follow is disabled.
+// import {
+//   fetchRoboflowTurnConfig,
+//   getRoboflowWebrtcEnv,
+//   initializeRoboflowWebrtcWorker,
+//   isRoboflowWorkflowError,
+//   publicRoboflowWebrtcConfig,
+//   terminateRoboflowPipeline
+// } from "./lib/roboflow/webrtcProxy.js";
 
 dotenv.config();
 
@@ -24,9 +25,6 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const port = Number(process.env.PORT || 3000);
-const esp32DefaultWsUrl = process.env.ESP32_DEFAULT_WS_URL || "ws://192.168.4.1:81";
-const esp32ConnectOnStart = process.env.ESP32_CONNECT_ON_START === "true";
-const esp32ConnectTimeoutMs = Number(process.env.ESP32_CONNECT_TIMEOUT_MS || 8000);
 const serverTraceEnabled = process.env.SERVER_TRACE === "true" || process.env.API_TRACE === "true";
 const serverTracePollEndpoints =
   process.env.SERVER_TRACE_POLL_ENDPOINTS === "true" ||
@@ -35,14 +33,6 @@ const serverTraceRequestBodies = process.env.SERVER_TRACE_REQUEST_BODIES !== "fa
 const serverTraceResponseBodies = process.env.SERVER_TRACE_RESPONSE_BODIES !== "false";
 let apiTraceCounter = 0;
 let lastServerLogEntry = null;
-const esp32Gateway = new ESP32Gateway({
-  connectTimeoutMs: esp32ConnectTimeoutMs,
-  logger: {
-    info: (message) => esp32Log(message),
-    warn: (message) => esp32Log(message, "warn"),
-    error: (message) => esp32Log(message, "error")
-  }
-});
 const memoryStore = new MemoryStore();
 const learnedPhraseStore = new LearnedPhraseStore();
 const localBrainProvider = normalizeLocalBrainProvider(process.env.LOCAL_BRAIN_PROVIDER);
@@ -50,13 +40,12 @@ const localBrainModel = process.env.LOCAL_BRAIN_MODEL || defaultLocalBrainModel(
 const localBrainServer = createLocalBrainServerFromEnv(process.env, serverLog);
 const localBrainRequireLocalNetwork = process.env.LOCAL_BRAIN_REQUIRE_LOCAL_NETWORK === "true";
 const geminiLiveConfig = getGeminiLiveEnv(process.env);
-const roboflowWebrtcConfig = getRoboflowWebrtcEnv(process.env);
+// DISABLED_ROBOFLOW_FOLLOW: const roboflowWebrtcConfig = getRoboflowWebrtcEnv(process.env);
 
 // Only public, browser-safe config lives here.
 const PUBLIC_CONFIG = {
-  defaultEsp32WsUrl: esp32DefaultWsUrl,
-  esp32ConnectionMode: "server_gateway",
-  esp32ConnectOnStart,
+  bodyTransport: "web_bluetooth",
+  esp32ConnectionMode: "web_bluetooth",
   maxSpeed: 0.4,
   maxDurationMs: 1000,
   localFirstMode: true,
@@ -69,28 +58,27 @@ const PUBLIC_CONFIG = {
   geminiLiveModel: geminiLiveConfig.model,
   geminiLiveVoice: geminiLiveConfig.voice,
   geminiLiveThinkingLevel: geminiLiveConfig.thinkingLevel,
-  wakeDetectorProvider: process.env.LOOI_WAKE_DETECTOR_PROVIDER || "web_speech",
-  openWakeWord: {
-    enabled: process.env.OPENWAKEWORD_ENABLED === "true",
-    wsUrl: process.env.OPENWAKEWORD_WS_URL || "",
-    fallbackToWebSpeech: process.env.OPENWAKEWORD_FALLBACK_TO_WEB_SPEECH !== "false"
-  },
-  roboflowWebrtc: publicRoboflowWebrtcConfig(roboflowWebrtcConfig),
-  roboflowWebrtcProxyUrl: "/api/init-webrtc",
-  roboflowWebrtcTurnConfigUrl: "/api/roboflow-webrtc/turn-config",
-  roboflowWebrtcTerminateUrl: "/api/roboflow-webrtc/terminate",
+  geminiLiveContextCompression: geminiLiveConfig.contextCompression,
+  geminiLiveSessionResumption: geminiLiveConfig.sessionResumption,
+  geminiLiveSlidingWindowTokens: geminiLiveConfig.slidingWindowTokens,
+  // DISABLED_ROBOFLOW_FOLLOW: Roboflow public config is intentionally hidden.
+  // roboflowWebrtc: publicRoboflowWebrtcConfig(roboflowWebrtcConfig),
+  // roboflowWebrtcProxyUrl: "/api/init-webrtc",
+  // roboflowWebrtcTurnConfigUrl: "/api/roboflow-webrtc/turn-config",
+  // roboflowWebrtcTerminateUrl: "/api/roboflow-webrtc/terminate",
   geminiVisionAssistDefault: true,
   geminiVisionAssistIntervalMs: 1500,
-  objectDetectionProvider: "roboflow_webrtc",
-  objectDetectorMaxResults: 12,
-  objectDetectorModuleUrl: "/vendor/roboflow-inference-sdk/index.es.js",
-  followLostTimeoutMs: 3000,
-  followTargetCenterX: 0.5,
-  followCenterDeadband: 0.14,
-  maxObjectFollowSpeed: 0.2,
-  followCommandDurationMs: 300,
-  followCommandRefreshMs: 100,
-  followMaxDetectionAgeMs: 300,
+  // DISABLED_ROBOFLOW_FOLLOW: object detection/follow tuning config is intentionally hidden.
+  // objectDetectionProvider: "roboflow_webrtc",
+  // objectDetectorMaxResults: 12,
+  // objectDetectorModuleUrl: "/vendor/roboflow-inference-sdk/index.es.js",
+  // followLostTimeoutMs: 3000,
+  // followTargetCenterX: 0.5,
+  // followCenterDeadband: 0.14,
+  // maxObjectFollowSpeed: 0.2,
+  // followCommandDurationMs: 300,
+  // followCommandRefreshMs: 100,
+  // followMaxDetectionAgeMs: 300,
   localBrainEventTimeoutMs: Number(process.env.LOCAL_BRAIN_EVENT_TIMEOUT_MS || 12000),
   attentionWindowMs: Number(process.env.LOOI_ATTENTION_WINDOW_MS || 20000),
   conversationWindowMs: Number(process.env.LOOI_CONVERSATION_WINDOW_MS || 30000),
@@ -104,10 +92,11 @@ app.set("trust proxy", true);
 app.use(cors());
 app.use(express.json({ limit: "1mb" }));
 app.use(apiTraceMiddleware);
-app.use(
-  "/vendor/roboflow-inference-sdk",
-  express.static(path.join(__dirname, "node_modules", "@roboflow", "inference-sdk", "dist"))
-);
+// DISABLED_ROBOFLOW_FOLLOW: keep the dependency installed, but do not serve the browser SDK.
+// app.use(
+//   "/vendor/roboflow-inference-sdk",
+//   express.static(path.join(__dirname, "node_modules", "@roboflow", "inference-sdk", "dist"))
+// );
 app.use(express.static(path.join(__dirname, "public")));
 
 app.get("/api/health", (_req, res) => {
@@ -122,61 +111,11 @@ app.get("/api/config", (_req, res) => {
   res.json(PUBLIC_CONFIG);
 });
 
-app.get("/api/roboflow-webrtc/status", requireRoboflowWebrtcAccess, (_req, res) => {
-  const config = getRoboflowWebrtcEnv(process.env);
-  res.json({
-    ok: true,
-    ...publicRoboflowWebrtcConfig(config)
-  });
-});
-
-app.get("/api/roboflow-webrtc/turn-config", requireRoboflowWebrtcAccess, async (_req, res) => {
-  const startedAt = Date.now();
-
-  try {
-    const iceServers = await fetchRoboflowTurnConfig(process.env);
-    serverLog(
-      `ROBOFLOW_WEBRTC turn config ok latency=${Date.now() - startedAt}ms iceServers=${Array.isArray(iceServers) ? iceServers.length : 0}`,
-      "info",
-      "VISION"
-    );
-    res.json({ iceServers: iceServers ?? [] });
-  } catch (error) {
-    sendRoboflowWebrtcError(res, error, "turn config");
-  }
-});
-
-app.post("/api/init-webrtc", requireRoboflowWebrtcAccess, async (req, res) => {
-  const startedAt = Date.now();
-
-  try {
-    const answer = await initializeRoboflowWebrtcWorker(req.body, process.env);
-    serverLog(
-      `ROBOFLOW_WEBRTC init ok latency=${Date.now() - startedAt}ms pipeline=${answer?.context?.pipeline_id ?? "unknown"}`,
-      "info",
-      "VISION"
-    );
-    res.json(answer);
-  } catch (error) {
-    sendRoboflowWebrtcError(res, error, "init");
-  }
-});
-
-app.post("/api/roboflow-webrtc/terminate", requireRoboflowWebrtcAccess, async (req, res) => {
-  const startedAt = Date.now();
-
-  try {
-    await terminateRoboflowPipeline(req.body?.pipelineId, process.env);
-    serverLog(
-      `ROBOFLOW_WEBRTC terminate ok latency=${Date.now() - startedAt}ms pipeline=${shortServerLogText(req.body?.pipelineId, 80)}`,
-      "info",
-      "VISION"
-    );
-    res.json({ ok: true });
-  } catch (error) {
-    sendRoboflowWebrtcError(res, error, "terminate");
-  }
-});
+// DISABLED_ROBOFLOW_FOLLOW: Roboflow WebRTC routes are intentionally not registered.
+// app.get("/api/roboflow-webrtc/status", requireRoboflowWebrtcAccess, (_req, res) => {});
+// app.get("/api/roboflow-webrtc/turn-config", requireRoboflowWebrtcAccess, async (_req, res) => {});
+// app.post("/api/init-webrtc", requireRoboflowWebrtcAccess, async (req, res) => {});
+// app.post("/api/roboflow-webrtc/terminate", requireRoboflowWebrtcAccess, async (req, res) => {});
 
 app.post("/api/gemini-live/token", requireGeminiLiveAccess, async (_req, res) => {
   const startedAt = Date.now();
@@ -251,134 +190,6 @@ app.post("/api/local-brain/chat", requireLocalBrainAccess, async (req, res) => {
     response.ok === false ? "warn" : "info"
   );
   res.status(response.ok === false ? 502 : 200).json(response);
-});
-
-// Local-first runtime uses the ESP32 gateway and memory endpoints below.
-app.get("/api/esp32/events", requireEsp32GatewayAccess, (req, res) => {
-  const since = req.get("last-event-id") || req.query.since;
-
-  res.writeHead(200, {
-    "Content-Type": "text/event-stream; charset=utf-8",
-    "Cache-Control": "no-cache, no-transform",
-    Connection: "keep-alive",
-    "X-Accel-Buffering": "no"
-  });
-  res.write(": esp32 gateway event stream\n\n");
-
-  sendEsp32Sse(res, "snapshot", {
-    ok: true,
-    ...esp32Gateway.getSnapshot({
-      since
-    })
-  });
-
-  const unsubscribe = esp32Gateway.onUpdate((snapshot) => {
-    sendEsp32Sse(res, "snapshot", {
-      ok: true,
-      ...snapshot
-    });
-  });
-  const heartbeat = setInterval(() => {
-    res.write(`: heartbeat ${Date.now()}\n\n`);
-  }, 15000);
-
-  req.on("close", () => {
-    clearInterval(heartbeat);
-    unsubscribe();
-  });
-});
-
-app.get("/api/esp32/status", requireEsp32GatewayAccess, (req, res) => {
-  res.json({
-    ok: true,
-    ...esp32Gateway.getSnapshot({
-      since: req.query.since
-    })
-  });
-});
-
-app.get("/api/esp32/messages", requireEsp32GatewayAccess, (req, res) => {
-  res.json({
-    ok: true,
-    ...esp32Gateway.getSnapshot({
-      since: req.query.since
-    })
-  });
-});
-
-app.post("/api/esp32/connect", requireEsp32GatewayAccess, async (req, res) => {
-  const targetUrl = typeof req.body?.url === "string" ? req.body.url : esp32DefaultWsUrl;
-  esp32Log(`CONNECT start url=${safeLogUrl(targetUrl)} timeout=${esp32ConnectTimeoutMs}ms`);
-
-  try {
-    const status = await esp32Gateway.connect(targetUrl, {
-      timeoutMs: esp32ConnectTimeoutMs
-    });
-
-    esp32Log(`CONNECT ok state=${status.state} connected=${status.connected}`);
-    res.json({
-      ok: true,
-      status,
-      telemetry: esp32Gateway.latestTelemetry,
-      config: esp32Gateway.latestConfig
-    });
-  } catch (error) {
-    esp32Log(
-      `CONNECT failed url=${safeLogUrl(targetUrl)} error="${shortServerLogText(error.message)}"`,
-      "warn"
-    );
-    res.status(502).json({
-      ok: false,
-      error: error.message,
-      status: esp32Gateway.getStatus()
-    });
-  }
-});
-
-app.post("/api/esp32/disconnect", requireEsp32GatewayAccess, (req, res) => {
-  const reason = req.body?.reason ?? "ui_disconnect";
-  esp32Log(`DISCONNECT reason=${shortServerLogText(reason, 80)}`);
-  const status = esp32Gateway.disconnect({
-    reason
-  });
-
-  esp32Log(`DISCONNECT ok state=${status.state}`);
-  res.json({
-    ok: true,
-    status
-  });
-});
-
-app.post("/api/esp32/send", requireEsp32GatewayAccess, (req, res) => {
-  try {
-    const payload = req.body?.payload;
-
-    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-      esp32Log("SEND rejected payload must be an object", "warn");
-      res.status(400).json({
-        ok: false,
-        error: "payload must be an object"
-      });
-      return;
-    }
-
-    esp32Log(`SEND start payload=${safeJson(summarizeEsp32Payload(payload))}`);
-    const id = esp32Gateway.sendJson(payload);
-    esp32Log(`SEND queued id=${id} state=${esp32Gateway.getStatus().state}`);
-
-    res.json({
-      ok: true,
-      id,
-      status: esp32Gateway.getStatus()
-    });
-  } catch (error) {
-    esp32Log(`SEND failed error="${shortServerLogText(error.message)}"`, "warn");
-    res.status(409).json({
-      ok: false,
-      error: error.message,
-      status: esp32Gateway.getStatus()
-    });
-  }
 });
 
 app.post("/api/memory/write", requireMemoryAccess, async (req, res) => {
@@ -574,39 +385,9 @@ function summarizeApiRequestBody(req) {
     };
   }
 
-  if (req.path === "/api/esp32/connect") {
-    return {
-      url: safeLogUrl(body.url || esp32DefaultWsUrl)
-    };
-  }
-
-  if (req.path === "/api/esp32/disconnect") {
-    return {
-      reason: shortServerLogText(body.reason ?? "ui_disconnect", 100)
-    };
-  }
-
-  if (req.path === "/api/esp32/send") {
-    return {
-      payload: summarizeEsp32Payload(body.payload)
-    };
-  }
-
-  if (req.path === "/api/init-webrtc") {
-    return {
-      offer: {
-        type: body.offer?.type,
-        sdpChars: typeof body.offer?.sdp === "string" ? body.offer.sdp.length : 0
-      },
-      wrtcParams: summarizeWebrtcParams(body.wrtcParams)
-    };
-  }
-
-  if (req.path === "/api/roboflow-webrtc/terminate") {
-    return {
-      pipelineId: shortServerLogText(body.pipelineId, 100)
-    };
-  }
+  // DISABLED_ROBOFLOW_FOLLOW: Roboflow request-body tracing is disabled with the routes.
+  // if (req.path === "/api/init-webrtc") {}
+  // if (req.path === "/api/roboflow-webrtc/terminate") {}
 
   if (req.path === "/api/memory/write") {
     return {
@@ -653,19 +434,6 @@ function summarizeApiResponseBody(req, body) {
     };
   }
 
-  if (req.path.startsWith("/api/esp32/")) {
-    return {
-      ok: body.ok,
-      id: body.id,
-      connected: body.status?.connected,
-      connecting: body.status?.connecting,
-      state: body.status?.state,
-      lastError: body.status?.lastError ? shortServerLogText(body.status.lastError, 200) : undefined,
-      telemetry: summarizeTelemetry(body.telemetry),
-      error: body.error ? shortServerLogText(body.error, 240) : undefined
-    };
-  }
-
   if (req.path === "/api/config") {
     return {
       localFirstMode: body.localFirstMode,
@@ -674,28 +442,16 @@ function summarizeApiResponseBody(req, body) {
       geminiLiveEnabled: body.geminiLiveEnabled,
       geminiLiveConfigured: body.geminiLiveConfigured,
       geminiLiveModel: body.geminiLiveModel,
-      roboflowWebrtcEnabled: body.roboflowWebrtc?.enabled,
-      roboflowWebrtcConfigured: body.roboflowWebrtc?.configured,
-      objectDetectionProvider: body.objectDetectionProvider,
+      // DISABLED_ROBOFLOW_FOLLOW: Roboflow config is not public while disabled.
+      // roboflowWebrtcEnabled: body.roboflowWebrtc?.enabled,
+      // roboflowWebrtcConfigured: body.roboflowWebrtc?.configured,
+      // objectDetectionProvider: body.objectDetectionProvider,
       esp32ConnectionMode: body.esp32ConnectionMode
     };
   }
 
-  if (req.path === "/api/init-webrtc" || req.path.startsWith("/api/roboflow-webrtc/")) {
-    return {
-      ok: body.ok,
-      enabled: body.enabled,
-      configured: body.configured,
-      status: body.status,
-      type: body.type,
-      sdpChars: typeof body.sdp === "string" ? body.sdp.length : undefined,
-      pipelineId: body.context?.pipeline_id,
-      iceServers: Array.isArray(body.iceServers) ? body.iceServers.length : undefined,
-      error: body.error ? shortServerLogText(body.error, 240) : undefined,
-      message: body.message ? shortServerLogText(body.message, 240) : undefined,
-      error_type: body.error_type
-    };
-  }
+  // DISABLED_ROBOFLOW_FOLLOW: Roboflow response tracing is disabled with the routes.
+  // if (req.path === "/api/init-webrtc" || req.path.startsWith("/api/roboflow-webrtc/")) {}
 
   if (req.path === "/api/gemini-live/token") {
     return {
@@ -767,49 +523,6 @@ function summarizeTelemetry(telemetry = null) {
   };
 }
 
-function summarizeEsp32Payload(payload = null) {
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-    return payload === undefined ? null : typeof payload;
-  }
-
-  const summary = {};
-  const allowedKeys = [
-    "id",
-    "type",
-    "cmd",
-    "label",
-    "source",
-    "reason",
-    "duration_ms",
-    "durationMs",
-    "linear",
-    "angular",
-    "speed",
-    "left_speed",
-    "right_speed",
-    "current_left_speed",
-    "current_right_speed"
-  ];
-
-  for (const key of allowedKeys) {
-    if (payload[key] !== undefined) {
-      summary[key] = redactAndCompact(payload[key], { key });
-    }
-  }
-
-  if (payload.config && typeof payload.config === "object") {
-    summary.configKeys = Object.keys(payload.config).slice(0, 20);
-  }
-
-  const omittedKeys = Object.keys(payload).filter((key) => !allowedKeys.includes(key) && key !== "config");
-
-  if (omittedKeys.length) {
-    summary.omittedKeys = omittedKeys.slice(0, 20);
-  }
-
-  return summary;
-}
-
 function summarizeWebrtcParams(wrtcParams = null) {
   if (!wrtcParams || typeof wrtcParams !== "object") {
     return null;
@@ -875,39 +588,8 @@ function requireGeminiLiveAccess(req, res, next) {
   });
 }
 
-function requireRoboflowWebrtcAccess(req, res, next) {
-  if (
-    isLocalRequest(req) ||
-    isPrivateLanRequest(req) ||
-    process.env.ROBOFLOW_WEBRTC_ALLOW_PUBLIC === "true"
-  ) {
-    next();
-    return;
-  }
-
-  res.status(403).json({
-    ok: false,
-    error:
-      "Roboflow WebRTC endpoint requires localhost, private LAN, or ROBOFLOW_WEBRTC_ALLOW_PUBLIC=true for temporary public testing."
-  });
-}
-
-function requireEsp32GatewayAccess(req, res, next) {
-  if (
-    isLocalRequest(req) ||
-    isPrivateLanRequest(req) ||
-    process.env.ROBOT_ESP32_GATEWAY_ALLOW_PUBLIC === "true"
-  ) {
-    next();
-    return;
-  }
-
-  res.status(401).json({
-    ok: false,
-    error:
-      "Unauthorized ESP32 gateway request. Use local/LAN access or ROBOT_ESP32_GATEWAY_ALLOW_PUBLIC=true."
-  });
-}
+// DISABLED_ROBOFLOW_FOLLOW: kept as comment for restoring Roboflow route auth later.
+// function requireRoboflowWebrtcAccess(req, res, next) {}
 
 function isLocalRequest(req) {
   const ip = req.ip ?? req.socket?.remoteAddress ?? "";
@@ -963,28 +645,8 @@ function sendMemoryError(res, error) {
   });
 }
 
-function sendRoboflowWebrtcError(res, error, action = "request") {
-  if (isRoboflowWorkflowError(error)) {
-    serverLog(
-      `ROBOFLOW_WEBRTC ${action} failed status=${error.statusCode} error=${shortServerLogText(error.message, 240)}`,
-      "warn",
-      "VISION"
-    );
-    res.status(error.statusCode).json(error.errorData);
-    return;
-  }
-
-  const statusCode = Number(error?.statusCode) || 502;
-  serverLog(
-    `ROBOFLOW_WEBRTC ${action} failed status=${statusCode} error=${shortServerLogText(error.message, 240)}`,
-    "warn",
-    "VISION"
-  );
-  res.status(statusCode).json({
-    ok: false,
-    error: error.message || "Roboflow WebRTC request failed."
-  });
-}
+// DISABLED_ROBOFLOW_FOLLOW: kept as comment for restoring Roboflow route errors later.
+// function sendRoboflowWebrtcError(res, error, action = "request") {}
 
 async function addLearnedPhraseAndRemember(body = {}, fallbackSource = "manual") {
   const entry = await learnedPhraseStore.addPhrase({
@@ -1119,40 +781,13 @@ function looksLikeDataUrl(value = "") {
 function isHighFrequencyApiPath(pathname = "") {
   return [
     "/api/health",
-    "/api/config",
-    "/api/esp32/events",
-    "/api/esp32/status",
-    "/api/esp32/messages"
+    "/api/config"
   ].includes(pathname);
 }
 
 function createApiTraceId() {
   apiTraceCounter += 1;
   return `api_${Date.now()}_${apiTraceCounter}`;
-}
-
-function safeLogUrl(value) {
-  try {
-    const url = new URL(String(value || ""));
-
-    if (url.username) {
-      url.username = "[REDACTED]";
-    }
-
-    if (url.password) {
-      url.password = "[REDACTED]";
-    }
-
-    for (const key of [...url.searchParams.keys()]) {
-      if (shouldRedactKey(key)) {
-        url.searchParams.set(key, "[REDACTED]");
-      }
-    }
-
-    return url.toString();
-  } catch (_error) {
-    return shortServerLogText(value, 180);
-  }
 }
 
 function safeJson(value) {
@@ -1163,20 +798,8 @@ function safeJson(value) {
   }
 }
 
-function sendEsp32Sse(res, event, payload) {
-  if (Number.isFinite(Number(payload?.latestSeq))) {
-    res.write(`id: ${Number(payload.latestSeq)}\n`);
-  }
-  res.write(`event: ${event}\n`);
-  res.write(`data: ${safeJson(payload)}\n\n`);
-}
-
 function apiLog(message, level = "info") {
   serverLog(message, level, "API");
-}
-
-function esp32Log(message, level = "info") {
-  serverLog(message, level, "ESP32");
 }
 
 function geminiLog(message, level = "info") {
@@ -1215,25 +838,11 @@ async function startServer() {
   console.log(
     `[BOOT] Gemini Live enabled=${geminiLiveConfig.enabled} configured=${geminiLiveConfig.configured} model=${geminiLiveConfig.model} voice=${geminiLiveConfig.voice}`
   );
+  // DISABLED_ROBOFLOW_FOLLOW: Roboflow boot logging is disabled with the routes.
+  // console.log(`[BOOT] Roboflow WebRTC enabled=${roboflowWebrtcConfig.enabled}`);
   console.log(
-    `[BOOT] Roboflow WebRTC enabled=${roboflowWebrtcConfig.enabled} configured=${roboflowWebrtcConfig.configured} workspace=${roboflowWebrtcConfig.workspace || "(not set)"} workflow=${roboflowWebrtcConfig.workflowId || "(not set)"} region=${roboflowWebrtcConfig.requestedRegion || "(default)"}`
+    `[BOOT] Server API trace=${serverTraceEnabled} pollTrace=${serverTracePollEndpoints} bodyTransport=web_bluetooth`
   );
-  console.log(
-    `[BOOT] Server API trace=${serverTraceEnabled} pollTrace=${serverTracePollEndpoints} esp32Gateway=${esp32DefaultWsUrl}`
-  );
-
-  if (esp32ConnectOnStart) {
-    console.log(`[BOOT] Connecting to ESP32 before server start: ${esp32DefaultWsUrl}`);
-    try {
-      await esp32Gateway.connect(esp32DefaultWsUrl, {
-        timeoutMs: esp32ConnectTimeoutMs
-      });
-      console.log(`[BOOT] ESP32 connected: ${esp32DefaultWsUrl}`);
-    } catch (error) {
-      console.warn(`[BOOT] ESP32 preconnect skipped: ${error.message}`);
-      console.warn("[BOOT] Server will still start. Connect ESP32 from the UI when the robot is reachable.");
-    }
-  }
 
   app.listen(port, () => {
     console.log(`LOOI Life Server listening on http://localhost:${port}`);
