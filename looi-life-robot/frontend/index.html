@@ -44,6 +44,10 @@
         <button id="productionStartButton" class="primary-button" type="button" disabled>
           Start LOOI
         </button>
+        <button id="downloadAppButton" class="secondary-button download-app-button" type="button">
+          <img class="download-app-button__icon" src="./icons/icon.svg" alt="" aria-hidden="true" />
+          <span>Download App</span>
+        </button>
       </div>
     </div>
 
@@ -124,7 +128,7 @@
           <p class="eyebrow">Phone-Bodied Life Robot</p>
           <h1>LOOI Life Robot</h1>
           <p class="subtitle">
-            Local robot runtime for Gemini Live, camera, personality, and ESP32 body control.
+            Local robot runtime for voice, vision, camera, personality, and ESP32 body control.
           </p>
         </header>
 
@@ -305,7 +309,7 @@
         <section id="settingsCamera" class="panel-card camera-card">
           <h2>Camera / Eyes</h2>
           <p class="panel-note">
-            The camera runs locally in the browser and feeds Gemini vision.
+            The camera runs locally in the browser and feeds Agent vision.
           </p>
           <div class="status-grid">
             <div class="status-row">
@@ -341,7 +345,7 @@
               <div>
                 <h3>Camera Devices</h3>
                 <p>
-                  Choose the exact phone camera used for Gemini vision.
+                  Choose the exact phone camera used for Agent vision.
                   Default uses camera 1 when available.
                 </p>
               </div>
@@ -361,30 +365,30 @@
           <div class="object-vision-panel object-vision-panel--cloud">
             <div class="object-vision-panel__header">
               <div>
-                <h3>Gemini Live Vision</h3>
+                <h3>Agent Vision</h3>
                 <p>
-                  Gemini keeps receiving camera frames for visual conversation.
+                  Agent keeps receiving camera frames for visual conversation.
                 </p>
               </div>
               <label class="checkbox-field">
                 <input id="geminiVisionAssistToggle" type="checkbox" checked />
-                <span>Gemini Vision</span>
+                <span>Agent Vision</span>
               </label>
             </div>
             <div class="slider-grid">
               <label class="slider-field" for="geminiVisionAssistIntervalSlider">
-                <span>Gemini video interval</span>
+                <span>Agent video interval</span>
                 <strong id="geminiVisionAssistIntervalValue">1500 ms</strong>
                 <input id="geminiVisionAssistIntervalSlider" type="range" min="1000" max="5000" step="250" value="1500" />
               </label>
             </div>
             <div class="status-grid">
               <div class="status-row">
-                <span>Gemini vision state</span>
+                <span>Agent vision state</span>
                 <strong id="geminiVisionAssistState">off</strong>
               </div>
               <div class="status-row">
-                <span>Last Gemini frame</span>
+                <span>Last Agent frame</span>
                 <strong id="geminiVisionAssistLastFrame">--</strong>
               </div>
             </div>
@@ -511,7 +515,7 @@
                 <div id="objectDetectionList" class="detected-object-list">No detections yet.</div>
               </label>
               <label class="debug-field">
-                <span>Visible labels sent to Gemini</span>
+                <span>Visible labels sent to Agent</span>
                 <strong id="visibleObjectLabels">--</strong>
               </label>
             </div>
@@ -568,9 +572,9 @@
         </section>
 
         <section id="settingsLocalBrain" class="panel-card local-brain-card">
-          <h2>Gemini Live / Local Brain</h2>
+          <h2>Agent / Local Brain</h2>
           <p class="panel-note">
-            Gemini Live handles voice. Movement still goes through the local safe tool path.
+            Agent handles voice. Movement still goes through the local safe tool path.
           </p>
           <div class="status-grid">
             <div class="status-row">
@@ -602,27 +606,27 @@
               <strong id="localBrainLastThought">--</strong>
             </div>
             <div class="status-row">
-              <span>Gemini Live</span>
+              <span>Agent</span>
               <strong id="geminiLiveState" class="local-server-state--unavailable">disabled</strong>
             </div>
             <div class="status-row">
-              <span>Gemini mic</span>
+              <span>Agent mic</span>
               <strong id="geminiLiveMicState">off</strong>
             </div>
             <div class="status-row">
-              <span>Gemini audio</span>
+              <span>Agent audio</span>
               <strong id="geminiLiveAudioState">idle</strong>
             </div>
             <div class="status-row">
-              <span>Gemini output</span>
+              <span>Agent output</span>
               <strong id="geminiLiveOutputState">--</strong>
             </div>
             <div class="status-row">
-              <span>Gemini frame</span>
+              <span>Agent frame</span>
               <strong id="geminiLiveFrameState">--</strong>
             </div>
             <div class="status-row">
-              <span>Gemini latency</span>
+              <span>Agent latency</span>
               <strong id="geminiLiveLatency">--</strong>
             </div>
           </div>
@@ -702,11 +706,11 @@
               <input id="idleSilentGapMaxInput" type="number" min="1" max="120" step="1" value="4" inputmode="numeric" />
             </label>
             <label class="idle-number-field" for="idleSpeakingGapMinInput">
-              <span>Gemini min (s)</span>
+              <span>Agent min (s)</span>
               <input id="idleSpeakingGapMinInput" type="number" min="1" max="120" step="1" value="1" inputmode="numeric" />
             </label>
             <label class="idle-number-field" for="idleSpeakingGapMaxInput">
-              <span>Gemini max (s)</span>
+              <span>Agent max (s)</span>
               <input id="idleSpeakingGapMaxInput" type="number" min="1" max="120" step="1" value="4" inputmode="numeric" />
             </label>
             <label class="idle-number-field" for="idleBalanceStartInput">
@@ -722,11 +726,11 @@
               <input id="idleOppositeMixChanceInput" type="number" min="0" max="100" step="1" value="25" inputmode="numeric" />
             </label>
             <label class="idle-number-field" for="idleGeminiBodyContextGapMinInput">
-              <span>Gemini ctx min (s)</span>
+              <span>Agent ctx min (s)</span>
               <input id="idleGeminiBodyContextGapMinInput" type="number" min="0" max="120" step="1" value="4" inputmode="numeric" />
             </label>
             <label class="idle-number-field" for="idleGeminiBodyContextGapMaxInput">
-              <span>Gemini ctx max (s)</span>
+              <span>Agent ctx max (s)</span>
               <input id="idleGeminiBodyContextGapMaxInput" type="number" min="0" max="120" step="1" value="10" inputmode="numeric" />
             </label>
           </div>

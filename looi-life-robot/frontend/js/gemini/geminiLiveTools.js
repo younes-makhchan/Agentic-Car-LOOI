@@ -41,7 +41,7 @@ const GEMINI_LIVE_SYSTEM_INSTRUCTION = [
   "For autonomous reactions, a tool-only response is allowed. Speak only if speech is useful.",
   "Speech-start expressive animation is handled by the runtime when your audio begins. Do not duplicate it unless the user explicitly asks.",
   "</tool_rules>",
-  // DISABLED_ROBOFLOW_FOLLOW: follow-specific rules are intentionally not exposed to Gemini.
+  // DISABLED_ROBOFLOW_FOLLOW: follow-specific rules are intentionally not exposed to Agent.
   "<body_context_rules>",
   "The browser may send a fresh video frame followed by a <body_context> message during quiet idle moments after local micro-movements. These are visual-awareness/body-awareness events, not user commands.",
   "Do not call tools because of body_context.",
@@ -159,7 +159,7 @@ export function geminiFunctionCallToAction(call = {}) {
   if (name !== "run_scenario") {
     return {
       ok: false,
-      reason: `Unsupported Gemini Live tool: ${name || "unknown"}`
+      reason: `Unsupported Agent tool: ${name || "unknown"}`
     };
   }
 

@@ -4695,6 +4695,22 @@ esp-web-install-button button {
   margin-top: 0.75rem;
 }
 
+.runtime-gate__card > .download-app-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-top: 0.55rem;
+}
+
+.download-app-button__icon {
+  width: 1.35rem;
+  height: 1.35rem;
+  flex: 0 0 auto;
+  border-radius: 0.35rem;
+  object-fit: contain;
+}
+
 .bluetooth-connect-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

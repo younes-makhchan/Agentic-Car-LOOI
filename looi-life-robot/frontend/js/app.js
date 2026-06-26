@@ -30,7 +30,7 @@ import { ToolExecutor } from "./robot/toolExecutor.js";
 import { PerformanceMonitor } from "./runtime/performanceMonitor.js";
 import { ReliabilityManager } from "./runtime/reliabilityManager.js";
 import { WakeLockManager } from "./runtime/wakeLockManager.js";
-import { registerPwaServiceWorker } from "./pwa.js";
+import { createPwaInstallController, registerPwaServiceWorker } from "./pwa.js";
 import { createFaceController } from "./ui/faceCanvas.js";
 import { VisionState } from "./vision/visionState.js";
 import {
@@ -82,6 +82,7 @@ const ui = {
   canvas: document.getElementById("faceCanvas"),
   runtimeGate: document.getElementById("runtimeGate"),
   productionStartButton: document.getElementById("productionStartButton"),
+  downloadAppButton: document.getElementById("downloadAppButton"),
   gateConnectBluetoothButton: document.getElementById("gateConnectBluetoothButton"),
   gateBluetoothStatus: document.getElementById("gateBluetoothStatus"),
   gateBluetoothStatusLabel: document.getElementById("gateBluetoothStatusLabel"),
@@ -501,10 +502,10 @@ ui.conversationSleepTimeoutInput?.addEventListener("change", () => {
 ui.geminiVisionAssistToggle?.addEventListener("change", () => {
   geminiVisionAssistEnabled = Boolean(ui.geminiVisionAssistToggle.checked);
   syncGeminiVisionAssist("toggle");
-  log(
-    geminiVisionAssistEnabled
-      ? "Gemini Live Vision enabled. Camera frames go directly to Gemini."
-      : "Gemini Live Vision disabled.",
+	  log(
+	    geminiVisionAssistEnabled
+	      ? "Agent Vision enabled. Camera frames are active."
+	      : "Agent Vision disabled.",
     geminiVisionAssistEnabled ? "warn" : "info"
   );
 });
@@ -780,6 +781,11 @@ ui.localVisionSizeSlider?.addEventListener("input", () => {
 // ui.stopFollowingButton?.addEventListener("click", () => {});
 
 registerPwaServiceWorker({ logger: log });
+createPwaInstallController({
+  button: ui.downloadAppButton,
+  logger: log,
+  fallbackMessage: "Use your browser menu to install LOOI."
+});
 init();
 
 async function init() {
@@ -1701,7 +1707,7 @@ async function ensureGeminiCameraRunning(reason = "looi_start") {
   }
 
   const deviceId = getFrontCameraDeviceId();
-  log(`Starting camera for Gemini vision using ${formatCameraDeviceForLog(deviceId)}.`);
+  log(`Starting camera for Agent vision using ${formatCameraDeviceForLog(deviceId)}.`);
   const result = await cameraInput.startCamera({
     facingMode: "user",
     deviceId
@@ -1709,7 +1715,7 @@ async function ensureGeminiCameraRunning(reason = "looi_start") {
   handleCameraCommandResult(result);
 
   if (!result?.ok) {
-    throw new Error(result?.error || "Camera could not start for Gemini vision.");
+    throw new Error(result?.error || "Camera could not start for Agent vision.");
   }
 
   return result.status ?? cameraInput.getCameraStatus?.() ?? {};
@@ -1771,7 +1777,7 @@ async function startLocalBrainProductionMode() {
     // await ensureRoboflowDetectorRunning("looi_start");
 
     if (useGeminiLive) {
-      setLooiStartupPhase("Connecting Gemini");
+      setLooiStartupPhase("Connecting Agent");
     }
     const geminiStartResult = useGeminiLive ? await geminiStartPromise : null;
     if (geminiStartResult?.error) {
@@ -1788,7 +1794,7 @@ async function startLocalBrainProductionMode() {
     idleScenarioScheduler?.start?.("start_looi");
     log(
       useGeminiLive
-        ? "Gemini Live connected: camera, mic, LOOI mode, and movement are enabled."
+        ? "Agent connected: camera, mic, LOOI mode, and movement are enabled."
         : "Local Brain Live started: camera, LOOI mode, and movement are enabled.",
       "warn"
     );
@@ -2074,8 +2080,8 @@ function updateLocalBrainUi() {
 
   ui.localBrainState.textContent = geminiPrimaryActive
     ? geminiStatus.connected
-      ? "Gemini Live"
-      : "Gemini starting"
+      ? "Agent"
+      : "Agent starting"
     : status.running
     ? status.processing
       ? "thinking"
@@ -2084,7 +2090,7 @@ function updateLocalBrainUi() {
   ui.localBrainState.classList.toggle("local-brain-state--running", Boolean(geminiPrimaryActive || status.running));
   ui.localBrainState.classList.toggle("local-brain-state--stopped", !geminiPrimaryActive && !status.running);
   ui.localBrainAdapterState.textContent = geminiPrimaryActive
-    ? "Gemini Live STS"
+    ? "Agent voice"
     : status.fallbackUsed
     ? "fallback active"
     : status.adapterAvailable
@@ -2098,10 +2104,10 @@ function updateLocalBrainUi() {
   ui.localBrainServerStatus.classList.toggle("local-server-state--available", Boolean(status.adapterAvailable));
   ui.localBrainServerStatus.classList.toggle("local-server-state--unavailable", !status.adapterAvailable);
   ui.localBrainProvider.textContent = geminiPrimaryActive
-    ? "gemini-live"
+    ? "agent"
     : status.provider ?? activeConfig.localBrainProvider ?? "unknown";
   ui.localBrainModel.textContent = geminiPrimaryActive
-    ? geminiStatus.model || activeConfig.geminiLiveModel || "--"
+    ? "active"
     : status.model || activeConfig.localBrainModel || "--";
   ui.localBrainLatency.textContent = Number.isFinite(Number(status.latestLatencyMs))
     ? `${Math.round(Number(status.latestLatencyMs))} ms`
@@ -2241,7 +2247,7 @@ function updateLooiActivityIndicator(geminiStatus = geminiLiveRuntime?.getStatus
           : "listening";
   let label = runtimeRunning ? "Listening" : "Idle";
   if (geminiOffline) {
-    label = "Gemini Offline";
+    label = "Agent Offline";
   } else if (runtimeRunning && wakeRequired) {
     label = "Listening";
   } else if (thinking) {
@@ -2460,11 +2466,11 @@ function syncGeminiVisionAssist(reason = "sync") {
   }
 
   sendGeminiVisionAssistFrame(reason).catch((error) => {
-    log(`Gemini vision frame failed: ${error.message}`, "warn");
+    log(`Agent vision frame failed: ${error.message}`, "warn");
   });
   geminiVisionAssistTimer = globalThis.setInterval(() => {
     sendGeminiVisionAssistFrame("interval").catch((error) => {
-      log(`Gemini vision frame failed: ${error.message}`, "warn");
+      log(`Agent vision frame failed: ${error.message}`, "warn");
     });
   }, geminiVisionAssistIntervalMs);
   updateGeminiVisionAssistUi(getGeminiVisionAssistState(reason));
@@ -2758,9 +2764,9 @@ async function startDirectGeminiConversation(reason = "conversation_start") {
     if (!geminiStatus.micStreaming) {
       await geminiLiveRuntime.startAudioInput(reason);
     }
-    log("Gemini mic is active.");
+    log("Agent mic is active.");
   } catch (error) {
-    log(`Gemini mic could not start: ${error.message}`, "warn");
+    log(`Agent mic could not start: ${error.message}`, "warn");
   } finally {
     conversationGateActivationInProgress = false;
     updateGeminiLiveUi();
@@ -3073,7 +3079,7 @@ function handleVisionFollowEvent(event = {}) {
 
 function handleIdleScenarioCompleted(event = {}) {
   sendIdleBodyContextToGemini(event.payload ?? {}, "idle_scenario_completed")?.catch?.((error) => {
-    log(`Gemini idle body context failed: ${error.message}`, "warn");
+    log(`Agent idle body context failed: ${error.message}`, "warn");
   });
 }
 
@@ -3084,7 +3090,7 @@ function deferIdleBodyContext(reason = "idle_body_context_defer") {
     : 0;
 
   if (nextGapSec > 0) {
-    log(`Gemini idle body context deferred ${formatNumber(nextGapSec)}s (${reason}).`, "debug");
+    log(`Agent idle body context deferred ${formatNumber(nextGapSec)}s (${reason}).`, "debug");
   }
 }
 
@@ -3166,7 +3172,7 @@ async function sendIdleBodyContextToGemini(payload = {}, reason = "idle_body_con
     const nextGapSec = pickIdleBodyContextGapSec();
     nextIdleBodyContextAllowedAt = now + nextGapSec * 1000;
     log(
-      `Gemini idle body context sent with vision frame movement=${scenarioId || "unknown"} nextGap=${formatNumber(nextGapSec)}s range=${gapRangeSec.join("-")}s`,
+      `Agent idle body context sent with vision frame movement=${scenarioId || "unknown"} nextGap=${formatNumber(nextGapSec)}s range=${gapRangeSec.join("-")}s`,
       "debug"
     );
   }
@@ -3221,7 +3227,7 @@ function sendFollowStateContext(reason = "follow_context") {
   const quietGate = getGeminiQuietInputGate("vision_context");
   if (!quietGate.ok) {
     pendingFollowVisionContextReason = reason;
-    log(`Gemini follow context queued reason=${reason} gate=${quietGate.reason}`, "debug");
+    log(`Agent follow context queued reason=${reason} gate=${quietGate.reason}`, "debug");
     return false;
   }
 
@@ -3243,7 +3249,7 @@ function flushPendingFollowVisionContext(trigger = "gemini_audio_finished") {
 
   const reason = pendingFollowVisionContextReason;
   pendingFollowVisionContextReason = "";
-  log(`Gemini follow context flushed reason=${reason} trigger=${trigger}`, "debug");
+  log(`Agent follow context flushed reason=${reason} trigger=${trigger}`, "debug");
   return sendFollowStateContextNow(reason);
 }
 
@@ -3253,7 +3259,7 @@ function sendFollowStateContextNow(reason = "follow_context") {
     reason
   });
   sendPromise?.catch?.((error) => {
-    log(`Gemini follow state context failed: ${error.message}`, "warn");
+    log(`Agent follow state context failed: ${error.message}`, "warn");
   });
   return sendPromise;
 }
@@ -3329,7 +3335,7 @@ function updateVisionUi() {
     ui.objectDetectionList.textContent = "Roboflow follow is disabled.";
   }
   if (ui.visibleObjectLabels) {
-    ui.visibleObjectLabels.textContent = context.cameraRunning ? "Gemini sees live camera frames" : "--";
+    ui.visibleObjectLabels.textContent = context.cameraRunning ? "Agent sees live camera frames" : "--";
   }
   if (ui.activeFollowTarget) {
     ui.activeFollowTarget.textContent = "--";
@@ -4252,14 +4258,14 @@ function isHighFrequencyRuntimeLog(message = "") {
   return (
     /^\[TRACE\]/.test(message) ||
     /^STEP [3456] /.test(message) ||
-    /^GEMINI STEP [457] /.test(message) ||
-    /^GEMINI TX audio frame=/.test(message) ||
-    /^GEMINI STEP 8 audio output queued/.test(message) ||
-    /^GEMINI AUDIO chunk ended/.test(message) ||
-    /^Gemini tool requests:/.test(message) ||
-    /^Gemini (deferred|speech-start|Live audio interrupted)/.test(message) ||
-    /^GEMINI vision context (sent|skipped)/.test(message) ||
-    /^Gemini follow context (queued|flushed)/.test(message) ||
+    /^AGENT STEP [457] /.test(message) ||
+    /^AGENT TX audio frame=/.test(message) ||
+    /^AGENT STEP 8 audio output queued/.test(message) ||
+    /^AGENT AUDIO chunk ended/.test(message) ||
+    /^Agent tool requests:/.test(message) ||
+    /^Agent (deferred|speech-start|audio interrupted)/.test(message) ||
+    /^AGENT vision context (sent|skipped)/.test(message) ||
+    /^Agent follow context (queued|flushed)/.test(message) ||
     /^Local Brain (thought|skipped server LLM)/.test(message) ||
     /^Life state patched/.test(message) ||
     /^Camera command completed\./.test(message) ||
@@ -4293,8 +4299,8 @@ function isStartupOrConnectionLog(message = "") {
     /^Safety:/.test(message) ||
     /^LOOI Body Bluetooth/.test(message) ||
     /^Opening Bluetooth picker for LOOI Body/.test(message) ||
-    /^GEMINI STEP [123] /.test(message) ||
-    /^Gemini Live started:/.test(message) ||
+    /^AGENT STEP [13] /.test(message) ||
+    /^Agent connected:/.test(message) ||
     /^Local Brain started\./.test(message) ||
     /^Local runtime ready\./.test(message)
   );

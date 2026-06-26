@@ -1,7 +1,7 @@
 {
   "name": "LOOI Life Robot",
   "short_name": "LOOI",
-  "description": "LOOI local runtime for Gemini vision, voice, firmware upload, and Bluetooth body control.",
+  "description": "LOOI local runtime for Agent vision, voice, firmware upload, and Bluetooth body control.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",

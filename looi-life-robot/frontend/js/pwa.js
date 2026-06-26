@@ -14,3 +14,56 @@ export function registerPwaServiceWorker({ logger = () => {} } = {}) {
       });
   });
 }
+
+export function createPwaInstallController({
+  button,
+  logger = () => {},
+  fallbackMessage = "Install from your browser menu."
+} = {}) {
+  let deferredPrompt = null;
+  const isStandalone = () =>
+    window.matchMedia?.("(display-mode: standalone)")?.matches ||
+    window.navigator?.standalone === true;
+
+  if (!button) {
+    return {
+      canInstall: false
+    };
+  }
+
+  button.hidden = isStandalone();
+
+  window.addEventListener("beforeinstallprompt", (event) => {
+    event.preventDefault();
+    deferredPrompt = event;
+    button.hidden = false;
+    button.disabled = false;
+  });
+
+  window.addEventListener("appinstalled", () => {
+    deferredPrompt = null;
+    button.hidden = true;
+    logger("App installed.");
+  });
+
+  button.addEventListener("click", async () => {
+    if (isStandalone()) {
+      button.hidden = true;
+      return;
+    }
+
+    if (!deferredPrompt) {
+      logger(fallbackMessage, "warn");
+      return;
+    }
+
+    const promptEvent = deferredPrompt;
+    deferredPrompt = null;
+    promptEvent.prompt();
+    await promptEvent.userChoice.catch(() => null);
+  });
+
+  return {
+    canInstall: Boolean(deferredPrompt)
+  };
+}

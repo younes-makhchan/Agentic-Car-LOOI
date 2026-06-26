@@ -170,7 +170,7 @@ export class GeminiLiveRuntime {
     }
 
     if (this.status.enabled === false) {
-      throw new Error("Gemini Live is disabled in server config.");
+      throw new Error("Agent is disabled in server config.");
     }
 
     const runToken = ++this.runToken;
@@ -188,7 +188,7 @@ export class GeminiLiveRuntime {
       thinkingLevel: thinkingLevel || this.status.thinkingLevel || "minimal"
     });
     await this.primeOutputAudio();
-    this.log("GEMINI STEP 1 relay session request");
+    this.log("AGENT STEP 1 session request");
 
     try {
       const sessionPayload = await this.fetchToken();
@@ -204,7 +204,6 @@ export class GeminiLiveRuntime {
         thinkingLevel:
           sessionPayload.thinkingLevel || thinkingLevel || this.status.thinkingLevel || "minimal"
       });
-      this.log(`GEMINI STEP 2 server relay connect model=${this.status.model}`);
       await this.openTransport(websocketUrl, runToken);
 
       if (runToken !== this.runToken) {
@@ -219,7 +218,7 @@ export class GeminiLiveRuntime {
         sessionResumption: this.status.sessionResumption,
         slidingWindowTokens: this.status.slidingWindowTokens
       }));
-      this.log("GEMINI STEP 3 setup sent with audio response + tool declarations");
+      this.log("AGENT STEP 3 setup sent");
 
       if (captureAudio) {
         await this.startMic(runToken);
@@ -243,7 +242,7 @@ export class GeminiLiveRuntime {
       });
       this.cleanupTransport();
       this.stopMic();
-      this.log(`Gemini Live start failed: ${error.message}`, "warn");
+      this.log(`Agent start failed: ${error.message}`, "warn");
       throw error;
     }
   }
@@ -267,7 +266,7 @@ export class GeminiLiveRuntime {
       generationActive: false,
       turnActive: false
     });
-    this.log(`Gemini Live stopped: ${reason}`);
+    this.log(`Agent stopped: ${reason}`);
     return this.getStatus();
   }
 
@@ -290,12 +289,12 @@ export class GeminiLiveRuntime {
       return this.getStatus();
     }
     if (!this.status.connected) {
-      throw new Error("Gemini Live is not connected.");
+      throw new Error("Agent is not connected.");
     }
 
     await this.startMic(this.runToken);
     this.lifeEngine?.setListening?.(true);
-    this.log(`Gemini Live mic enabled: ${reason}`);
+    this.log(`Agent mic enabled: ${reason}`);
     return this.getStatus();
   }
 
@@ -307,7 +306,7 @@ export class GeminiLiveRuntime {
 
     this.stopMic({ notifyGemini: true, reason });
     this.lifeEngine?.setListening?.(false);
-    this.log(`Gemini Live mic disabled: ${reason}`);
+    this.log(`Agent mic disabled: ${reason}`);
     return this.getStatus();
   }
 
@@ -337,7 +336,7 @@ export class GeminiLiveRuntime {
     const signature = safeStringify(stableVisionSignature(payload));
 
     if (!force && signature === this.lastVisionContextSignature) {
-      this.log(`GEMINI vision context skipped unchanged reason=${reason || "none"}`, "debug");
+      this.log(`AGENT vision context skipped unchanged reason=${reason || "none"}`, "debug");
       return false;
     }
 
@@ -350,13 +349,13 @@ export class GeminiLiveRuntime {
         this.lastVisionContextSignature = signature;
         this.lastVisionContextSentAt = this.now();
         this.log(
-          `GEMINI vision context sent reason=${reason || "none"} force=${Boolean(force)} bytes=${text.length}`,
+          `AGENT vision context sent reason=${reason || "none"} force=${Boolean(force)} bytes=${text.length}`,
           "debug"
         );
       },
       onQueued: () => {
         this.log(
-          `GEMINI vision context queued reason=${reason || "none"} force=${Boolean(force)} bytes=${text.length}`,
+          `AGENT vision context queued reason=${reason || "none"} force=${Boolean(force)} bytes=${text.length}`,
           "debug"
         );
       }
@@ -387,7 +386,7 @@ export class GeminiLiveRuntime {
           return;
         }
         settled = true;
-        reject(new Error("Gemini Live relay open timed out."));
+        reject(new Error("Agent relay open timed out."));
       }, 10_000);
 
       this.transport = this.transportFactory({
@@ -407,13 +406,13 @@ export class GeminiLiveRuntime {
         onMessage: (message) => {
           this.handleTransportMessage(message).catch((error) => {
             this.patchStatus({ lastError: error.message });
-            this.log(`Gemini Live message parse failed: ${error.message}`, "warn");
+            this.log(`Agent message parse failed: ${error.message}`, "warn");
           });
         },
         onError: (error) => {
-          const message = error?.message || error?.error?.message || "Gemini Live relay error.";
+          const message = error?.message || error?.error?.message || "Agent relay error.";
           this.patchStatus({ lastError: message });
-          this.log(`Gemini Live relay error: ${message}`, "warn");
+          this.log(`Agent relay error: ${message}`, "warn");
           if (!settled) {
             settled = true;
             globalThis.clearTimeout(timeout);
@@ -506,7 +505,7 @@ export class GeminiLiveRuntime {
     this.inputSource = source;
     this.processor = processor;
     this.patchStatus({ micStreaming: true });
-    this.log("GEMINI STEP 4 mic streaming started");
+    this.log("AGENT STEP 4 mic streaming started");
   }
 
   stopMic({ notifyGemini = false, reason = "stop_mic" } = {}) {
@@ -545,10 +544,10 @@ export class GeminiLiveRuntime {
         lastInputKind: "audio_stream_end",
         lastInputGateReason: reason
       });
-      this.log(`Gemini Live audioStreamEnd sent: ${reason}`, "debug");
+      this.log(`Agent audioStreamEnd sent: ${reason}`, "debug");
       return true;
     } catch (error) {
-      this.log(`Gemini Live audioStreamEnd failed: ${error.message}`, "debug");
+      this.log(`Agent audioStreamEnd failed: ${error.message}`, "debug");
       return false;
     }
   }
@@ -559,7 +558,7 @@ export class GeminiLiveRuntime {
 
     if (!message) {
       this.log(
-        `Gemini Live unparsable websocket message kind=${parsed?.kind ?? "unknown"} size=${parsed?.size ?? "unknown"} preview=${parsed?.preview ?? ""}`,
+        `Agent unparsable websocket message kind=${parsed?.kind ?? "unknown"} size=${parsed?.size ?? "unknown"} preview=${parsed?.preview ?? ""}`,
         "warn"
       );
       return;
@@ -572,10 +571,10 @@ export class GeminiLiveRuntime {
 
     if (message.setupComplete) {
       this.patchStatus({ setupComplete: true });
-      this.log("GEMINI STEP 5 setup complete");
+      this.log("AGENT STEP 5 setup complete");
       if (this.hasActiveFollowVisionContext()) {
         this.sendVisionContext({ force: true, reason: "setup_complete" }).catch((error) => {
-          this.log(`Gemini vision context send failed: ${error.message}`, "warn");
+          this.log(`Agent vision context send failed: ${error.message}`, "warn");
         });
       }
     }
@@ -600,7 +599,7 @@ export class GeminiLiveRuntime {
         goAwayAt: this.now(),
         goAwayTimeLeftMs: lifecycle.goAwayTimeLeftMs
       });
-      this.log(`Gemini Live GoAway received timeLeftMs=${lifecycle.goAwayTimeLeftMs}`, "warn");
+      this.log(`Agent GoAway received timeLeftMs=${lifecycle.goAwayTimeLeftMs}`, "warn");
     }
 
     const audioChunks = extractAudioChunks(message);
@@ -617,19 +616,19 @@ export class GeminiLiveRuntime {
     if (functionCalls.length) {
       this.inputCoordinator.markToolTurnStarted();
     }
-    this.log(`Gemini tool requests: ${summarizeToolRequests(functionCalls, cancelledToolCallIds)}`);
+    this.log(`Agent tool requests: ${summarizeToolRequests(functionCalls, cancelledToolCallIds)}`);
 
     if (functionCalls.length) {
       this.handleToolCalls(functionCalls).catch((error) => {
         this.patchStatus({ lastError: error.message });
-        this.log(`Gemini Live tool handling failed: ${error.message}`, "warn");
+        this.log(`Agent tool handling failed: ${error.message}`, "warn");
       });
     }
 
     if (cancelledToolCallIds.length) {
       this.handleToolCallCancellation(cancelledToolCallIds).catch((error) => {
         this.patchStatus({ lastError: error.message });
-        this.log(`Gemini Live tool cancellation failed: ${error.message}`, "warn");
+        this.log(`Agent tool cancellation failed: ${error.message}`, "warn");
       });
     }
 
@@ -726,7 +725,7 @@ export class GeminiLiveRuntime {
     });
 
     if (!mapped.ok) {
-      this.log(`Gemini Live rejected tool ${name}: ${mapped.reason}`, "warn");
+      this.log(`Agent rejected tool ${name}: ${mapped.reason}`, "warn");
       return {
         id,
         name,
@@ -789,7 +788,7 @@ export class GeminiLiveRuntime {
 
       if (!accepted) {
         this.log(
-          `Gemini Live tool ${name} did not execute: status=${status} message="${result?.message ?? "no result"}"`,
+          `Agent tool ${name} did not execute: status=${status} message="${result?.message ?? "no result"}"`,
           "warn"
         );
       } else if (action.type === "run_scenario") {
@@ -836,7 +835,7 @@ export class GeminiLiveRuntime {
         actionType: action.type,
         error: error.message
       });
-      this.log(`Gemini Live tool execution failed: ${error.message}`, "warn");
+      this.log(`Agent tool execution failed: ${error.message}`, "warn");
       return {
         id,
         name,
@@ -880,18 +879,18 @@ export class GeminiLiveRuntime {
     }
 
     if (cancelled.every(shouldKeepLocalToolRunningAfterGeminiCancellation)) {
-      this.log(`GEMINI STEP 7 tool cancellation ignored for persistent local tool: ${ids.join(", ")}`, "warn");
+      this.log(`AGENT STEP 7 tool cancellation ignored for persistent local tool: ${ids.join(", ")}`, "warn");
       return;
     }
 
     this.interruptAudio("gemini_tool_call_cancelled");
     await this.toolExecutor?.cancelActiveScenario?.("gemini_tool_call_cancelled");
-    this.log(`GEMINI STEP 7 tool cancellation: ${ids.join(", ")}`, "warn");
+    this.log(`AGENT STEP 7 tool cancellation: ${ids.join(", ")}`, "warn");
   }
 
   enqueueOutputAudio(base64Data, mimeType = "", speechContext = {}) {
     if (!base64Data) {
-      this.log("GEMINI AUDIO skip empty output chunk", "warn");
+      this.log("AGENT AUDIO skip empty output chunk", "warn");
       return;
     }
 
@@ -899,7 +898,7 @@ export class GeminiLiveRuntime {
 
     if (!this.ensureOutputAudioContext()) {
       this.patchStatus({ lastError: "Web Audio output is unavailable." });
-      this.log("GEMINI AUDIO output unavailable: Web Audio context missing", "warn");
+      this.log("AGENT AUDIO output unavailable: Web Audio context missing", "warn");
       return;
     }
     this.resumeOutputAudio("output_chunk");
@@ -911,7 +910,7 @@ export class GeminiLiveRuntime {
       this.patchStatus({
         lastAudioDebug: `empty output chunk mime=${mimeType || "unknown"}`
       });
-      this.log(`GEMINI AUDIO decoded empty output chunk mime=${mimeType || "unknown"}`, "warn");
+      this.log(`AGENT AUDIO decoded empty output chunk mime=${mimeType || "unknown"}`, "warn");
       return;
     }
 
@@ -929,7 +928,7 @@ export class GeminiLiveRuntime {
     this.activeOutputSources.add(source);
     source.onended = () => {
       this.activeOutputSources.delete(source);
-      this.log(`GEMINI AUDIO chunk ended active=${this.activeOutputSources.size}`);
+      this.log(`AGENT AUDIO chunk ended active=${this.activeOutputSources.size}`);
       this.refreshAudioPlayingStatus();
     };
     source.start(startAt);
@@ -947,7 +946,7 @@ export class GeminiLiveRuntime {
       lastAudioDebug: `queued ${samples.length} samples @ ${rate}Hz (${Math.round(buffer.duration * 1000)}ms), context=${this.outputAudioContext?.state ?? "unknown"}`
     });
     this.log(
-      `GEMINI STEP 8 audio output queued chunk=${this.audioDebug.queuedOutputChunks} samples=${samples.length} rate=${rate} duration=${Math.round(buffer.duration * 1000)}ms context=${this.outputAudioContext?.state ?? "unknown"} startAt=${startAt.toFixed?.(3) ?? startAt}`
+      `AGENT STEP 8 audio output queued chunk=${this.audioDebug.queuedOutputChunks} samples=${samples.length} rate=${rate} duration=${Math.round(buffer.duration * 1000)}ms context=${this.outputAudioContext?.state ?? "unknown"} startAt=${startAt.toFixed?.(3) ?? startAt}`
     );
 
     globalThis.clearTimeout(this.audioStatusTimer);
@@ -986,7 +985,7 @@ export class GeminiLiveRuntime {
     ) {
       this.audioDebug.lastInputLogAt = now;
       this.log(
-        `GEMINI TX audio frame=${this.audioDebug.sentInputFrames} bytes=${bytes} samples=${samples} inputRate=${Math.round(Number(inputRate) || 0)} outputRate=${outputRate} totalBytes=${this.audioDebug.sentInputBytes}`,
+        `AGENT TX audio frame=${this.audioDebug.sentInputFrames} bytes=${bytes} samples=${samples} inputRate=${Math.round(Number(inputRate) || 0)} outputRate=${outputRate} totalBytes=${this.audioDebug.sentInputBytes}`,
         "debug"
       );
     }
@@ -1014,7 +1013,7 @@ export class GeminiLiveRuntime {
       turnActive: false,
       lastInterruptedAt: this.now()
     });
-    this.log(`Gemini Live audio interrupted: ${reason}`);
+    this.log(`Agent audio interrupted: ${reason}`);
   }
 
   async primeOutputAudio() {
@@ -1067,7 +1066,7 @@ export class GeminiLiveRuntime {
         lastAudioDebug: `audio resume failed (${reason}): ${error.message}`,
         lastError: error.message
       });
-      this.log(`Gemini Live audio resume failed: ${error.message}`, "warn");
+      this.log(`Agent audio resume failed: ${error.message}`, "warn");
       return false;
     }
   }
@@ -1130,7 +1129,7 @@ export class GeminiLiveRuntime {
         reason: "gemini_live_speech_finish"
       }, {
         signature: `finish_telling:${this.now()}`,
-        logMessage: "Gemini speech-finish scenario"
+        logMessage: "Agent speech-finish scenario"
       });
     }, 650);
 
@@ -1197,7 +1196,7 @@ export class GeminiLiveRuntime {
 
     return this.executeSpeechStartScenarioAction(action, {
       signature,
-      logMessage: "Gemini speech-start scenario"
+      logMessage: "Agent speech-start scenario"
     });
   }
 
@@ -1229,7 +1228,7 @@ export class GeminiLiveRuntime {
     this.patchStatus({
       lastToolResult: `${name}: queued_for_audio`
     });
-    this.log(`Gemini deferred speech-start scenario until audio: ${scenarioName}`);
+    this.log(`Agent deferred speech-start scenario until audio: ${scenarioName}`);
 
     return {
       id,
@@ -1241,7 +1240,7 @@ export class GeminiLiveRuntime {
           status: "queued",
           executed: false,
           physical: false,
-          message: `Scenario ${scenarioName} queued until Gemini output audio starts.`,
+          message: `Scenario ${scenarioName} queued until Agent output audio starts.`,
           action: summarizeGeminiAction(action),
           detail: {
             scenario: scenarioName,
@@ -1262,7 +1261,7 @@ export class GeminiLiveRuntime {
     this.deferredSpeechStartScenario = null;
     const now = this.now();
     if (now > deferred.expiresAt) {
-      this.log(`Gemini deferred speech-start scenario expired before audio: ${deferred.scenarioName}`, "warn");
+      this.log(`Agent deferred speech-start scenario expired before audio: ${deferred.scenarioName}`, "warn");
       return false;
     }
 
@@ -1277,11 +1276,11 @@ export class GeminiLiveRuntime {
 
     return this.executeSpeechStartScenarioAction(action, {
       signature: `deferred:${deferred.scenarioName}:${deferred.id}`,
-      logMessage: "Gemini deferred speech-start scenario"
+      logMessage: "Agent deferred speech-start scenario"
     });
   }
 
-  executeSpeechStartScenarioAction(action = {}, { signature = "", logMessage = "Gemini speech-start scenario" } = {}) {
+  executeSpeechStartScenarioAction(action = {}, { signature = "", logMessage = "Agent speech-start scenario" } = {}) {
     if (!this.toolExecutor?.executeAction) {
       return false;
     }
@@ -1312,7 +1311,7 @@ export class GeminiLiveRuntime {
 
         if (status !== "completed" || result?.executed === false) {
           this.log(
-            `Gemini speech-start scenario ${scenarioName} did not execute: status=${status} message="${result?.message ?? "no result"}"`,
+            `Agent speech-start scenario ${scenarioName} did not execute: status=${status} message="${result?.message ?? "no result"}"`,
             "warn"
           );
         } else {
@@ -1329,7 +1328,7 @@ export class GeminiLiveRuntime {
           lastToolResult: `speech_start ${scenarioName}: failed`,
           lastError: error.message
         });
-        this.log(`Gemini speech-start scenario failed: ${error.message}`, "warn");
+        this.log(`Agent speech-start scenario failed: ${error.message}`, "warn");
         this.publishGeminiScenarioEvent("gemini_scenario_finished", action, {
           toolName: "speech_start",
           status: "failed",
@@ -1370,7 +1369,7 @@ export class GeminiLiveRuntime {
 
   sendJson(payload) {
     if (!this.transport?.send) {
-      throw new Error("Gemini Live transport is not connected.");
+      throw new Error("Agent transport is not connected.");
     }
 
     if (this.transport.readyState !== undefined && this.transport.readyState !== 1) {
@@ -1379,7 +1378,7 @@ export class GeminiLiveRuntime {
         connected: false,
         connecting: false
       });
-      this.log("Gemini Live send skipped because the relay socket is closed.", "debug");
+      this.log("Agent send skipped because the relay socket is closed.", "debug");
       return false;
     }
 
@@ -1393,7 +1392,7 @@ export class GeminiLiveRuntime {
         connecting: false,
         lastError: error.message
       });
-      this.log(`Gemini Live send failed: ${error.message}`, "warn");
+      this.log(`Agent send failed: ${error.message}`, "warn");
       return false;
     }
   }
@@ -1643,7 +1642,7 @@ export class GeminiInputCoordinator {
     }
 
     this.pendingQuietInputs.clear();
-    this.runtime?.log?.(`GEMINI quiet input pending cleared (${reason})`, "debug");
+    this.runtime?.log?.(`AGENT quiet input pending cleared (${reason})`, "debug");
   }
 
   buildQuietTextEntry(kind, payload, metadata = {}) {
@@ -1719,7 +1718,7 @@ export class GeminiInputCoordinator {
     }
 
     this.pendingQuietInputs.delete(kind);
-    this.runtime?.log?.(`GEMINI quiet input flushed kind=${kind} trigger=${trigger}`, "debug");
+    this.runtime?.log?.(`AGENT quiet input flushed kind=${kind} trigger=${trigger}`, "debug");
     this.sendQuietTextEntry(entry, `flushed:${trigger}`);
     return true;
   }
@@ -1959,7 +1958,7 @@ async function defaultFetchToken() {
   const payload = await response.json().catch(() => ({}));
 
   if (!response.ok || payload.ok === false) {
-    throw new Error(payload.error || `Gemini Live session HTTP ${response.status}`);
+    throw new Error(payload.error || `Agent session HTTP ${response.status}`);
   }
 
   return payload;
@@ -1987,26 +1986,26 @@ function validateGeminiRelayUrl(url) {
   const rawUrl = String(url ?? "").trim();
 
   if (!rawUrl) {
-    throw new Error("Gemini Live session response was missing websocketUrl.");
+    throw new Error("Agent session response was missing websocketUrl.");
   }
 
   if (/generativelanguage\.googleapis\.com/i.test(rawUrl)) {
-    throw new Error("Gemini Live must use the server relay, not a browser-direct Google WebSocket.");
+    throw new Error("Agent must use the server relay, not a browser-direct provider WebSocket.");
   }
 
   if (/(access_token=|auth_tokens\/)/i.test(rawUrl)) {
-    throw new Error("Gemini Live relay URL must not expose a browser Gemini token.");
+    throw new Error("Agent relay URL must not expose a browser provider token.");
   }
 
   const baseHref = globalThis.location?.href || "http://localhost/";
   const parsed = new URL(rawUrl, baseHref);
 
   if (parsed.protocol !== "ws:" && parsed.protocol !== "wss:") {
-    throw new Error("Gemini Live relay URL must use ws:// or wss://.");
+    throw new Error("Agent relay URL must use ws:// or wss://.");
   }
 
   if (parsed.pathname !== "/api/gemini-live/relay") {
-    throw new Error("Gemini Live relay URL must point to /api/gemini-live/relay.");
+    throw new Error("Agent relay URL must point to /api/gemini-live/relay.");
   }
 
   const allowedBase = getBackendBaseUrl();
@@ -2015,7 +2014,7 @@ function validateGeminiRelayUrl(url) {
     : globalThis.location?.host;
 
   if (allowedHost && parsed.host !== allowedHost) {
-    throw new Error("Gemini Live relay URL must match the configured backend origin.");
+    throw new Error("Agent relay URL must match the configured backend origin.");
   }
 
   return parsed.href;
@@ -2040,7 +2039,7 @@ function logGeminiToolConsole(event, detail = {}) {
     Object.entries(payload).filter(([, value]) => value !== undefined && value !== null && value !== "")
   );
   const method = event === "failed" || event === "rejected" ? "warn" : "info";
-  console[method]?.(`[LOOI] GEMINI TOOL_${event.toUpperCase()}`, compact);
+  console[method]?.(`[LOOI] AGENT TOOL_${event.toUpperCase()}`, compact);
 }
 
 function parseJsonText(text) {
@@ -2332,7 +2331,7 @@ function compactVisionContext(vision = {}, { recentObjectReference = null, reaso
     reason: shortText(reason, 80),
     cameraRunning: Boolean(vision?.cameraRunning),
     currentCameraFacingMode: shortText(vision?.currentCameraFacingMode, 40),
-    // DISABLED_ROBOFLOW_FOLLOW: no activeTarget/follow/Roboflow metadata is sent to Gemini.
+    // DISABLED_ROBOFLOW_FOLLOW: no activeTarget/follow/Roboflow metadata is sent to Agent.
     recentObjectReference: recentObjectReference
       ? {
           label: shortText(recentObjectReference.label, 80)
