@@ -1,4 +1,4 @@
-const CACHE_NAME = "looi-pwa-v6";
+const CACHE_NAME = "looi-pwa-v11";
 const APP_SHELL = [
   "./",
   "./index.html",

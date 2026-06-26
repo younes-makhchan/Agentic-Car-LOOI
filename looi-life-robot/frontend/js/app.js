@@ -45,7 +45,7 @@ import {
 
 const DEFAULT_SPEED = 0.2;
 const DEFAULT_DURATION_MS = 400;
-const LOCAL_VISION_SIZE_STORAGE_KEY = "looi.localVisionWidgetSizePx.v2";
+const LOCAL_VISION_SIZE_STORAGE_KEY = "looi.localVisionWidgetSizePx.v3";
 const FRONT_CAMERA_DEVICE_STORAGE_KEY = "looi.frontCameraDeviceId.v1";
 const IDLE_SCENARIO_SETTINGS_STORAGE_KEY = "looi.idleScenarioSettings.v2";
 const CONVERSATION_SLEEP_TIMEOUT_STORAGE_KEY = "looi.conversationSleepTimeoutSec.v1";
@@ -3670,7 +3670,7 @@ function updateSliderLabels() {
 }
 
 function getDefaultLocalVisionWidgetSize() {
-  return globalThis.matchMedia?.("(max-width: 560px)")?.matches ? 100 : 120;
+  return globalThis.matchMedia?.("(max-width: 560px)")?.matches ? 110 : 140;
 }
 
 function loadLocalVisionWidgetSize() {
