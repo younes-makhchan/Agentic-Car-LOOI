@@ -1,0 +1,37 @@
+32dev/FrameworkArduino/esp32-hal-time.c.o
+Compiling .pio/build/esp32dev/FrameworkArduino/esp32-hal-timer.c.o
+src/main.cpp:268:8: error: 'void LooiBleServerCallbacks::onConnect(NimBLEServer*)' marked 'override', but does not override
+  268 |   void onConnect(NimBLEServer *server) override {
+      |        ^~~~~~~~~
+src/main.cpp:277:8: error: 'void LooiBleServerCallbacks::onDisconnect(NimBLEServer*)' marked 'override', but does not override
+  277 |   void onDisconnect(NimBLEServer *server) override {
+      |        ^~~~~~~~~~~~
+src/main.cpp:288:8: error: 'void LooiBleCommandCallbacks::onWrite(NimBLECharacteristic*)' marked 'override', but does not override
+  288 |   void onWrite(NimBLECharacteristic *characteristic) override {
+      |        ^~~~~~~
+src/main.cpp: In function 'void setupBle()':
+src/main.cpp:315:17: warning: 'bool NimBLEService::start()' is deprecated: NimBLEService::start() has no effect. Services are started when the server is started. [-Wdeprecated-declarations]
+  315 |   service->start();
+      |   ~~~~~~~~~~~~~~^~
+In file included from .pio/libdeps/esp32dev/NimBLE-Arduino/src/NimBLEDevice.h:299:
+.pio/libdeps/esp32dev/NimBLE-Arduino/src/NimBLEService.h:51:10: note: declared here
+   51 |     bool start() { return true; }
+      |          ^~~~~
+src/main.cpp:319:16: error: 'class NimBLEAdvertising' has no member named 'setScanResponse'; did you mean 'setScanResponseData'?
+  319 |   advertising->setScanResponse(true);
+      |                ^~~~~~~~~~~~~~~
+      |                setScanResponseData
+Compiling .pio/build/esp32dev/FrameworkArduino/esp32-hal-tinyusb.c.o
+Compiling .pio/build/esp32dev/FrameworkArduino/esp32-hal-touch-ng.c.o
+Compiling .pio/build/esp32dev/FrameworkArduino/esp32-hal-touch.c.o
+Compiling .pio/build/esp32dev/FrameworkArduino/esp32-hal-uart.c.o
+Compiling .pio/build/esp32dev/FrameworkArduino/firmware_msc_fat.c.o
+Compiling .pio/build/esp32dev/FrameworkArduino/freertos_stats.cpp.o
+Compiling .pio/build/esp32dev/FrameworkArduino/idf_openthread_mpool_wrapper.c.o
+Compiling .pio/build/esp32dev/FrameworkArduino/libb64/cdecode.c.o
+Compiling .pio/build/esp32dev/FrameworkArduino/libb64/cencode.c.o
+*** [.pio/build/esp32dev/src/main.cpp.o] Error 1
+============================================================== [FAILED] Took 5.92 seconds ==============================================================
+
+ *  The terminal process "platformio 'run', '--target', 'upload'" terminated with exit code: 1. 
+ *  Terminal will be reused by tasks, press any key to close it. 
