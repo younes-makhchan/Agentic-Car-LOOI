@@ -4077,8 +4077,7 @@ button {
   white-space: pre-wrap;
 }
 
-.memory-display,
-.learned-phrase-list {
+.personality-export-output {
   margin: 0.85rem 0 0;
   padding: 0.85rem;
   border-radius: 0.95rem;
@@ -4092,33 +4091,8 @@ button {
   overflow: auto;
 }
 
-.memory-display {
+.personality-export-output {
   max-height: 220px;
-}
-
-.learned-phrase-list {
-  display: grid;
-  gap: 0.55rem;
-  max-height: 240px;
-}
-
-.learned-phrase-item {
-  padding: 0.65rem;
-  border-radius: 0.85rem;
-  background: rgba(11, 18, 30, 0.82);
-  border: 1px solid rgba(255, 191, 92, 0.14);
-}
-
-.learned-phrase-item strong {
-  display: block;
-  color: var(--warning);
-}
-
-.learned-phrase-item span {
-  display: block;
-  margin-top: 0.25rem;
-  color: var(--muted);
-  overflow-wrap: anywhere;
 }
 
 .movement-grid {

@@ -30,6 +30,7 @@ import { ToolExecutor } from "./robot/toolExecutor.js";
 import { PerformanceMonitor } from "./runtime/performanceMonitor.js";
 import { ReliabilityManager } from "./runtime/reliabilityManager.js";
 import { WakeLockManager } from "./runtime/wakeLockManager.js";
+import { registerPwaServiceWorker } from "./pwa.js";
 import { createFaceController } from "./ui/faceCanvas.js";
 import { VisionState } from "./vision/visionState.js";
 import {
@@ -237,19 +238,7 @@ const ui = {
   resetPersonalityButton: document.getElementById("resetPersonalityButton"),
   exportPersonalityButton: document.getElementById("exportPersonalityButton"),
   importPersonalityButton: document.getElementById("importPersonalityButton"),
-  memoryTextInput: document.getElementById("memoryTextInput"),
-  memoryTypeSelect: document.getElementById("memoryTypeSelect"),
-  saveMemoryButton: document.getElementById("saveMemoryButton"),
-  refreshMemoryButton: document.getElementById("refreshMemoryButton"),
-  memoryDisplay: document.getElementById("memoryDisplay"),
-  learnedPhraseInput: document.getElementById("learnedPhraseInput"),
-  learnedMeaningInput: document.getElementById("learnedMeaningInput"),
-  learnedActionSelect: document.getElementById("learnedActionSelect"),
-  learnedArgsInput: document.getElementById("learnedArgsInput"),
-  learnedConfidenceSelect: document.getElementById("learnedConfidenceSelect"),
-  saveLearnedPhraseButton: document.getElementById("saveLearnedPhraseButton"),
-  refreshLearnedPhrasesButton: document.getElementById("refreshLearnedPhrasesButton"),
-  learnedPhraseList: document.getElementById("learnedPhraseList"),
+  personalityExportOutput: document.getElementById("personalityExportOutput"),
   lifeEventsToggle: document.getElementById("lifeEventsToggle"),
   lifeEventsState: document.getElementById("lifeEventsState"),
   lastLifeEventDisplay: document.getElementById("lastLifeEventDisplay"),
@@ -308,7 +297,6 @@ let geminiVisionAssistSending = false;
 let cameraDevices = [];
 let frontCameraDeviceId = "";
 let idleScenarioSettings = { ...DEFAULT_IDLE_SCENARIO_SETTINGS };
-let learnedPhraseCache = [];
 let lifeEventsEnabled = false;
 let settingsOpen = false;
 let poseScenarioLastRun = new Map();
@@ -446,8 +434,8 @@ ui.resetPersonalityButton.addEventListener("click", () => {
 
 ui.exportPersonalityButton.addEventListener("click", () => {
   const json = personalityTuning?.exportJson?.() ?? "{}";
-  ui.memoryDisplay.textContent = json;
-  log("Personality JSON exported into the memory display.");
+  ui.personalityExportOutput.textContent = json;
+  log("Personality JSON exported.");
 });
 
 ui.importPersonalityButton.addEventListener("click", () => {
@@ -463,30 +451,6 @@ ui.importPersonalityButton.addEventListener("click", () => {
   } catch (error) {
     log(`Personality import failed: ${error.message}`, "warn");
   }
-});
-
-ui.saveMemoryButton.addEventListener("click", () => {
-  saveMemoryFromUi().catch((error) => {
-    log(`Memory save failed: ${error.message}`, "warn");
-  });
-});
-
-ui.refreshMemoryButton.addEventListener("click", () => {
-  refreshMemoryContext().catch((error) => {
-    log(`Memory refresh failed: ${error.message}`, "warn");
-  });
-});
-
-ui.saveLearnedPhraseButton.addEventListener("click", () => {
-  saveLearnedPhraseFromUi().catch((error) => {
-    log(`Learned phrase save failed: ${error.message}`, "warn");
-  });
-});
-
-ui.refreshLearnedPhrasesButton.addEventListener("click", () => {
-  refreshLearnedPhrases().catch((error) => {
-    log(`Learned phrase refresh failed: ${error.message}`, "warn");
-  });
 });
 
 ui.lifeEventsToggle.addEventListener("change", () => {
@@ -815,6 +779,7 @@ ui.localVisionSizeSlider?.addEventListener("input", () => {
 // ui.setFollowTargetButton?.addEventListener("click", () => {});
 // ui.stopFollowingButton?.addEventListener("click", () => {});
 
+registerPwaServiceWorker({ logger: log });
 init();
 
 async function init() {
@@ -1108,9 +1073,6 @@ async function init() {
     updateAttentionUi();
     updateGeminiVisionAssistUi();
   }, 1000);
-  refreshLearnedPhrases().catch((error) => {
-    log(`Learned phrase cache unavailable: ${error.message}`, "warn");
-  });
   log("UI ready.");
   log("Local-first runtime active.");
   log("Local Motion is disarmed by default. Arm only while supervised.");
@@ -1679,105 +1641,6 @@ function bindPersonalityTrait(element, key) {
 function bindPersonalityBehavior(element, key) {
   element.addEventListener("input", () => {
     personalityTuning?.patchBehaviorStyle?.(key, Number(element.value));
-  });
-}
-
-async function saveMemoryFromUi() {
-  const text = ui.memoryTextInput.value.trim();
-
-  if (!text) {
-    log("Memory save skipped: text is empty.", "warn");
-    return;
-  }
-
-  const payload = await postJson("/api/memory/write", {
-    type: ui.memoryTypeSelect.value,
-    text,
-    metadata: {
-      source: "browser_ui",
-      importance: "medium"
-    }
-  });
-
-  ui.memoryTextInput.value = "";
-  ui.memoryDisplay.textContent = JSON.stringify(payload.memory ?? payload, null, 2);
-  log("Memory saved locally.");
-  await refreshMemoryContext();
-}
-
-async function refreshMemoryContext() {
-  const payload = await fetchJson("/api/memory/context");
-  const memory = payload.memory ?? {};
-
-  ui.memoryDisplay.textContent = [
-    "# Long-term",
-    memory.longTerm || "(empty)",
-    "",
-    "# Today",
-    memory.today || "(empty)",
-    "",
-    "# Personality notes",
-    memory.personalityNotes || "(empty)",
-    "",
-    `# Learned phrases: ${Array.isArray(memory.learnedPhrases) ? memory.learnedPhrases.length : 0}`
-  ].join("\n");
-  learnedPhraseCache = Array.isArray(memory.learnedPhrases) ? memory.learnedPhrases : learnedPhraseCache;
-  renderLearnedPhrases(learnedPhraseCache);
-  return memory;
-}
-
-async function saveLearnedPhraseFromUi() {
-  const phrase = ui.learnedPhraseInput.value.trim();
-  const meaning = ui.learnedMeaningInput.value.trim();
-
-  if (!phrase) {
-    log("Learned phrase save skipped: phrase is empty.", "warn");
-    return;
-  }
-
-  const args = parseJsonObject(ui.learnedArgsInput.value, {});
-  const payload = await postJson("/api/memory/learned-phrases", {
-    phrase,
-    meaning,
-    action: ui.learnedActionSelect.value,
-    args,
-    confidence: ui.learnedConfidenceSelect.value,
-    source: "manual"
-  });
-
-  ui.learnedPhraseInput.value = "";
-  ui.learnedMeaningInput.value = "";
-  log(`Learned phrase saved: ${payload.phrase?.phrase ?? phrase}`);
-  await refreshLearnedPhrases();
-}
-
-async function refreshLearnedPhrases() {
-  const payload = await fetchJson("/api/memory/learned-phrases");
-  learnedPhraseCache = Array.isArray(payload.phrases) ? payload.phrases : [];
-  renderLearnedPhrases(learnedPhraseCache);
-  return learnedPhraseCache;
-}
-
-function renderLearnedPhrases(phrases = learnedPhraseCache) {
-  ui.learnedPhraseList.replaceChildren();
-
-  if (!phrases.length) {
-    ui.learnedPhraseList.textContent = "No learned phrases yet.";
-    return;
-  }
-
-  phrases.slice(0, 40).forEach((phrase) => {
-    const item = document.createElement("div");
-    item.className = "learned-phrase-item";
-
-    const title = document.createElement("strong");
-    title.textContent = `${phrase.phrase} -> ${phrase.action}`;
-
-    const detail = document.createElement("span");
-    detail.textContent = `${phrase.meaning || "no meaning"} · confidence=${phrase.confidence} · uses=${phrase.useCount ?? 0} · args=${JSON.stringify(phrase.args ?? {})}`;
-
-    item.append(title, detail);
-    ui.learnedPhraseList.append(item);
   });
 }
 
@@ -3778,43 +3641,6 @@ function compactObservationForEvent(observation = {}) {
     motion: observation.motion ?? null,
     note: observation.note ?? ""
   };
-}
-
-async function fetchJson(url) {
-  const response = await fetch(apiUrl(url), {
-    cache: "no-store"
-  });
-  const payload = await response.json().catch(() => ({}));
-
-  if (!response.ok || payload.ok === false) {
-    throw new Error(payload.error ?? `HTTP ${response.status}`);
-  }
-
-  return payload;
-}
-
-async function postJson(url, body) {
-  const response = await fetch(apiUrl(url), {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body)
-  });
-  const payload = await response.json().catch(() => ({}));
-
-  if (!response.ok || payload.ok === false) {
-    throw new Error(payload.error ?? `HTTP ${response.status}`);
-  }
-
-  return payload;
-}
-
-function parseJsonObject(value, fallback = {}) {
-  try {
-    const parsed = JSON.parse(value || "{}");
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : fallback;
-  } catch {
-    return fallback;
-  }
 }
 
 function updateSliderLabels() {

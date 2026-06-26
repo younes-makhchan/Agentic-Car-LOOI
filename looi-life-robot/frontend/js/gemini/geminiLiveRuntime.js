@@ -1373,7 +1373,29 @@ export class GeminiLiveRuntime {
       throw new Error("Gemini Live transport is not connected.");
     }
 
-    this.transport.send(JSON.stringify(payload));
+    if (this.transport.readyState !== undefined && this.transport.readyState !== 1) {
+      this.patchStatus({
+        running: false,
+        connected: false,
+        connecting: false
+      });
+      this.log("Gemini Live send skipped because the relay socket is closed.", "debug");
+      return false;
+    }
+
+    try {
+      this.transport.send(JSON.stringify(payload));
+      return true;
+    } catch (error) {
+      this.patchStatus({
+        running: false,
+        connected: false,
+        connecting: false,
+        lastError: error.message
+      });
+      this.log(`Gemini Live send failed: ${error.message}`, "warn");
+      return false;
+    }
   }
 
   cleanupTransport() {

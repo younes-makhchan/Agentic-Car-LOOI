@@ -102,7 +102,7 @@ function buildGeminiLiveTools() {
 export function buildGeminiLiveSetup({
   model = "gemini-3.1-flash-live-preview",
   voice = "Kore",
-  thinkingLevel = "minimal",
+  thinkingLevel: _thinkingLevel = "minimal",
   contextCompression = true,
   slidingWindowTokens = 32_768,
   sessionResumption = true,
@@ -120,9 +120,6 @@ export function buildGeminiLiveSetup({
             voiceName: voice || "Kore"
           }
         }
-      },
-      thinkingConfig: {
-        thinkingLevel: normalizeThinkingLevel(thinkingLevel)
       }
     },
     systemInstruction: {
@@ -210,14 +207,6 @@ export function summarizeGeminiAction(action = {}) {
 function normalizeGeminiModelName(model) {
   const value = String(model || "").trim() || "gemini-3.1-flash-live-preview";
   return value.startsWith("models/") ? value : `models/${value}`;
-}
-
-function normalizeThinkingLevel(value) {
-  const normalized = String(value || "").trim().toLowerCase();
-
-  return ["minimal", "low", "medium", "high"].includes(normalized)
-    ? normalized
-    : "minimal";
 }
 
 function normalizePositiveInteger(value, fallback) {

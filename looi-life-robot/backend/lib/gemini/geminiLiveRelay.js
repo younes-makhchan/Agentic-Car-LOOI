@@ -1,7 +1,7 @@
 import { WebSocket, WebSocketServer } from "ws";
 import { getGeminiLiveEnv } from "./geminiLiveToken.js";
 
-const DEFAULT_API_VERSION = "v1alpha";
+const DEFAULT_API_VERSION = "v1beta";
 const DEFAULT_WEBSOCKET_BASE_URL = "wss://generativelanguage.googleapis.com";
 const DEFAULT_RELAY_PATH = "/api/gemini-live/relay";
 const MAX_RELAY_PAYLOAD_BYTES = 8 * 1024 * 1024;

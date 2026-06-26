@@ -10,8 +10,10 @@ import {
 } from "./lib/gemini/geminiLiveRelay.js";
 import { getGeminiLiveEnv } from "./lib/gemini/geminiLiveToken.js";
 import { createLocalBrainServerFromEnv } from "./lib/localBrain/localBrainServer.js";
-import { LearnedPhraseStore } from "./lib/memory/learnedPhraseStore.js";
-import { MemoryStore, looksLikeSecret } from "./lib/memory/memoryStore.js";
+// DISABLED_MEMORY: keep lib/memory/* and backend/memory/* for easy restoration,
+// but do not import or expose memory stores while persistent memory is disabled.
+// import { LearnedPhraseStore } from "./lib/memory/learnedPhraseStore.js";
+// import { MemoryStore, looksLikeSecret } from "./lib/memory/memoryStore.js";
 // DISABLED_ROBOFLOW_FOLLOW: keep lib/roboflow/webrtcProxy.js and the package dependency
 // for easy restoration, but do not import or expose Roboflow routes while follow is disabled.
 // import {
@@ -38,8 +40,9 @@ const serverTraceRequestBodies = process.env.SERVER_TRACE_REQUEST_BODIES !== "fa
 const serverTraceResponseBodies = process.env.SERVER_TRACE_RESPONSE_BODIES !== "false";
 let apiTraceCounter = 0;
 let lastServerLogEntry = null;
-const memoryStore = new MemoryStore();
-const learnedPhraseStore = new LearnedPhraseStore();
+// DISABLED_MEMORY: memory stores are intentionally not instantiated.
+// const memoryStore = new MemoryStore();
+// const learnedPhraseStore = new LearnedPhraseStore();
 const localBrainProvider = normalizeLocalBrainProvider(process.env.LOCAL_BRAIN_PROVIDER);
 const localBrainModel = process.env.LOCAL_BRAIN_MODEL || defaultLocalBrainModel(localBrainProvider);
 const localBrainServer = createLocalBrainServerFromEnv(process.env, serverLog);
@@ -227,120 +230,15 @@ app.post("/api/local-brain/chat", requireLocalBrainAccess, async (req, res) => {
   res.status(response.ok === false ? 502 : 200).json(response);
 });
 
-app.post("/api/memory/write", requireMemoryAccess, async (req, res) => {
-  try {
-    const result = await memoryStore.writeMemory({
-      type: req.body?.type,
-      text: req.body?.text,
-      metadata: req.body?.metadata ?? {}
-    });
-
-    res.json({
-      ok: true,
-      memory: result,
-      writtenTo: result.path
-    });
-  } catch (error) {
-    sendMemoryError(res, error);
-  }
-});
-
-app.get("/api/memory/context", requireMemoryAccess, async (_req, res) => {
-  try {
-    res.json({
-      ok: true,
-      memory: await memoryStore.getCompactMemoryContext()
-    });
-  } catch (error) {
-    sendMemoryError(res, error);
-  }
-});
-
-app.get("/api/memory/learned-phrases", requireMemoryAccess, async (_req, res) => {
-  try {
-    res.json({
-      ok: true,
-      phrases: await learnedPhraseStore.listPhrases()
-    });
-  } catch (error) {
-    sendMemoryError(res, error);
-  }
-});
-
-app.post("/api/memory/learned-phrases", requireMemoryAccess, async (req, res) => {
-  try {
-    rejectSecretLikeLearnedPhrase(req.body ?? {});
-    const entry = await addLearnedPhraseAndRemember(req.body ?? {}, "manual");
-
-    res.json({
-      ok: true,
-      phrase: entry
-    });
-  } catch (error) {
-    sendMemoryError(res, error);
-  }
-});
-
-app.delete("/api/memory/learned-phrases/:id", requireMemoryAccess, async (req, res) => {
-  try {
-    const result = await learnedPhraseStore.removePhrase(req.params.id);
-
-    if (!result) {
-      res.status(404).json({
-        ok: false,
-        error: "learned phrase not found"
-      });
-      return;
-    }
-
-    res.json({
-      ok: true,
-      removed: result
-    });
-  } catch (error) {
-    sendMemoryError(res, error);
-  }
-});
-
-app.post("/api/memory/learned-phrases/:id/use", requireMemoryAccess, async (req, res) => {
-  try {
-    const phrase = await learnedPhraseStore.recordUse(req.params.id);
-
-    if (!phrase) {
-      res.status(404).json({
-        ok: false,
-        error: "learned phrase not found"
-      });
-      return;
-    }
-
-    res.json({
-      ok: true,
-      phrase
-    });
-  } catch (error) {
-    sendMemoryError(res, error);
-  }
-});
-
-app.get("/api/memory/stats", requireMemoryAccess, async (_req, res) => {
-  try {
-    const [stats, phrases] = await Promise.all([
-      memoryStore.getMemoryStats(),
-      learnedPhraseStore.listPhrases()
-    ]);
-
-    res.json({
-      ok: true,
-      stats: {
-        ...stats,
-        learnedPhraseCount: phrases.length
-      }
-    });
-  } catch (error) {
-    sendMemoryError(res, error);
-  }
-});
+// DISABLED_MEMORY: persistent memory and learned-phrase routes are intentionally
+// not registered while memory is disabled.
+// app.post("/api/memory/write", requireMemoryAccess, async (req, res) => {});
+// app.get("/api/memory/context", requireMemoryAccess, async (_req, res) => {});
+// app.get("/api/memory/learned-phrases", requireMemoryAccess, async (_req, res) => {});
+// app.post("/api/memory/learned-phrases", requireMemoryAccess, async (req, res) => {});
+// app.delete("/api/memory/learned-phrases/:id", requireMemoryAccess, async (req, res) => {});
+// app.post("/api/memory/learned-phrases/:id/use", requireMemoryAccess, async (req, res) => {});
+// app.get("/api/memory/stats", requireMemoryAccess, async (_req, res) => {});
 
 function apiTraceMiddleware(req, res, next) {
   if (!serverTraceEnabled || !req.path.startsWith("/api/")) {
@@ -424,24 +322,9 @@ function summarizeApiRequestBody(req) {
   // if (req.path === "/api/init-webrtc") {}
   // if (req.path === "/api/roboflow-webrtc/terminate") {}
 
-  if (req.path === "/api/memory/write") {
-    return {
-      type: body.type ?? null,
-      textChars: typeof body.text === "string" ? body.text.length : 0,
-      textPreview: shortServerLogText(body.text, 160),
-      metadata: redactAndCompact(body.metadata)
-    };
-  }
-
-  if (req.path.includes("/learned-phrases")) {
-    return {
-      phrase: shortServerLogText(body.phrase, 120),
-      meaning: shortServerLogText(body.meaning, 160),
-      action: body.action ?? null,
-      confidence: body.confidence ?? null,
-      args: redactAndCompact(body.args)
-    };
-  }
+  // DISABLED_MEMORY: memory request-body tracing is disabled with the routes.
+  // if (req.path === "/api/memory/write") {}
+  // if (req.path.includes("/learned-phrases")) {}
 
   return redactAndCompact(body);
 }
@@ -500,15 +383,8 @@ function summarizeApiResponseBody(req, body) {
     };
   }
 
-  if (req.path.includes("/memory/")) {
-    return {
-      ok: body.ok,
-      memoryId: body.memory?.id,
-      phraseId: body.phrase?.id,
-      count: Array.isArray(body.phrases) ? body.phrases.length : undefined,
-      error: body.error ? shortServerLogText(body.error, 240) : undefined
-    };
-  }
+  // DISABLED_MEMORY: memory response tracing is disabled with the routes.
+  // if (req.path.includes("/memory/")) {}
 
   return redactAndCompact(body);
 }
@@ -582,17 +458,8 @@ function summarizeWebrtcParams(wrtcParams = null) {
   };
 }
 
-function requireMemoryAccess(req, res, next) {
-  if (isLocalRequest(req) || isPrivateLanRequest(req)) {
-    next();
-    return;
-  }
-
-  res.status(401).json({
-    ok: false,
-    error: "Unauthorized memory request"
-  });
-}
+// DISABLED_MEMORY: kept as comment for restoring memory route auth later.
+// function requireMemoryAccess(req, res, next) {}
 
 function requireLocalBrainAccess(req, res, next) {
   if (!localBrainRequireLocalNetwork || isLocalRequest(req) || isPrivateLanRequest(req)) {
@@ -684,53 +551,15 @@ function getRequestHeader(req, name) {
   return req?.headers?.[String(name).toLowerCase()];
 }
 
-function sendMemoryError(res, error) {
-  const statusCode = Number(error?.statusCode) || 500;
-
-  res.status(statusCode).json({
-    ok: false,
-    error: statusCode === 500 ? "Memory request failed" : error.message
-  });
-}
+// DISABLED_MEMORY: kept as comment for restoring memory route errors later.
+// function sendMemoryError(res, error) {}
 
 // DISABLED_ROBOFLOW_FOLLOW: kept as comment for restoring Roboflow route errors later.
 // function sendRoboflowWebrtcError(res, error, action = "request") {}
 
-async function addLearnedPhraseAndRemember(body = {}, fallbackSource = "manual") {
-  const entry = await learnedPhraseStore.addPhrase({
-    phrase: body.phrase,
-    meaning: body.meaning,
-    action: body.action,
-    args: body.args ?? {},
-    confidence: body.confidence ?? "medium",
-    source: body.source ?? fallbackSource
-  });
-
-  await memoryStore.appendLongTermMemory(
-    `Learned phrase "${entry.phrase}" means "${entry.meaning || entry.action}" and maps to ${entry.action}.`,
-    {
-      source: entry.source,
-      importance: entry.confidence,
-      memory_type: "learned_phrase"
-    }
-  );
-
-  return entry;
-}
-
-function rejectSecretLikeLearnedPhrase(entry = {}) {
-  const value = [
-    entry.phrase,
-    entry.meaning,
-    typeof entry.args === "object" ? JSON.stringify(entry.args) : ""
-  ].join(" ");
-
-  if (looksLikeSecret(value)) {
-    throw Object.assign(new Error("learned phrase appears to contain a token, API key, or password"), {
-      statusCode: 400
-    });
-  }
-}
+// DISABLED_MEMORY: kept as comments for restoring learned-phrase writes later.
+// async function addLearnedPhraseAndRemember(body = {}, fallbackSource = "manual") {}
+// function rejectSecretLikeLearnedPhrase(entry = {}) {}
 
 function normalizeLocalBrainProvider(value) {
   const provider = String(value || "mock").trim().toLowerCase();

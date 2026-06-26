@@ -1,7 +1,7 @@
 # LOOI Life Robot
 
 LOOI is a browser-first robot runtime. The website runs the face, camera,
-conversation, memory, and behavior logic. The ESP32 body is optional and is
+conversation, personality, and behavior logic. The ESP32 body is optional and is
 controlled directly from the user's browser over Web Bluetooth.
 
 See `docs/open-source-looi-context.md` for the Gemini Live research notes and

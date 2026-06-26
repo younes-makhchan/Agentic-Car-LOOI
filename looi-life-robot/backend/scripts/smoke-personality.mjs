@@ -1,7 +1,4 @@
 import assert from "node:assert/strict";
-import fs from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
 import {
   createPersonalityProfile,
   describePersonalityForRuntime
@@ -9,11 +6,8 @@ import {
 import { PersonalityTuning } from "../../frontend/js/personality/personalityTuning.js";
 import { LifeEventEmitter } from "../../frontend/js/personality/lifeEvents.js";
 import { LifeEngine } from "../../frontend/js/life/lifeEngine.js";
-import { LearnedPhraseStore } from "../lib/memory/learnedPhraseStore.js";
-import { MemoryStore } from "../lib/memory/memoryStore.js";
 
 const logs = [];
-const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "looi-memory-personality-"));
 
 globalThis.localStorage = createLocalStorageMock();
 
@@ -46,41 +40,6 @@ tuning.save();
 tuning.resetDefaults();
 tuning.load();
 assert.equal(tuning.getProfile().coreTraits.talkativeness, 1);
-
-const memoryStore = new MemoryStore({ rootDir: tempRoot });
-const longTerm = await memoryStore.appendLongTermMemory("The user prefers gentle motion.", {
-  source: "smoke",
-  importance: "high"
-});
-assert.equal(longTerm.type, "long_term");
-await memoryStore.writeMemory({ type: "daily", text: "We tested personality smoke.", metadata: { source: "smoke" } });
-await memoryStore.writeMemory({ type: "personality_note", text: "LOOI should keep replies short.", metadata: { source: "smoke" } });
-const memoryContext = await memoryStore.getCompactMemoryContext();
-assert.match(memoryContext.longTerm, /gentle motion/);
-assert.match(memoryContext.today, /personality smoke/);
-assert.match(memoryContext.personalityNotes, /replies short/);
-await assert.rejects(
-  () => memoryStore.appendLongTermMemory("password token should not be stored"),
-  /token|password/i
-);
-
-const phraseStore = new LearnedPhraseStore({ rootDir: tempRoot });
-const storedPhrase = await phraseStore.addPhrase({
-  phrase: "give me room",
-  meaning: "increase distance from user",
-  action: "run_scenario",
-  args: {
-    name: "back_up"
-  },
-  confidence: "high",
-  source: "manual"
-});
-assert.equal(storedPhrase.normalizedPhrase, "give me room");
-assert.equal((await phraseStore.listPhrases()).length, 1);
-await phraseStore.recordUse(storedPhrase.id);
-assert.equal((await phraseStore.listPhrases())[0].useCount, 1);
-await phraseStore.removePhrase(storedPhrase.id);
-assert.equal((await phraseStore.listPhrases()).length, 0);
 
 const faceEvents = [];
 const lifeEngine = new LifeEngine({
@@ -130,8 +89,6 @@ await emitter.maybeEmitLifeEvent();
 assert.equal(postedEvents.length, firstEventCount);
 assert.equal(firstEventCount >= 1, true);
 emitter.stop();
-
-await fs.rm(tempRoot, { recursive: true, force: true });
 
 console.log(
   JSON.stringify({

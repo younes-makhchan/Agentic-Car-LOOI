@@ -28,7 +28,6 @@ export const DEFAULT_PERSONALITY_PROFILE = {
     avoidOverExplaining: true
   },
   boundaries: {
-    askBeforePersonalMemory: false,
     neverClaimUnsupportedVision: true,
     stopImmediatelyOnStopPhrase: true,
     doNotMoveWhenUnarmed: true,
@@ -82,7 +81,6 @@ export function clampPersonalityProfile(profile = {}) {
       avoidOverExplaining: source.speechStyle?.avoidOverExplaining !== false
     },
     boundaries: {
-      askBeforePersonalMemory: Boolean(source.boundaries?.askBeforePersonalMemory),
       neverClaimUnsupportedVision: source.boundaries?.neverClaimUnsupportedVision !== false,
       stopImmediatelyOnStopPhrase: source.boundaries?.stopImmediatelyOnStopPhrase !== false,
       doNotMoveWhenUnarmed: source.boundaries?.doNotMoveWhenUnarmed !== false,

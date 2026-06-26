@@ -151,7 +151,7 @@ const setup = buildGeminiLiveSetup({
 assert.equal(setup.setup.model, "models/gemini-3.1-flash-live-preview");
 assert.equal(setup.setup.generationConfig.responseModalities[0], "AUDIO");
 assert.equal(setup.setup.generationConfig.temperature, 0.15);
-assert.equal(setup.setup.generationConfig.thinkingConfig.thinkingLevel, "minimal");
+assert.equal("thinkingConfig" in setup.setup.generationConfig, false);
 assert.equal(
   setup.setup.realtimeInputConfig.turnCoverage,
   "TURN_INCLUDES_AUDIO_ACTIVITY_AND_ALL_VIDEO"
@@ -226,9 +226,9 @@ assert.equal("token" in relaySession, false);
 assert.equal("tokenName" in relaySession, false);
 
 const upstreamRelayUrl = buildGeminiLiveServerWebSocketUrl({
-  GEMINI_API_KEY: "test-key",
-  GEMINI_LIVE_API_VERSION: "v1alpha"
+  GEMINI_API_KEY: "test-key"
 });
+assert.ok(upstreamRelayUrl.includes("google.ai.generativelanguage.v1beta"));
 assert.ok(upstreamRelayUrl.includes("GenerativeService.BidiGenerateContent?key=test-key"));
 assert.equal(upstreamRelayUrl.includes("BidiGenerateContentConstrained"), false);
 assert.equal(upstreamRelayUrl.includes("access_token="), false);

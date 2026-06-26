@@ -1,6 +1,6 @@
 # Open-Source LOOI Context
 
-This project should stay a browser-first, owner-controlled desk robot instead of a cloud-owned robot fleet. The phone or browser session owns the face, camera, microphone, Gemini Live session, local perception, memory, and behavior policy. The ESP32 body stays a simple nearby actuator over Web Bluetooth.
+This project should stay a browser-first, owner-controlled desk robot instead of a cloud-owned robot fleet. The phone or browser session owns the face, camera, microphone, Gemini Live session, local perception, personality, and behavior policy. The ESP32 body stays a simple nearby actuator over Web Bluetooth.
 
 ## Internet Research Snapshot
 
@@ -57,4 +57,3 @@ The repo already has the right split:
 4. Keep local fallback brain usable when Gemini Live is disabled or unavailable.
 5. Improve hardware bring-up: calibration, test motions, safe defaults, and firmware flashing docs.
 6. Add repeatable smoke tests for audio/video/tool/session state without real hardware.
-

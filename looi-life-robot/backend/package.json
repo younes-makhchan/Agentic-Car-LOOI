@@ -14,7 +14,7 @@
     "smoke:object-follow:disabled": "node scripts/smoke-object-follow.mjs",
     "smoke:camera": "node scripts/smoke-camera.mjs",
     "smoke:calibration": "node scripts/smoke-calibration.mjs",
-    "smoke:personality": "node scripts/smoke-memory-personality.mjs",
+    "smoke:personality": "node scripts/smoke-personality.mjs",
     "smoke:esp32": "node scripts/smoke-esp32-ble.mjs"
   },
   "dependencies": {

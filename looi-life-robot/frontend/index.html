@@ -3,7 +3,15 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#111827" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="LOOI" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>LOOI Life Robot</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" href="./icons/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="./icons/icon-192.svg" />
     <link rel="stylesheet" href="./styles.css" />
     <script type="module" src="/vendor/esp-web-tools/install-button.js"></script>
   </head>
@@ -116,7 +124,7 @@
           <p class="eyebrow">Phone-Bodied Life Robot</p>
           <h1>LOOI Life Robot</h1>
           <p class="subtitle">
-            Local robot runtime for Gemini Live, camera, memory, and ESP32 body control.
+            Local robot runtime for Gemini Live, camera, personality, and ESP32 body control.
           </p>
         </header>
 
@@ -194,10 +202,9 @@
         </section>
 
         <section id="settingsPersonality" class="panel-card personality-card">
-          <h2>Personality / Memory</h2>
+          <h2>Personality</h2>
           <p class="panel-note">
             Personality changes local body behavior and gives the Local Brain context.
-            Memory helps the robot remember phrases, preferences, and shared moments.
           </p>
           <div class="input-stack">
             <label class="field-label" for="personalityNameInput">Robot name</label>
@@ -278,52 +285,7 @@
             <button id="exportPersonalityButton" type="button">Export Personality</button>
             <button id="importPersonalityButton" type="button">Import Personality</button>
           </div>
-          <div class="input-stack">
-            <label class="field-label" for="memoryTextInput">Memory text</label>
-            <textarea id="memoryTextInput" rows="3" maxlength="2000"></textarea>
-            <label class="field-label" for="memoryTypeSelect">Memory type</label>
-            <select id="memoryTypeSelect">
-              <option value="long_term">long_term</option>
-              <option value="daily">daily</option>
-              <option value="personality_note">personality_note</option>
-            </select>
-          </div>
-          <div class="button-grid">
-            <button id="saveMemoryButton" class="primary-button" type="button">
-              Save Memory
-            </button>
-            <button id="refreshMemoryButton" type="button">Refresh Memory</button>
-          </div>
-          <pre id="memoryDisplay" class="memory-display">No memory loaded yet.</pre>
-          <div class="input-stack">
-            <label class="field-label" for="learnedPhraseInput">Phrase</label>
-            <input id="learnedPhraseInput" type="text" maxlength="160" placeholder="give me room" />
-            <label class="field-label" for="learnedMeaningInput">Meaning</label>
-            <input id="learnedMeaningInput" type="text" maxlength="240" placeholder="increase distance from user" />
-            <label class="field-label" for="learnedActionSelect">Action</label>
-            <select id="learnedActionSelect">
-              <option value="run_scenario">run_scenario</option>
-            </select>
-            <label class="field-label" for="learnedArgsInput">Args JSON</label>
-            <textarea id="learnedArgsInput" rows="3">{"name":"back_up"}</textarea>
-            <label class="field-label" for="learnedConfidenceSelect">Confidence</label>
-            <select id="learnedConfidenceSelect">
-              <option value="medium">medium</option>
-              <option value="low">low</option>
-              <option value="high">high</option>
-            </select>
-          </div>
-          <div class="button-grid">
-            <button id="saveLearnedPhraseButton" class="primary-button" type="button">
-              Save Learned Phrase
-            </button>
-            <button id="refreshLearnedPhrasesButton" type="button">
-              Refresh Learned Phrases
-            </button>
-          </div>
-          <div id="learnedPhraseList" class="learned-phrase-list">
-            No learned phrases loaded yet.
-          </div>
+          <pre id="personalityExportOutput" class="personality-export-output">No personality export yet.</pre>
           <div class="status-grid">
             <div class="status-row">
               <span>Life Events</span>
