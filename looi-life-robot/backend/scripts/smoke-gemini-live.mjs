@@ -282,7 +282,21 @@ const sentVideoFrame = await runtime.sendVisionFrame({
   height: 2,
   reason: "smoke"
 });
-assert.equal(sentVideoFrame, true);
+assert.equal(sentVideoFrame, false);
+assert.equal(runtime.getStatus().lastInputGateReason, "setup_pending");
+
+fakeTransport.emit({ setupComplete: {} });
+await wait(5);
+assert.equal(runtime.getStatus().setupComplete, true);
+
+const sentVideoFrameAfterSetup = await runtime.sendVisionFrame({
+  data: "data:image/jpeg;base64,aGVsbG8=",
+  mimeType: "image/jpeg",
+  width: 2,
+  height: 2,
+  reason: "smoke"
+});
+assert.equal(sentVideoFrameAfterSetup, true);
 assert.equal(sentMessages.at(-1).realtimeInput.video.mimeType, "image/jpeg");
 assert.equal(sentMessages.at(-1).realtimeInput.video.data, "aGVsbG8=");
 
