@@ -53,6 +53,7 @@ The backend serves:
 - `/api/gemini-live/session`
 - `/api/gemini-live/relay`
 - local brain endpoints if enabled
+- `/api/local-models/manifest.json` and versioned model/runtime/license resources from `backend/local-resources/`
 
 The backend does not handle:
 
@@ -71,3 +72,7 @@ api.looi.app {
 ```
 
 Run Node with PM2 or systemd, and keep EC2 security group inbound rules limited to SSH from your IP plus HTTP/HTTPS.
+
+## Web 1.3.0 resources
+
+Models and inference runtimes deploy with the Node backend. Keep `backend/local-resources/` with the service and allow the configured frontend origin to download these public assets. Inference remains in the browser, with SHA-256 verification and browser caching. Netlify only carries the interface, Worker bridge and small configuration/catalog files. See [Web 1.3.0](web-1.3.0/README.md) for pinned versions and validation. Deploy the compatible backend/resources before enabling the new frontend in production.

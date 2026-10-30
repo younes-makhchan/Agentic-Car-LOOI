@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "appVersion": "1.3.0",
+  "sherpa": "2.0.0",
+  "onnxruntime": "1.28.2",
+  "emscripten": "4.0.23",
+  "mediaPipe": "0.10.32",
+  "model": "sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20 / chunk16 int8",
+  "licenses": [
+    "Apache-2.0 (sherpa/model/MediaPipe)",
+    "MIT (ONNX Runtime)"
+  ],
+  "resources": {
+    "vision": [
+      {
+        "path": "models/efficientdet_lite0.tflite",
+        "bytes": 4602795,
+        "sha256": "0720bf247bd76e6594ea28fa9c6f7c5242be774818997dbbeffc4da460c723bb"
+      },
+      {
+        "path": "vendor/vision/vision_wasm_internal.js",
+        "bytes": 204816,
+        "sha256": "6f6b86509cf9e163ea1cfec7edc8cf53732699c04781e4c21c557c1ba402310e"
+      },
+      {
+        "path": "vendor/vision/vision_wasm_internal.wasm",
+        "bytes": 11453626,
+        "sha256": "cb3ec20026a9aecc2a81a93c25630ceb5389297ddb7a5f0bd61dd09cde606b9b"
+      }
+    ],
+    "wake": [
+      {
+        "path": "vendor/wake/sherpa-onnx-kws.js",
+        "bytes": 9958,
+        "sha256": "b25e485fe6f2433cf7f646c67122415661f8bbf930a0caadd8f64ef2087b9597"
+      },
+      {
+        "path": "vendor/wake/sherpa-onnx-wasm-kws-main.js",
+        "bytes": 77644,
+        "sha256": "ac71bafefd3749bb928b6c6c34bc352a6454cb0c9c7a77bd008f4f43898a2cd5"
+      },
+      {
+        "path": "vendor/wake/sherpa-onnx-wasm-kws-main.wasm",
+        "bytes": 12753359,
+        "sha256": "4614f30f4deb3aedcc52fcb4f828b8667f64f9e0483ee95afeea5cf4e77d1735"
+      },
+      {
+        "path": "models/wake/chinese.txt",
+        "bytes": 68,
+        "sha256": "11150545c104c4563d6fb2213f29b7e68af81b7092ac498aeb5bba311ae84b6c"
+      },
+      {
+        "path": "models/wake/decoder-epoch-13-avg-2-chunk-16-left-64.onnx",
+        "bytes": 759829,
+        "sha256": "63a22dd60f40fff082ac3e09afa507f6787da36df76ded2fbe145fa233e22c21"
+      },
+      {
+        "path": "models/wake/encoder-epoch-13-avg-2-chunk-16-left-64.int8.onnx",
+        "bytes": 4599656,
+        "sha256": "408bbd740838c42d5bf6d1c5b80b3c88b616c7860b92d980328b5b068c76ae48"
+      },
+      {
+        "path": "models/wake/english.txt",
+        "bytes": 107,
+        "sha256": "020da67c5e2fb51ffa75a2b55d219c5285868a5bd38a8970e3294be4e404e027"
+      },
+      {
+        "path": "models/wake/joiner-epoch-13-avg-2-chunk-16-left-64.int8.onnx",
+        "bytes": 86629,
+        "sha256": "190d4067b4cc20b72a42a1916e69d92052000fb7051a427ebb1bc72a69207dc1"
+      },
+      {
+        "path": "models/wake/tokens.txt",
+        "bytes": 1928,
+        "sha256": "2d3f32311f9b692b964da3c90e830258d3e78e013cb0c992dbfb15cd5a1a71b0"
+      }
+    ]
+  }
+}

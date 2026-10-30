@@ -13,13 +13,13 @@
     <link rel="icon" href="./icons/icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="./icons/icon-192.svg" />
     <link rel="stylesheet" href="./styles.css" />
-    <script type="module" src="/vendor/esp-web-tools/install-button.js"></script>
-  </head>
+    <link rel="stylesheet" href="./workspace.css">
+</head>
   <body>
     <div id="runtimeGate" class="runtime-gate">
       <a
         class="runtime-gate__github-link"
-        href="https://www.github.com/younes-makhchan/Agentic-Car-LOOI"
+        href="https://github.com/xlle-er/LOOI_DF26/tree/DF26"
         target="_blank"
         rel="noopener noreferrer"
         aria-label="Open LOOI source code on GitHub"
@@ -32,19 +32,14 @@
         <span>code</span>
       </a>
       <div class="runtime-gate__card">
+        <div class="df26-brand"><img src="./icons/icon.svg" alt="" width="48" height="48"><span>DF26</span></div>
         <p class="eyebrow">LOOI Runtime</p>
         <h1>LOOI Setup</h1>
         <p>
           Install the ESP32 firmware, connect the body by Bluetooth, then start LOOI.
         </p>
         <div class="runtime-gate__actions" aria-label="LOOI setup actions">
-          <esp-web-install-button manifest="/firmware/manifest.json">
-            <button id="firmwareInstallButton" class="primary-button" slot="activate" type="button">
-              Upload Firmware
-            </button>
-            <span slot="unsupported">Firmware upload requires Chrome or Edge with Web Serial.</span>
-            <span slot="not-allowed">Firmware upload requires HTTPS or localhost.</span>
-          </esp-web-install-button>
+          <a class="primary-button" href="https://xlle-er.github.io/LOOI-DF26-Firmware/" target="_blank" rel="noopener">Install firmware / 安装固件</a>
           <div class="bluetooth-connect-row">
             <button id="gateConnectBluetoothButton" class="primary-button bluetooth-connect-button" type="button">
               Connect using Bluetooth
@@ -54,13 +49,14 @@
               <span id="gateBluetoothStatusLabel">Connect</span>
             </span>
           </div>
+          <button id="gateDeviceManagementButton" type="button" class="secondary-button">Debug robot</button>
           <button id="productionStartButton" class="primary-button" type="button" disabled>
             Start LOOI
           </button>
-          <button id="downloadAppButton" class="secondary-button download-app-button" type="button">
+          <a id="downloadAppButton" class="secondary-button download-app-button" href="./apps.html" target="_blank" rel="noopener noreferrer">
             <img class="download-app-button__icon" src="./icons/icon.svg" alt="" aria-hidden="true" />
             <span>Download App</span>
-          </button>
+          </a>
         </div>
       </div>
     </div>
@@ -761,11 +757,7 @@
             Connect a nearby <strong>LOOI Body</strong> with the browser Bluetooth picker.
           </p>
           <div class="button-grid button-grid--single">
-            <esp-web-install-button manifest="/firmware/manifest.json">
-              <button class="primary-button" slot="activate" type="button">Upload Firmware</button>
-              <span slot="unsupported">Firmware upload requires Chrome or Edge with Web Serial.</span>
-              <span slot="not-allowed">Firmware upload requires HTTPS or localhost.</span>
-            </esp-web-install-button>
+            <a class="primary-button" href="https://xlle-er.github.io/LOOI-DF26-Firmware/" target="_blank" rel="noopener">Install firmware / 安装固件</a>
           </div>
           <div class="button-grid button-grid--triple">
             <button id="connectEsp32Button" class="primary-button" type="button">

@@ -1,4 +1,5 @@
 import cors from "cors";
+import { createDeviceBridge } from "./lib/device/bridge.js";
 import dotenv from "dotenv";
 import express from "express";
 import http from "node:http";
@@ -98,6 +99,14 @@ const PUBLIC_CONFIG = {
 
 app.set("trust proxy", true);
 app.use(cors());
+// Versioned public inference resources; no credentials or media upload required.
+app.use("/api/local-models", express.static(path.join(__dirname,"local-resources"), {
+  fallthrough:false, dotfiles:"deny", setHeaders(res,file) {
+    res.setHeader("X-Content-Type-Options","nosniff");
+    res.setHeader("Cache-Control",file.endsWith("manifest.json")?"no-store":"public, max-age=86400");
+  }
+}));
+app.use("/api/device", createDeviceBridge());
 app.use(express.json({ limit: "1mb" }));
 app.use(apiTraceMiddleware);
 // DISABLED_ROBOFLOW_FOLLOW: keep the dependency installed, but do not serve the browser SDK.
@@ -190,11 +199,12 @@ app.post("/api/local-brain/think", requireLocalBrainAccess, async (req, res) => 
   serverLog(
     `HTTP THINK request reason=${req.body?.reason ?? "manual"} trigger=${req.body?.triggerEvent?.type ?? "none"} text="${shortServerLogText(req.body?.triggerEvent?.payload?.text ?? req.body?.triggerEvent?.text ?? "")}"`
   );
-  const response = await localBrainServer.think({
+  let response;
+  try { response = await localBrainServer.think({
     reason: req.body?.reason ?? "manual",
     triggerEvent: req.body?.triggerEvent ?? null,
     context: req.body?.context ?? {}
-  });
+  }); } catch(error) { return res.status(400).json({ok:false,error:"Invalid personality or request context"}); }
 
   serverLog(
     `HTTP THINK response ok=${response.ok !== false} provider=${response.provider} model=${response.model} latency=${Date.now() - startedAt}ms action=${response.action?.type || "none"} reason="${shortServerLogText(response.reason)}"`,
@@ -208,11 +218,12 @@ app.post("/api/local-brain/chat", requireLocalBrainAccess, async (req, res) => {
   serverLog(
     `HTTP CHAT request reason=${req.body?.reason ?? "manual"} message="${shortServerLogText(req.body?.message ?? "")}"`
   );
-  const response = await localBrainServer.chat({
+  let response;
+  try { response = await localBrainServer.chat({
     message: req.body?.message ?? "",
     context: req.body?.context ?? {},
     reason: req.body?.reason ?? "manual"
-  });
+  }); } catch(error) { return res.status(400).json({ok:false,error:"Invalid personality or request context"}); }
 
   serverLog(
     `HTTP CHAT response ok=${response.ok !== false} provider=${response.provider} model=${response.model} latency=${Date.now() - startedAt}ms action=${response.action?.type || "none"} reason="${shortServerLogText(response.reason)}"`,

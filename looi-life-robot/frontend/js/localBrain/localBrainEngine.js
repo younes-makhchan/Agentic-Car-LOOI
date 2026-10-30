@@ -96,6 +96,7 @@ export class LocalBrainEngine {
   }
 
   async thinkNow(reason = "manual", triggerEvent = null) {
+    const generation=this.currentGeneration?.();
     const policy = this.policy();
 
     if (this.processing) {
@@ -134,6 +135,7 @@ export class LocalBrainEngine {
       this.log(
         `STEP 2 BRAIN_RESPONSE provider=${this.provider} latency=${Math.round(Number(this.latestLatencyMs) || 0)}ms text="${response.text ?? ""}" action=${response.action ? JSON.stringify({ type: response.action.type, args: response.action.args ?? {} }) : "none"}`
       );
+      if(this.canApply&&!this.canApply(generation)) return this.recordThought({reason,response:null,results:[],skipped:true,message:"Cancelled stale brain response"});
       const results = await this.executeBrainResponse(response, context);
       this.lastThoughtAt = Date.now();
       const thought = this.recordThought({
@@ -260,6 +262,7 @@ export class LocalBrainEngine {
     return {
       reason,
       triggerEvent,
+      personality:brainRuntimeContext.personality,
       policy,
       lifeState: {
         mood: brainRuntimeContext.lifeState?.mood,

@@ -72,7 +72,8 @@ class LocalBrainServer {
       reason: input.reason,
       triggerEvent: input.triggerEvent
     });
-    const messages = buildLocalBrainMessages(context);
+    const autonomous = context.reason === "proactive_scene_suggestion";
+    const messages = autonomous ? [{role:"system",content:"Suggest only one sceneId from allowedSceneIds. Return JSON with sceneId (or null) and text fields. Do not return any action, tool or motor command. Respect the supplied personality."},{role:"user",content:JSON.stringify(context)}] : buildLocalBrainMessages(context);
     this.traceLog(requestId, "CONTEXT", summarizeContext(context));
     this.traceLog(requestId, "CALL_PROVIDER", {
       provider,
@@ -105,6 +106,7 @@ class LocalBrainServer {
         });
       }
 
+      if(autonomous) return {ok:true,provider,model,latencyMs:Date.now()-started,sceneId:context.allowedSceneIds.includes(parsed?.sceneId)?parsed.sceneId:null,text:typeof parsed?.text==="string"?parsed.text.slice(0,1200):"",action:null};
       const normalized = normalizeBrainResponse(parsed, {
         provider,
         model,

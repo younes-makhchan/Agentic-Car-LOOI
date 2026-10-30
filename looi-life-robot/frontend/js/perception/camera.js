@@ -396,7 +396,7 @@ export class CameraInput {
       userVisible: true,
       faceCount: normalizedFaces.length,
       userPosition: positionFromCenter(centerX / Math.max(1, videoWidth)),
-      userDistance: distanceFromFaceRatio(faceRatio),
+      userDistance: "unknown",
       brightness: this.estimateBrightness(),
       note: "Face detected locally in browser."
     };

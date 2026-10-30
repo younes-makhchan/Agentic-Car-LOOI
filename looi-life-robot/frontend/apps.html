@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#0c191e" />
+  <title>LOOI Apps</title>
+  <link rel="icon" href="./icons/icon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="./apps.css" />
+</head>
+<body>
+  <header class="page-header"><a class="brand" href="./" aria-label="Back to LOOI"><img src="./icons/icon.svg" alt="" width="40" height="40" /><span>LOOI <small>DF26</small></span></a></header>
+  <main>
+    <div class="intro">
+      <p class="eyebrow">LOOI Apps</p>
+      <h1>Choose your LOOI app</h1>
+      <p>Bring LOOI to your phone. Choose your platform to get started.</p>
+    </div>
+    <div class="platforms" aria-label="Choose a platform">
+      <section class="platform" aria-labelledby="android-title">
+        <span class="platform-icon" aria-hidden="true">A</span>
+        <h2 id="android-title">Android</h2>
+        <p class="requirements">Android 7.0 or later</p>
+        <p>Download the APK, then open it on your Android phone to install.</p>
+        <div class="actions">
+          <a id="androidDownload" class="button" href="https://github.com/xlle-er/LOOI-DF26-ANDROID/releases/download/v0.2.1/LOOI-Android-0.2.1-debug.apk" target="_blank" rel="noopener noreferrer">Download Android APK</a>
+          <span class="version">Android 0.2.1 · Experimental preview</span>
+        </div>
+      </section>
+      <section class="platform" aria-labelledby="ios-title">
+        <span class="platform-icon platform-icon--ios" aria-hidden="true">iOS</span>
+        <h2 id="ios-title">iOS</h2>
+        <p class="requirements">iOS 15 or later · Xcode required</p>
+        <p>Open the iOS repository for source code and build instructions. Build and install with Xcode using your own Apple signing account.</p>
+        <div class="actions">
+          <a id="iosRepository" class="button" href="https://github.com/xlle-er/LOOI-DF26-IOS" target="_blank" rel="noopener noreferrer">Open iOS repository</a>
+        </div>
+      </section>
+    </div>
+    <a class="back-link" href="./">← <span>Back to LOOI</span></a>
+  </main>
+  <script type="module">
+    import { initializeLanguage } from './js/ui/locale.js';
+    initializeLanguage();
+  </script>
+</body>
+</html>

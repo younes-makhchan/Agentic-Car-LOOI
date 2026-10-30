@@ -87,7 +87,10 @@ export class LifeEngine {
 
     this.running = true;
     this.reflexTimer = globalThis.setInterval(() => this.tickReflex(), 100);
-    this.driveTimer = globalThis.setInterval(() => this.tickDrives(), 500);
+    this.driveMonotonic = performance.now();
+    this.interactionMonotonic = performance.now();
+    this.observedInteractionAt = this.state.lastInteractionAt;
+    this.driveTimer = globalThis.setInterval(() => this.tickDrives(), 1000);
 
     this.emitStatus();
     this.log("Life Engine started.");
@@ -435,7 +438,12 @@ export class LifeEngine {
     }
 
     const now = Date.now();
-    const idleMs = now - Number(this.state.lastInteractionAt || now);
+    const clock = performance.now();
+    const dt = Math.min(2, Math.max(0, (clock - (this.driveMonotonic ?? clock)) / 1000));
+    this.driveMonotonic = clock;
+    if(this.observedInteractionAt !== this.state.lastInteractionAt) { this.observedInteractionAt=this.state.lastInteractionAt; this.interactionMonotonic=clock; }
+    const idleMs = clock - (this.interactionMonotonic ?? clock);
+    const drive = (value,rate) => updateDriveValue(value, rate * dt / .5);
 
     const profile = this.personalityTuning?.getProfile?.() ?? this.personalityProfile;
     this.personalityProfile = createPersonalityProfile(profile);
@@ -445,35 +453,35 @@ export class LifeEngine {
     const lonelinessRate = 0.003 + (1 - Number(traits.independence ?? 0.45)) * 0.006;
 
     if (idleMs > 15000) {
-      this.state.boredom = updateDriveValue(this.state.boredom, boredomRate);
+      this.state.boredom = drive(this.state.boredom, boredomRate);
     } else {
-      this.state.boredom = updateDriveValue(this.state.boredom, -0.03);
+      this.state.boredom = drive(this.state.boredom, -0.03);
     }
 
     if (idleMs > 8000) {
-      this.state.curiosity = updateDriveValue(
+      this.state.curiosity = drive(
         this.state.curiosity,
         0.002 + Number(traits.curiosity ?? 0.75) * 0.004
       );
     }
 
     if (idleMs > 30000 && !this.state.userVisible) {
-      this.state.loneliness = updateDriveValue(this.state.loneliness, lonelinessRate);
-      this.state.comfort = updateDriveValue(this.state.comfort, -0.002);
+      this.state.loneliness = drive(this.state.loneliness, lonelinessRate);
+      this.state.comfort = drive(this.state.comfort, -0.002);
     } else {
-      this.state.loneliness = updateDriveValue(this.state.loneliness, -0.004);
+      this.state.loneliness = drive(this.state.loneliness, -0.004);
     }
 
     if (this.state.obstacle) {
-      this.state.fear = updateDriveValue(
+      this.state.fear = drive(
         this.state.fear,
         0.05 + Number(traits.caution ?? 0.7) * 0.06
       );
     } else {
-      this.state.fear = updateDriveValue(this.state.fear, -0.02);
+      this.state.fear = drive(this.state.fear, -0.02);
     }
 
-    this.state.energy = updateDriveValue(this.state.energy, this.state.isMoving ? -0.005 : -0.0005);
+    this.state.energy = drive(this.state.energy, this.state.isMoving ? -0.005 : -0.0005);
     this.state.affection = clamp01(this.state.affection);
     this.state.comfort = clamp01(this.state.comfort);
     this.state.loneliness = clamp01(this.state.loneliness);

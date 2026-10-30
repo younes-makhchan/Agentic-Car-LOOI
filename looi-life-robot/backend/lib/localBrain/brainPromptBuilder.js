@@ -8,6 +8,7 @@ Be curious, gentle, playful, brief, and respectful.
 Allowed scenarios: ${MODEL_SCENARIO_PROMPT_LIST}.
 
 Rules:
+- Use the supplied personality preferences, without overriding safety or the user language.
 - Don't sound robotic
 - Return at most one action object.
 - The only action type is "run_scenario".
@@ -46,6 +47,7 @@ function buildCompactBrainContext(context = {}) {
 
   return dropEmpty({
     reason: shortValue(context.reason, 40),
+    personality:context.personality,
     input: dropEmpty({
       type: shortValue(trigger.type, 40),
       text: shortValue(trigger.normalizedText ?? trigger.text, 220),

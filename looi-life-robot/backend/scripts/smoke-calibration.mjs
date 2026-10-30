@@ -21,6 +21,8 @@ class TestRobotClient {
     this.connected = false;
   }
 
+  async waitForCommand(id) { return {ok:true,id}; }
+
   isConnected() {
     return this.connected;
   }

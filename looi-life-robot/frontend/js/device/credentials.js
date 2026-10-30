@@ -1,0 +1,8 @@
+// Non-extractable AES key and ciphertext stay in this browser's IndexedDB.
+const database=()=>new Promise((resolve,reject)=>{const r=indexedDB.open('looi-device-credentials',1);r.onupgradeneeded=()=>r.result.createObjectStore('secrets');r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});
+async function read(key){const db=await database();try{return await new Promise((resolve,reject)=>{const r=db.transaction('secrets').objectStore('secrets').get(key);r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});}finally{db.close();}}
+async function write(key,value){const db=await database();try{await new Promise((resolve,reject)=>{const tx=db.transaction('secrets','readwrite');tx.objectStore('secrets').put(value,key);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);});}finally{db.close();}}
+let keyPromise;
+async function encryptionKey(){return keyPromise??= (async()=>{let key=await read('key');if(!key){key=await crypto.subtle.generateKey({name:'AES-GCM',length:256},false,['encrypt','decrypt']);await write('key',key);}return key;})();}
+export async function saveDevicePassword(id,password){const iv=crypto.getRandomValues(new Uint8Array(12)),key=await encryptionKey();const bytes=await crypto.subtle.encrypt({name:'AES-GCM',iv,additionalData:new TextEncoder().encode(id)},key,new TextEncoder().encode(password));await write('device:'+id,{iv,bytes});}
+export async function loadDevicePassword(id){const value=await read('device:'+id);if(!value)return '';const bytes=await crypto.subtle.decrypt({name:'AES-GCM',iv:value.iv,additionalData:new TextEncoder().encode(id)},await encryptionKey(),value.bytes);return new TextDecoder().decode(bytes);}

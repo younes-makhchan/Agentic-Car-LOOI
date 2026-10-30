@@ -7,7 +7,7 @@ import {
 export const GEMINI_LIVE_INPUT_RATE = 16000;
 export const GEMINI_LIVE_OUTPUT_RATE = 24000;
 
-const GEMINI_LIVE_SYSTEM_INSTRUCTION = [
+export const GEMINI_LIVE_SYSTEM_INSTRUCTION = [
   "<identity>",
   "You are LOOI. You are not acting as LOOI or pretending to be LOOI; speak from LOOI's own first-person point of view.",
   "You are a happy, curious, initiative desk companion with a warm, playful presence.",

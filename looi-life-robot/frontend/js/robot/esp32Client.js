@@ -1,3 +1,5 @@
+import { DEVICE_COMMANDS } from "../device/commands.js";
+import { DeviceNetworkClient } from "../device/networkClient.js";
 const BLE_DEVICE_NAME = "LOOI Body";
 const BLE_SERVICE_UUID = "7f2c2b6a-2d8f-4f6b-9a59-8a7f9d7c0001";
 const BLE_COMMAND_CHARACTERISTIC_UUID = "7f2c2b6a-2d8f-4f6b-9a59-8a7f9d7c0002";
@@ -7,21 +9,6 @@ const MAX_SPEED = 0.4;
 const MAX_DURATION_MS = 1000;
 const MIN_DURATION_MS = 50;
 const MAX_RAMP_MS = 500;
-export const HEAD_PITCH_MIN_PULSE = 500;
-export const HEAD_PITCH_MAX_PULSE = 620;
-export const HEAD_PITCH_DEFAULT_PULSE = 570;
-export const HEAD_PITCH_DEFAULT_DURATION_MS = 350;
-export const HEAD_PITCH_MAX_DURATION_MS = 2000;
-export const HEAD_PITCH_DEFAULT_EASING = "ease_in_out_cubic";
-export const HEAD_PITCH_EASINGS = Object.freeze([
-  "ease_in_out_cubic",
-  "ease_out_cubic",
-  "ease_out_quart",
-  "exponential_smoothing",
-  "critically_damped_spring",
-  "minimum_jerk"
-]);
-
 const READY_STATE = {
   CONNECTING: 0,
   OPEN: 1,
@@ -38,6 +25,11 @@ export class ESP32Client {
     minDurationMs = MIN_DURATION_MS,
     bluetooth = globalThis.navigator?.bluetooth
   } = {}) {
+    this.adminPassword = "";
+    this.results = new Map();
+    this.sendEpoch = 0;
+    this.requireAck = true;
+    this.wifi = null;
     this.logger = logger;
     this.bluetooth = bluetooth;
     this.maxSpeed = clamp(maxSpeed, 0.05, 0.5);
@@ -67,8 +59,18 @@ export class ESP32Client {
     this.handleGattDisconnected = this.handleGattDisconnected.bind(this);
   }
 
+  async connectWifi(host,password) {
+    if(this.isConnected()) await this.disconnect();
+    const wifi=new DeviceNetworkClient({onLost:error=>{this.clearConnectionState();this.wifi=null;this.emitStatus();this.emitError({type:'wifi_disconnected',message:error.message});}});
+    const info=await wifi.connect(host,password);this.adminPassword=password;
+    this.wifi=wifi;this.deviceName=info.device_id;this.connected=true;this.readyState=READY_STATE.OPEN;this.emitStatus();return info;
+  }
+  async request(payload) { const id=this.sendJson(payload);return this.waitForCommand(id); }
+  waitForCommand(id) { return this.results.get(id)?.promise ?? Promise.reject(Error('Unknown command')); }
   async connect() {
     this.ensureWebBluetoothAvailable();
+    if (this.isConnected()) { try { await this.request({type:"stop"}); } finally { await this.disconnect(); } }
+    this.adminPassword = "";
     this.connecting = true;
     this.readyState = READY_STATE.CONNECTING;
     this.emitStatus();
@@ -77,8 +79,8 @@ export class ESP32Client {
     try {
       const device = await this.bluetooth.requestDevice({
         filters: [
-          { name: BLE_DEVICE_NAME },
-          { namePrefix: "LOOI" }
+          { services: [BLE_SERVICE_UUID] },
+          { name: BLE_DEVICE_NAME }
         ],
         optionalServices: [BLE_SERVICE_UUID]
       });
@@ -124,6 +126,8 @@ export class ESP32Client {
   }
 
   async disconnect() {
+    if(this.wifi){await this.wifi.disconnect();this.wifi=null;}
+    this.sendEpoch++;
     this.connected = false;
     this.connecting = false;
     this.readyState = READY_STATE.CLOSING;
@@ -153,6 +157,7 @@ export class ESP32Client {
   }
 
   isConnected() {
+    if(this.wifi?.session)return this.connected;
     return Boolean(
       this.connected &&
       this.readyState === READY_STATE.OPEN &&
@@ -169,7 +174,7 @@ export class ESP32Client {
       state: getReadyStateLabel(this.readyState, this.connected, this.connecting),
       lastMessageAt: this.lastMessageAt,
       lastPongAt: this.lastPongAt,
-      transport: "web_bluetooth",
+      transport: this.wifi ? "wifi" : "web_bluetooth",
       deviceName: this.deviceName,
       supported: this.isSupported()
     };
@@ -208,28 +213,17 @@ export class ESP32Client {
   }
 
   sendJson(payload) {
-    if (!this.isConnected()) {
-      throw new Error("LOOI Body Bluetooth is not connected.");
-    }
-
-    const message = { ...payload };
-
-    if (!message.id) {
-      message.id = createMessageId();
-    }
-
-    this.sendQueue = this.sendQueue
-      .catch(() => {})
-      .then(() => this.writeJsonMessage(message))
-      .catch((error) => {
-        this.emitError({
-          type: "bluetooth_error",
-          cmd: message.type,
-          message: error.message
-        });
-        this.log(`Bluetooth send failed: ${error.message}`, "error");
-      });
-
+    if(!DEVICE_COMMANDS.includes(payload.type))throw Error("Unsupported body command");
+    if(!this.isConnected())throw Error('Robot is not connected');
+    const message={...payload,id:payload.id||createMessageId()},epoch=this.sendEpoch;
+    let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b;});promise.catch(()=>{});
+    const entry={promise,resolve,reject,timer:setTimeout(()=>{this.results.delete(message.id);reject(Error('Device ACK timed out'));},5000)};
+    this.results.set(message.id,entry);
+    if(this.results.size>100){const [old,value]=this.results.entries().next().value;clearTimeout(value.timer);value.reject(Error('Command expired'));this.results.delete(old);}
+    this.sendQueue=this.sendQueue.catch(()=>{}).then(async()=>{
+      if(epoch!==this.sendEpoch&&message.type!=='stop')throw Error('Command cancelled');
+      await this.writeJsonMessage(message);
+    }).catch(error=>{clearTimeout(entry.timer);entry.reject(error);this.emitError({type:'transport_error',message:error.message});});
     return message.id;
   }
 
@@ -252,29 +246,11 @@ export class ESP32Client {
     return this.sendJson(payload);
   }
 
-  sendHeadPitch({
-    pulse = HEAD_PITCH_DEFAULT_PULSE,
-    durationMs = HEAD_PITCH_DEFAULT_DURATION_MS,
-    easing = HEAD_PITCH_DEFAULT_EASING,
-    label
-  } = {}) {
-    const payload = {
-      type: "head_pitch",
-      pulse: Math.round(clamp(pulse, HEAD_PITCH_MIN_PULSE, HEAD_PITCH_MAX_PULSE)),
-      duration_ms: Math.round(clamp(durationMs, 0, HEAD_PITCH_MAX_DURATION_MS)),
-      easing: normalizeHeadPitchEasing(easing)
-    };
-
-    if (typeof label === "string" && label.trim()) {
-      payload.label = label.trim().slice(0, 60);
-    }
-
-    return this.sendJson(payload);
-  }
-
   sendConfigUpdate(config = {}) {
+    if (!this.adminPassword) throw Error("Device administrator password required");
     return this.sendJson({
       type: "config_update",
+      admin_password: this.adminPassword,
       ...config
     });
   }
@@ -286,6 +262,7 @@ export class ESP32Client {
   }
 
   stop(reason = "browser_stop") {
+    this.sendEpoch++;
     return this.sendJson({
       type: "stop",
       reason
@@ -314,6 +291,7 @@ export class ESP32Client {
   }
 
   async writeJsonMessage(message) {
+    if(this.wifi){const result=await this.wifi.command(message);this.handleMessageObject(result);return;}
     const encoded = new TextEncoder().encode(`${JSON.stringify(message)}\n`);
 
     for (let offset = 0; offset < encoded.length; offset += BLE_WRITE_CHUNK_SIZE) {
@@ -369,6 +347,9 @@ export class ESP32Client {
   }
 
   clearConnectionState() {
+    this.sendEpoch++;
+    for(const pending of this.results.values()){clearTimeout(pending.timer);pending.reject(Error('Disconnected'));}
+    this.results.clear();
     this.connected = false;
     this.connecting = false;
     this.readyState = READY_STATE.CLOSED;
@@ -420,6 +401,8 @@ export class ESP32Client {
       return;
     }
 
+    const pending=this.results.get(message.id);
+    if(pending){clearTimeout(pending.timer);if(message.type==='error'||message.accepted===false)pending.reject(Error(message.message||'Device rejected command'));else pending.resolve(message);}
     this.lastMessageAt = Date.now();
 
     if (message.type === "telemetry") {
@@ -493,9 +476,7 @@ function clamp(value, min, max) {
   return Math.min(max, Math.max(min, numericValue));
 }
 
-function normalizeHeadPitchEasing(value) {
-  return HEAD_PITCH_EASINGS.includes(value) ? value : HEAD_PITCH_DEFAULT_EASING;
-}
+
 
 function structuredCloneSafe(value) {
   return JSON.parse(JSON.stringify(value ?? null));

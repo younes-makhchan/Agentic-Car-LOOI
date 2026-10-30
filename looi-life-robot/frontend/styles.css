@@ -4995,3 +4995,95 @@ esp-web-install-button button {
     width: min(var(--local-vision-widget-width), 34vw);
   }
 }
+
+/* DF26 device setup is available before starting camera or AI. */
+.settings-open .runtime-gate { display:none; }
+.runtime-gate__actions > a.primary-button { display:flex;align-items:center;justify-content:center;min-height:48px;border-radius:14px;text-decoration:none; }
+#deviceManagement { scroll-margin-top:90px; }
+#deviceManagement label { display:block; margin:12px 0; }
+#deviceManagement input:not([type=checkbox]), #deviceManagement select { width:100%; margin-top:6px; min-height:44px; }
+#deviceManagement input[type=checkbox] { width:20px; height:20px; vertical-align:middle; }
+#deviceManagement button { min-height:44px; }
+#deviceFound button,#deviceNetworks button { margin:4px;max-width:100%;overflow-wrap:anywhere; }
+#deviceMessage { white-space:pre-wrap;overflow-wrap:anywhere; }
+@media(max-width:600px){#languageSwitch {top:70px!important;right:12px!important;font-size:12px;}#deviceManagement .button-grid {grid-template-columns:1fr 1fr;}}
+/* DF26: focused controls, quieter surfaces, consistent touch targets. */
+:root { --panel-border:rgba(133,189,176,.16);--muted:#91aba7;--glow:#89d9c5;--glow-strong:#b6efdf; }
+[hidden] { display:none!important; }
+body {font-family:Inter,"SF Pro Text",-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif;}
+button,input,select,textarea {font:inherit;}
+button {transition:background .15s ease,border-color .15s ease,transform .15s ease;}
+button:focus-visible,a:focus-visible,select:focus-visible,input:focus-visible {outline:2px solid #a8ead7;outline-offset:3px;}
+.runtime-gate {background:radial-gradient(ellipse at 50% 35%,rgba(62,130,121,.16),transparent 48%),#080e13;}
+.runtime-gate__card {width:min(460px,100%);padding:34px 32px;background:linear-gradient(155deg,rgba(24,42,46,.96),rgba(13,24,32,.96));border:1px solid rgba(166,215,200,.2);border-radius:28px;box-shadow:0 32px 100px #0005;}
+.df26-brand {display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;}
+.df26-brand img {border-radius:14px;box-shadow:0 6px 24px #0004;}
+.df26-brand span {font-size:11px;letter-spacing:.16em;color:#acd9cd;border:1px solid #52776d66;border-radius:30px;padding:7px 10px;}
+.runtime-gate__card h1 {font-size:clamp(30px,5vw,42px);letter-spacing:-.045em;line-height:1.15;margin:8px 0 16px;}
+.runtime-gate__card p:not(.eyebrow) {font-size:14px;line-height:1.75;color:#9fb7b4;}
+.runtime-gate__actions {gap:10px;margin-top:24px;}
+.runtime-gate__card button,.runtime-gate__actions a.primary-button {border-radius:12px;min-height:48px;font-weight:550;}
+.runtime-gate__actions a.primary-button {background:transparent;color:#9bb7b2;border:1px solid #48605966;font-size:13px;}
+.runtime-gate__card #productionStartButton {background:#a9e8d4;color:#142d26;border-color:#a9e8d4;}
+.runtime-gate__card #gateDeviceManagementButton {background:rgba(147,221,201,.07);border-color:rgba(147,221,201,.27);color:#bcebdc;}
+.runtime-gate__github-link {border-color:#42635b66;background:#101e22;color:#a3bbb5;}
+.control-panel {width:min(680px,100vw);max-width:100vw;padding:20px 22px 40px;background:rgba(13,24,30,.98);border-color:#41625877;backdrop-filter:blur(26px);gap:16px;scrollbar-color:#3a5a51 transparent;}
+.settings-drawer-header {min-height:112px;top:-20px;margin:-20px -22px 0;padding:22px 24px 40px;background:#0d181e;align-items:flex-start;border-bottom-color:#49615944;}
+.settings-drawer-header h2 {font-size:25px;letter-spacing:-.035em;line-height:1.2;margin-top:5px;}
+.settings-drawer-header .eyebrow {font-size:10px;letter-spacing:.2em;color:#7fae9f;}
+.settings-drawer-header button {min-width:64px;padding:8px 12px;background:transparent;border-color:#45615788;border-radius:10px;}
+.df26-settings-tabs {display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;position:sticky;top:92px;z-index:5;background:#0d181e;padding:8px 0 12px;}
+.df26-settings-tabs button {font-size:13px;min-height:42px;padding:9px 4px;border-radius:10px;border:1px solid transparent;background:transparent;color:#91aba4;white-space:nowrap;}
+.df26-settings-tabs button[aria-pressed=true] {background:#a7dfcb;color:#18382c;font-weight:650;}
+.control-panel .panel-card {background:#12232b;border:1px solid #47665a55;border-radius:20px;padding:22px;box-shadow:none;}
+.control-panel .panel-card h2 {font-size:20px;letter-spacing:-.025em;margin-bottom:16px;}
+.control-panel .panel-card h3 {font-size:15px;padding-top:20px;margin-top:24px;border-top:1px solid #54706344;}
+.control-panel .panel-card p {line-height:1.65;font-size:13px;color:#a4bab4;}
+.control-panel .settings-quick-actions {padding:14px 18px;display:flex;align-items:center;justify-content:space-between;gap:14px;background:#14292d;}
+.settings-quick-actions h2 {font-size:16px!important;margin:3px 0 0!important;}
+.settings-quick-actions .eyebrow {font-size:9px;}
+.settings-quick-actions .button-grid {width:auto;margin:0;gap:7px;}
+.settings-quick-actions button {min-height:40px;padding:7px 14px;white-space:nowrap;}
+.control-panel button {border-radius:11px;border-color:#47665a77;background:#1a3038;box-shadow:none;}
+.control-panel button:hover {background:#234047;border-color:#719c8b;}
+.control-panel input:not([type=checkbox]):not([type=range]),.control-panel select,.control-panel textarea {border:1px solid #4b6d6077;border-radius:10px;background:#0c1d25;color:#e3eee9;padding:11px 12px;}
+.control-panel input[type=checkbox] {accent-color:#a7dfcb;}
+#deviceManagement .button-grid {gap:9px;}
+#deviceManagement label {font-size:13px;color:#b6cac1;margin:14px 0;}
+#deviceManagement #deviceWifiConnect,#deviceManagement #deviceSave {background:#a7dfcb;color:#17362b;border-color:transparent;font-weight:650;}
+#deviceMessage:not(:empty) {padding:12px 14px;background:#1c3738;border-radius:10px;border:1px solid #567a6866;}
+#deviceInfo {font-family:ui-monospace,SFMono-Regular,monospace;font-size:11px;overflow-wrap:anywhere;}
+#deviceLanguage {max-width:180px;}
+#languageSwitch {top:16px!important;right:88px!important;font-size:12px;border:1px solid #55736566;background:#102321!important;backdrop-filter:blur(12px);}
+#languageSwitch select {font-size:12px;border:0;border-radius:5px;background:#203b34;color:#e4f2ec;padding:4px;}
+.settings-open #languageSwitch {top:66px!important;right:24px!important;}
+@media(max-width:600px){
+ .control-panel{padding:16px 14px 32px;}.control-panel .panel-card{padding:18px;border-radius:16px;}
+ .settings-drawer-header{top:-16px;margin:-16px -14px 0;padding:20px 18px 44px;min-height:114px;}
+ .settings-drawer-header h2{font-size:23px;}.df26-settings-tabs{top:98px;gap:4px;}.df26-settings-tabs button{font-size:12px;}
+ .control-panel .settings-quick-actions{padding:12px;gap:8px;}.settings-quick-actions button{padding:7px 10px;font-size:12px;}
+ .runtime-gate{place-items:center;padding:82px 18px 24px;}.runtime-gate__card{padding:26px 22px;border-radius:24px;}
+ .runtime-gate__card h1{font-size:35px;}.df26-brand{margin-bottom:18px;}
+ #languageSwitch{right:76px!important;top:18px!important;font-size:11px;padding:6px!important;}.settings-open #languageSwitch{top:70px!important;right:18px!important;}
+}
+@media(prefers-reduced-motion:reduce){button,.control-panel{transition:none;}}
+
+.device-debug { color: var(--text, #e3eee8); background: #182220; border: 1px solid #435450; border-radius: 22px; width: min(760px, calc(100vw - 24px)); max-height: 92dvh; padding: 20px; }
+.device-debug::backdrop { background: #0009; }
+.device-debug header,.device-debug nav,.device-debug footer { display:flex; gap:12px; align-items:center; justify-content:space-between; }
+.device-debug nav button { flex:1; min-height:44px; }
+.device-debug [aria-pressed="true"] { outline:2px solid #8de8cb; }
+.device-debug .device-debug-content { overflow:auto; max-height:65dvh; padding:12px 0; }
+.device-debug label { display:block; margin:12px 0; }
+.device-debug input:not([type="checkbox"]) { display:block; width:100%; box-sizing:border-box; }
+.device-debug button { min-height:44px; }
+.device-debug footer { position:sticky; bottom:0; background:#182220; padding-top:12px; }
+.device-debug [hidden] { display:none !important; }
+.device-access { max-width:440px; }
+@media(max-width:480px){.device-debug{padding:12px;}.device-debug nav{gap:6px;}.device-debug .button-grid{grid-template-columns:repeat(2,minmax(0,1fr));}}
+
+.device-wiring-notice { border:2px solid #ffa642; border-radius:16px; background:#432b13; color:#ffe1b5; padding:16px; display:grid; gap:12px; margin-block:12px; }
+.device-wiring-notice[hidden] { display:none; }
+.device-wiring-notice button { background:#ffad48; color:#201300; min-height:44px; font-weight:700; }
+#deviceProgressGroup { margin-block:14px; }
+#deviceProgress { width:100%; height:18px; accent-color:#64c8dd; }

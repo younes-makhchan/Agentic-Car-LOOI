@@ -57,7 +57,7 @@ export class CommandQueue {
     return this.enqueueItem(safeCommand);
   }
 
-  sendRealtimeMotion({
+  async sendRealtimeMotion({
     linear = 0,
     angular = 0,
     durationMs = 300,
@@ -102,6 +102,7 @@ export class CommandQueue {
     }
 
     try {
+      if (this.motionSend) { await this.motionSend(safeCommand); return {...safeCommand,realtime:true}; }
       const messageId = this.robotClient.sendMotion({
         linear: safeCommand.linear,
         angular: safeCommand.angular,
@@ -148,7 +149,7 @@ export class CommandQueue {
     }
   }
 
-  sendRealtimeStop(reason = "realtime_stop", { log = true, record = true } = {}) {
+  async sendRealtimeStop(reason = "realtime_stop", { log = true, record = true } = {}) {
     const stopCommand = {
       kind: "stop",
       label: reason,
@@ -161,7 +162,8 @@ export class CommandQueue {
 
     try {
       if (this.robotClient?.isConnected()) {
-        this.robotClient.stop(reason);
+        if (this.motionStop) await this.motionStop(reason);
+        else await this.robotClient.waitForCommand(this.robotClient.stop(reason));
       }
 
       if (record) {
@@ -219,10 +221,12 @@ export class CommandQueue {
 
     try {
       if (this.robotClient?.isConnected()) {
-        this.robotClient.stop(reason);
+        if (this.motionStop) await this.motionStop(reason);
+        else await this.robotClient.waitForCommand(this.robotClient.stop(reason));
       }
     } catch (error) {
-      this.log(`Motion stop failed to reach ESP32: ${error.message}`, "warn");
+      this.log(`Motion stop unconfirmed: ${error.message}`, "warn");
+      throw error;
     }
 
     this.log(
@@ -319,7 +323,8 @@ export class CommandQueue {
       if (item.kind === "stop") {
         this.log(`Started ${item.label} (${item.kind})`);
         this.recordCommand(item, "started");
-        this.robotClient.stop(item.reason ?? "queue_stop");
+        if (this.motionStop) await this.motionStop(item.reason ?? "queue_stop");
+        else await this.robotClient.waitForCommand(this.robotClient.stop(item.reason ?? "queue_stop"));
         await wait(COMMAND_BUFFER_MS);
       } else {
         this.log(
@@ -329,7 +334,8 @@ export class CommandQueue {
         );
         this.recordCommand(item, "started");
 
-        this.robotClient.sendMotion({
+        if (this.motionSend) await this.motionSend(item);
+        else this.robotClient.sendMotion({
           linear: item.linear,
           angular: item.angular,
           durationMs: item.durationMs,

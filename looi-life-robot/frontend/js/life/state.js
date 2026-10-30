@@ -22,7 +22,7 @@ export function createDefaultLifeState() {
     isMoving: false,
 
     battery: null,
-    obstacle: false,
+    obstacle: null,
 
     lastInteractionAt: now,
     lastMotionAt: 0,

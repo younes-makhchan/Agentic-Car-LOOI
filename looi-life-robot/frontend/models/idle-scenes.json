@@ -1,0 +1,320 @@
+[
+  {
+    "id": "pose_neutral",
+    "title": "neutral",
+    "titleZH": "中性",
+    "body": false,
+    "pose": "pose_neutral",
+    "steps": []
+  },
+  {
+    "id": "pose_attentive",
+    "title": "attentive",
+    "titleZH": "专注",
+    "body": false,
+    "pose": "pose_attentive",
+    "steps": []
+  },
+  {
+    "id": "pose_curious",
+    "title": "curious",
+    "titleZH": "好奇",
+    "body": false,
+    "pose": "pose_curious",
+    "steps": []
+  },
+  {
+    "id": "pose_happy",
+    "title": "happy",
+    "titleZH": "开心",
+    "body": false,
+    "pose": "pose_happy",
+    "steps": []
+  },
+  {
+    "id": "pose_sleepy",
+    "title": "sleepy",
+    "titleZH": "困倦",
+    "body": false,
+    "pose": "pose_sleepy",
+    "steps": []
+  },
+  {
+    "id": "pose_shy",
+    "title": "shy",
+    "titleZH": "害羞",
+    "body": false,
+    "pose": "pose_shy",
+    "steps": []
+  },
+  {
+    "id": "idle_shift_right_back_left_front_copy",
+    "title": "Body motion 1",
+    "titleZH": "轻微身体动作 1",
+    "body": true,
+    "steps": [
+      {
+        "kind": "move",
+        "left": 0.3,
+        "right": -0.5,
+        "durationMs": 300,
+        "pauseMs": 350
+      },
+      {
+        "kind": "move",
+        "left": -0.3,
+        "right": 0.5,
+        "durationMs": 300,
+        "pauseMs": 120
+      }
+    ]
+  },
+  {
+    "id": "idle_shift_right_back_left_front_copy_copy",
+    "title": "Body motion 2",
+    "titleZH": "轻微身体动作 2",
+    "body": true,
+    "steps": [
+      {
+        "kind": "move",
+        "left": -0.5,
+        "right": 0.3,
+        "durationMs": 300,
+        "pauseMs": 350
+      },
+      {
+        "kind": "move",
+        "left": 0.5,
+        "right": -0.3,
+        "durationMs": 300,
+        "pauseMs": 120
+      }
+    ]
+  },
+  {
+    "id": "idle_shift_right_back_left_front",
+    "title": "Soft left forward twist",
+    "titleZH": "轻柔左前扭动",
+    "body": true,
+    "steps": [
+      {
+        "kind": "move",
+        "left": 0.3,
+        "right": -0.5,
+        "durationMs": 125,
+        "pauseMs": 70
+      },
+      {
+        "kind": "stop",
+        "left": 0,
+        "right": 0,
+        "durationMs": 0,
+        "pauseMs": 120
+      }
+    ]
+  },
+  {
+    "id": "idle_shift_right_front_left_back",
+    "title": "Soft right forward twist",
+    "titleZH": "轻柔右前扭动",
+    "body": true,
+    "steps": [
+      {
+        "kind": "move",
+        "left": -0.5,
+        "right": 0.3,
+        "durationMs": 125,
+        "pauseMs": 70
+      },
+      {
+        "kind": "stop",
+        "left": 0,
+        "right": 0,
+        "durationMs": 0,
+        "pauseMs": 120
+      }
+    ]
+  },
+  {
+    "id": "idle_both_front_left_soft",
+    "title": "Tiny left forward pivot",
+    "titleZH": "轻微左前转动",
+    "body": true,
+    "steps": [
+      {
+        "kind": "move",
+        "left": 0.5,
+        "right": -0.5,
+        "durationMs": 80,
+        "pauseMs": 90
+      },
+      {
+        "kind": "stop",
+        "left": 0,
+        "right": 0,
+        "durationMs": 0,
+        "pauseMs": 120
+      }
+    ]
+  },
+  {
+    "id": "idle_custom_6",
+    "title": "Tiny right forward pivot",
+    "titleZH": "轻微右前转动",
+    "body": true,
+    "steps": [
+      {
+        "kind": "move",
+        "left": -0.5,
+        "right": 0.5,
+        "durationMs": 80,
+        "pauseMs": 90
+      },
+      {
+        "kind": "stop",
+        "left": 0,
+        "right": 0,
+        "durationMs": 0,
+        "pauseMs": 120
+      }
+    ]
+  },
+  {
+    "id": "idle_both_front_tiny",
+    "title": "Tiny forward pulse",
+    "titleZH": "轻微前进",
+    "body": true,
+    "steps": [
+      {
+        "kind": "move",
+        "left": 0.5,
+        "right": 0.5,
+        "durationMs": 80,
+        "pauseMs": 90
+      },
+      {
+        "kind": "stop",
+        "left": 0,
+        "right": 0,
+        "durationMs": 0,
+        "pauseMs": 120
+      }
+    ]
+  },
+  {
+    "id": "idle_custom_7",
+    "title": "Tiny backward pulse",
+    "titleZH": "轻微后退",
+    "body": true,
+    "steps": [
+      {
+        "kind": "move",
+        "left": -0.5,
+        "right": -0.5,
+        "durationMs": 80,
+        "pauseMs": 90
+      },
+      {
+        "kind": "stop",
+        "left": 0,
+        "right": 0,
+        "durationMs": 0,
+        "pauseMs": 120
+      }
+    ]
+  },
+  {
+    "id": "idle_forward_then_backward",
+    "title": "Tiny forward and back",
+    "titleZH": "轻微前后摆动",
+    "body": true,
+    "steps": [
+      {
+        "kind": "move",
+        "left": 0.5,
+        "right": 0.5,
+        "durationMs": 80,
+        "pauseMs": 175
+      },
+      {
+        "kind": "move",
+        "left": -0.5,
+        "right": -0.5,
+        "durationMs": 80,
+        "pauseMs": 175
+      }
+    ]
+  },
+  {
+    "id": "idle_custom_8",
+    "title": "Slow forward and back",
+    "titleZH": "缓慢前后摆动",
+    "body": true,
+    "steps": [
+      {
+        "kind": "move",
+        "left": 0.5,
+        "right": 0.5,
+        "durationMs": 80,
+        "pauseMs": 250
+      },
+      {
+        "kind": "move",
+        "left": -0.5,
+        "right": -0.5,
+        "durationMs": 80,
+        "pauseMs": 120
+      }
+    ]
+  },
+  {
+    "id": "multi_forward_back",
+    "title": "Repeated forward and back",
+    "titleZH": "多次前后摆动",
+    "body": true,
+    "steps": [
+      {
+        "kind": "move",
+        "left": 0.5,
+        "right": 0.5,
+        "durationMs": 80,
+        "pauseMs": 175
+      },
+      {
+        "kind": "move",
+        "left": -0.5,
+        "right": -0.5,
+        "durationMs": 80,
+        "pauseMs": 175
+      },
+      {
+        "kind": "move",
+        "left": 0.5,
+        "right": 0.5,
+        "durationMs": 80,
+        "pauseMs": 250
+      },
+      {
+        "kind": "move",
+        "left": -0.5,
+        "right": -0.5,
+        "durationMs": 80,
+        "pauseMs": 120
+      },
+      {
+        "kind": "move",
+        "left": 0.5,
+        "right": 0.5,
+        "durationMs": 80,
+        "pauseMs": 175
+      },
+      {
+        "kind": "move",
+        "left": -0.5,
+        "right": -0.5,
+        "durationMs": 80,
+        "pauseMs": 175
+      }
+    ]
+  }
+]

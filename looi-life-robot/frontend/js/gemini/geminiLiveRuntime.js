@@ -4,6 +4,7 @@ import {
   GEMINI_LIVE_INPUT_RATE,
   GEMINI_LIVE_OUTPUT_RATE,
   buildGeminiLiveSetup,
+  GEMINI_LIVE_SYSTEM_INSTRUCTION,
   geminiFunctionCallToAction,
   summarizeGeminiAction
 } from "./geminiLiveTools.js";
@@ -216,6 +217,7 @@ export class GeminiLiveRuntime {
         thinkingLevel: this.status.thinkingLevel,
         contextCompression: this.status.contextCompression,
         sessionResumption: this.status.sessionResumption,
+        systemInstruction: GEMINI_LIVE_SYSTEM_INSTRUCTION + (this.profileInstruction?.() ?? ""),
         slidingWindowTokens: this.status.slidingWindowTokens
       }));
       this.log("AGENT STEP 3 setup sent");
@@ -232,6 +234,7 @@ export class GeminiLiveRuntime {
       this.lifeEngine?.setListening?.(Boolean(captureAudio));
       return this.getStatus();
     } catch (error) {
+      if(runToken!==this.runToken)throw error;
       this.patchStatus({
         running: false,
         connecting: false,
@@ -389,10 +392,12 @@ export class GeminiLiveRuntime {
         reject(new Error("Agent relay open timed out."));
       }, 10_000);
 
-      this.transport = this.transportFactory({
+      let transport;
+      const current=()=>runToken===this.runToken&&(!transport||transport===this.transport);
+      this.transport = transport = this.transportFactory({
         url,
         onOpen: () => {
-          if (settled || runToken !== this.runToken) {
+          if (settled || !current()) {
             return;
           }
           settled = true;
@@ -404,12 +409,15 @@ export class GeminiLiveRuntime {
           resolve();
         },
         onMessage: (message) => {
-          this.handleTransportMessage(message).catch((error) => {
+          if(!current())return;
+          this.handleTransportMessage(message,runToken,transport).catch((error) => {
+            if(!current())return;
             this.patchStatus({ lastError: error.message });
             this.log(`Agent message parse failed: ${error.message}`, "warn");
           });
         },
         onError: (error) => {
+          if(!current())return;
           const message = error?.message || error?.error?.message || "Agent relay error.";
           this.patchStatus({ lastError: message });
           this.log(`Agent relay error: ${message}`, "warn");
@@ -420,6 +428,7 @@ export class GeminiLiveRuntime {
           }
         },
         onClose: () => {
+          if(!current())return;
           this.inputCoordinator?.clearPendingQuiet?.("transport_closed");
           this.patchStatus({
             connected: false,
@@ -437,6 +446,13 @@ export class GeminiLiveRuntime {
   }
 
   async startMic(runToken) {
+    if (this.sharedMicrophone) {
+      await this.sharedMicrophone.start();
+      if (runToken !== this.runToken) return;
+      this.sharedStreaming = true;
+      this.patchStatus({ micStreaming: true });
+      return;
+    }
     if (!this.mediaDevices?.getUserMedia) {
       throw new Error("Browser microphone capture is unavailable.");
     }
@@ -513,6 +529,7 @@ export class GeminiLiveRuntime {
       this.sendAudioStreamEnd(reason);
     }
 
+    this.sharedStreaming = false;
     try {
       this.processor?.disconnect?.();
       this.inputSource?.disconnect?.();
@@ -527,6 +544,20 @@ export class GeminiLiveRuntime {
     this.inputAudioContext?.close?.().catch?.(() => {});
     this.inputAudioContext = null;
     this.patchStatus({ micStreaming: false, inputActive: false, inputLevel: 0 });
+  }
+
+  sendSharedPCMBytes(bytes, samples) {
+    if (!this.sharedStreaming || !this.status.connected || !this.status.setupComplete || !bytes?.byteLength) return false;
+    if (bytes.byteLength > 256000) throw Error("Audio handoff exceeds eight seconds");
+    const array = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+    const level = samples ? calculateRms(samples) : 0;
+    this.recordInputAudioSent({bytes:array.byteLength,inputRate:16000,outputRate:16000,samples:array.length/2,inputLevel:level});
+    // Keep handoff chunks small and ordered; each captured frame is sent once.
+    for(let offset=0;offset<array.length;offset+=3200) {
+      const chunk=array.slice(offset,offset+3200);
+      this.sendJson({realtimeInput:{audio:{data:arrayBufferToBase64(chunk.buffer),mimeType:"audio/pcm;rate=16000"}}});
+    }
+    return true;
   }
 
   sendAudioStreamEnd(reason = "audio_stream_end") {
@@ -552,8 +583,12 @@ export class GeminiLiveRuntime {
     }
   }
 
-  async handleTransportMessage(rawMessage) {
+  isCurrentTransport(token,transport){return token===this.runToken&&transport===this.transport&&this.status.connected;}
+
+  async handleTransportMessage(rawMessage,token=this.runToken,transport=this.transport) {
+    if(!this.isCurrentTransport(token,transport))return;
     const parsed = await parseTransportMessage(rawMessage);
+    if(!this.isCurrentTransport(token,transport))return;
     const message = parsed?.message ?? null;
 
     if (!message) {
@@ -619,7 +654,8 @@ export class GeminiLiveRuntime {
     this.log(`Agent tool requests: ${summarizeToolRequests(functionCalls, cancelledToolCallIds)}`);
 
     if (functionCalls.length) {
-      this.handleToolCalls(functionCalls).catch((error) => {
+      this.handleToolCalls(functionCalls,token,transport).catch((error) => {
+        if(!this.isCurrentTransport(token,transport))return;
         this.patchStatus({ lastError: error.message });
         this.log(`Agent tool handling failed: ${error.message}`, "warn");
       });
@@ -627,6 +663,7 @@ export class GeminiLiveRuntime {
 
     if (cancelledToolCallIds.length) {
       this.handleToolCallCancellation(cancelledToolCallIds).catch((error) => {
+        if(!this.isCurrentTransport(token,transport))return;
         this.patchStatus({ lastError: error.message });
         this.log(`Agent tool cancellation failed: ${error.message}`, "warn");
       });
@@ -695,9 +732,11 @@ export class GeminiLiveRuntime {
     return { inputText, outputText };
   }
 
-  async handleToolCalls(functionCalls = []) {
+  async handleToolCalls(functionCalls = [],token=this.runToken,transport=this.transport) {
+    if(!this.isCurrentTransport(token,transport))return;
     // Tool execution stays browser-local so Bluetooth body actions still run on the nearby client.
-    const responses = await Promise.all(functionCalls.map((call) => this.executeToolCall(call)));
+    const responses = await Promise.all(functionCalls.map((call) => this.executeToolCall(call,token,transport)));
+    if(!this.isCurrentTransport(token,transport))return;
     const functionResponses = responses.map((entry) => ({
       id: entry.id,
       name: entry.name,
@@ -714,7 +753,9 @@ export class GeminiLiveRuntime {
     });
   }
 
-  async executeToolCall(call = {}) {
+  async executeToolCall(call = {},token=this.runToken,transport=this.transport) {
+    const cancelled=()=>({id:call.id,name:call.name,response:{error:"Cancelled stale tool call"}});
+    if(!this.isCurrentTransport(token,transport))return cancelled();
     const name = String(call.name ?? "unknown");
     const id = String(call.id ?? `${name}_${Date.now()}`);
     const mapped = geminiFunctionCallToAction(call);
@@ -769,6 +810,7 @@ export class GeminiLiveRuntime {
 
     try {
       const result = await this.toolExecutor.executeAction(action);
+      if(!this.isCurrentTransport(token,transport))return cancelled();
       const status = result?.status ?? "completed";
       const executed = result?.executed === true;
       const accepted = ["completed", "queued"].includes(status) && executed;
@@ -818,6 +860,7 @@ export class GeminiLiveRuntime {
         }
       };
     } catch (error) {
+      if(!this.isCurrentTransport(token,transport))return cancelled();
       this.pendingToolCalls.delete(id);
       this.publishGeminiScenarioEvent("gemini_scenario_finished", action, {
         toolCallId: id,
@@ -914,11 +957,17 @@ export class GeminiLiveRuntime {
       return;
     }
 
+    const bufferedSeconds=Math.max(0,(this.nextOutputTime||0)-this.outputAudioContext.currentTime);
+    if(bufferedSeconds+samples.length/rate>60||this.activeOutputSources.size>=1024) {
+      this.interruptAudio("output_buffer_limit");
+      this.patchStatus({lastError:"Audio output buffer exceeded 60 seconds; playback was cleared. Please retry the response."});
+      return;
+    }
     const buffer = this.outputAudioContext.createBuffer(1, samples.length, rate);
     buffer.copyToChannel(samples, 0);
     const source = this.outputAudioContext.createBufferSource();
     source.buffer = buffer;
-    source.connect(this.outputAudioContext.destination);
+    source.connect(this.outputGain??this.outputAudioContext.destination);
 
     const startAt = Math.max(
       this.outputAudioContext.currentTime + 0.01,
@@ -1045,8 +1094,11 @@ export class GeminiLiveRuntime {
     }
 
     this.outputAudioContext = new AudioContextCtor();
+    if(this.outputAudioContext.createGain){this.outputGain=this.outputAudioContext.createGain();this.outputGain.gain.value=this.status.outputMuted?0:1;this.outputGain.connect(this.outputAudioContext.destination);}
     return true;
   }
+
+  setOutputMuted(muted){this.patchStatus({outputMuted:!!muted});if(this.outputGain)this.outputGain.gain.value=muted?0:1;}
 
   async resumeOutputAudio(reason = "resume") {
     if (!this.outputAudioContext?.resume) {
@@ -1080,7 +1132,7 @@ export class GeminiLiveRuntime {
       const buffer = this.outputAudioContext.createBuffer(1, 1, this.outputAudioContext.sampleRate || GEMINI_LIVE_OUTPUT_RATE);
       const source = this.outputAudioContext.createBufferSource();
       source.buffer = buffer;
-      source.connect(this.outputAudioContext.destination);
+      source.connect(this.outputGain??this.outputAudioContext.destination);
       source.start(0);
     } catch (_error) {
       // Unlock is best-effort only; real audio playback will report failures.
@@ -1448,6 +1500,8 @@ export class GeminiInputCoordinator {
     if (!status.connected) {
       return buildInputGate(false, "not_connected", kind);
     }
+
+    if (!status.setupComplete) return buildInputGate(false,"setup_pending",kind);
 
     if ((this.runtime?.pendingToolCalls?.size ?? 0) > 0 || this.runtime?.deferredSpeechStartScenario) {
       return buildInputGate(false, "tool_call_active", kind);

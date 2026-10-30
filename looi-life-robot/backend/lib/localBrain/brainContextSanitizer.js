@@ -1,3 +1,6 @@
+import idleScenes from "../../../frontend/models/idle-scenes.json" with {type:"json"};
+const allowedIdleIds=new Set(idleScenes.map(s=>s.id));
+import { validateProfile } from "../../../frontend/js/companion/configuration.js";
 const SECRET_PATTERNS = [
   /\b(api[_ -]?key|token|password|secret|bearer)\b/i,
   /\bsk-[a-z0-9_-]{12,}\b/i
@@ -8,6 +11,7 @@ export function sanitizeBrainContext(input = {}) {
 
   return removeSecretsAndLargeFields({
     reason: shortText(context.reason, 80),
+    allowedSceneIds:Array.isArray(context.allowedSceneIds)?context.allowedSceneIds.filter(id=>allowedIdleIds.has(id)).slice(0,17):[],
     triggerEvent: compactEvent(context.triggerEvent),
     lifeState: compactLifeState(context.lifeState),
     policy: compactPolicy(context.policy ?? context.localPolicy),
@@ -157,9 +161,12 @@ function compactTelemetry(telemetry) {
 }
 
 function compactPersonality(personality) {
-  const profile = isPlainObject(personality) ? personality : {};
+  const candidate = isPlainObject(personality) ? personality : {};
+  const profile = candidate.coreTraits ? validateProfile(candidate) : candidate;
   return {
     name: shortText(profile.name, 60),
+    pronouns: shortText(profile.pronouns,30),
+    boundaries: {neverClaimUnsupportedVision:true,stopImmediatelyOnStopPhrase:true,doNotMoveWhenUnarmed:true,doNotSpamUser:true},
     identity: shortText(profile.identity, 160),
     coreTraits: numericObject(profile.coreTraits),
     behaviorStyle: numericObject(profile.behaviorStyle),
